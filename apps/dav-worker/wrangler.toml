@@ -5,7 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [[r2_buckets]]
 binding = "bucket"
-bucket_name = "your-bucket"
+bucket_name = "true-bucket"
 
 [vars]
 CORS_ORIGIN = "http://localhost:5173"
