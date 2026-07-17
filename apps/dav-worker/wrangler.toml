@@ -1,0 +1,16 @@
+name = "r2-webdav-x"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[r2_buckets]]
+binding = "bucket"
+bucket_name = "your-bucket"
+
+[vars]
+CORS_ORIGIN = "http://localhost:5173"
+JWT_TTL_SECONDS = "28800"
+
+[observability]
+enabled = true
+head_sampling_rate = 1

@@ -1,0 +1,20 @@
+{
+	"name": "@r2-webdav/web",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "tsc --noEmit && vite build",
+		"typecheck": "tsc --noEmit",
+		"deploy": "wrangler pages deploy dist"
+	},
+	"dependencies": {
+		"@r2-webdav/shared-types": "0.1.0",
+		"lucide": "^0.468.0"
+	},
+	"devDependencies": {
+		"vite": "^6.0.0",
+		"wrangler": "^4.15.2"
+	}
+}

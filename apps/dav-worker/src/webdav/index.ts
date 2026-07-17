@@ -1,5 +1,5 @@
 /**
- * Welcome to Cloudflare Workers! This is your first worker.
+ * WebDAV Class 1 and 2 implementation backed by R2.
  *
  * - Run `npm run dev` in your terminal to start a development server
  * - Open a browser tab at http://localhost:8787/ to see your worker in action
@@ -8,16 +8,9 @@
  * Learn more at https://developers.cloudflare.com/workers/
  */
 
-import { DOMParser } from '@xmldom/xmldom';
+import { DOMParser, type Document, type Element, type Node } from '@xmldom/xmldom';
 
-export interface Env {
-	// Example binding to R2. Learn more at https://developers.cloudflare.com/workers/runtime-apis/r2/
-	bucket: R2Bucket;
-
-	// Variables defined in the "Environment Variables" section of the Wrangler CLI or dashboard
-	USERNAME: string;
-	PASSWORD: string;
-}
+const STORAGE_ROOT = 'fs/default';
 
 async function* listAll(bucket: R2Bucket, prefix: string, isRecursive: boolean = false) {
 	let cursor: string | undefined = undefined;
@@ -126,10 +119,11 @@ function getResourceHref(key: string, isCollection: boolean): string {
 			.join('/');
 	};
 
-	if (key === '') {
+	if (key === STORAGE_ROOT || key === '') {
 		return '/';
 	}
-	return encodeHrefPath(`/${key + (isCollection ? '/' : '')}`);
+	const visibleKey = key.startsWith(`${STORAGE_ROOT}/`) ? key.slice(STORAGE_ROOT.length + 1) : key;
+	return encodeHrefPath(`/${visibleKey + (isCollection ? '/' : '')}`);
 }
 
 function decodeResourcePath(pathname: string): string {
@@ -178,7 +172,7 @@ function parseDestinationPath(destinationHeader: string, requestUrl: string): st
 		if (destinationUrl.origin !== new URL(requestUrl).origin) {
 			return null;
 		}
-		return decodeResourcePath(destinationUrl.pathname);
+		return toStoragePath(decodeResourcePath(destinationUrl.pathname));
 	} catch {
 		return null;
 	}
@@ -274,7 +268,7 @@ function getElementProperty(element: Element): DeadProperty | null {
 	}
 	return {
 		namespaceURI: element.namespaceURI ?? '',
-		localName: element.localName,
+		localName: element.localName ?? element.nodeName,
 		prefix: element.prefix,
 		valueXml: serializeNodeChildren(element),
 	};
@@ -283,10 +277,8 @@ function getElementProperty(element: Element): DeadProperty | null {
 function parseXmlDocument(body: string): Document | null {
 	let errors: string[] = [];
 	let document = new DOMParser({
-		errorHandler: {
-			warning: () => {},
-			error: (message) => errors.push(message),
-			fatalError: (message) => errors.push(message),
+		onError: (level, message) => {
+			if (level !== 'warning') errors.push(message);
 		},
 	}).parseFromString(body, 'application/xml');
 	if (errors.length > 0) {
@@ -305,19 +297,23 @@ function getChildElements(element: Element): Element[] {
 	return children;
 }
 
+function getLocalName(element: Element): string {
+	return element.localName ?? element.nodeName;
+}
+
 function parsePropfindRequest(body: string): PropfindRequest | null {
 	if (body.trim() === '') {
 		return { mode: 'allprop' };
 	}
 	let document = parseXmlDocument(body);
-	if (document === null || document.documentElement.localName.toLowerCase() !== 'propfind') {
+	if (document === null || document.documentElement === null || getLocalName(document.documentElement).toLowerCase() !== 'propfind') {
 		return null;
 	}
 	let propfindChildren = getChildElements(document.documentElement);
-	if (propfindChildren.some((child) => child.localName.toLowerCase() === 'propname')) {
+	if (propfindChildren.some((child) => getLocalName(child).toLowerCase() === 'propname')) {
 		return { mode: 'propname' };
 	}
-	let propElement = propfindChildren.find((child) => child.localName.toLowerCase() === 'prop');
+	let propElement = propfindChildren.find((child) => getLocalName(child).toLowerCase() === 'prop');
 	if (propElement !== undefined) {
 		let properties = getChildElements(propElement).map(getElementProperty);
 		if (properties.some((property) => property === null)) {
@@ -328,7 +324,7 @@ function parsePropfindRequest(body: string): PropfindRequest | null {
 			properties: properties as DeadProperty[],
 		};
 	}
-	if (propfindChildren.some((child) => child.localName.toLowerCase() === 'allprop')) {
+	if (propfindChildren.some((child) => getLocalName(child).toLowerCase() === 'allprop')) {
 		return { mode: 'allprop' };
 	}
 	return null;
@@ -336,16 +332,20 @@ function parsePropfindRequest(body: string): PropfindRequest | null {
 
 function parseProppatchRequest(body: string): { operations: ProppatchOperation[] } | null {
 	let document = parseXmlDocument(body);
-	if (document === null || document.documentElement.localName.toLowerCase() !== 'propertyupdate') {
+	if (
+		document === null ||
+		document.documentElement === null ||
+		getLocalName(document.documentElement).toLowerCase() !== 'propertyupdate'
+	) {
 		return null;
 	}
 	let operations: ProppatchOperation[] = [];
 	for (const actionElement of getChildElements(document.documentElement)) {
-		let action = actionElement.localName.toLowerCase();
+		let action = getLocalName(actionElement).toLowerCase();
 		if (action !== 'set' && action !== 'remove') {
 			continue;
 		}
-		let propElement = getChildElements(actionElement).find((child) => child.localName.toLowerCase() === 'prop');
+		let propElement = getChildElements(actionElement).find((child) => getLocalName(child).toLowerCase() === 'prop');
 		if (propElement === undefined) {
 			continue;
 		}
@@ -628,7 +628,11 @@ function renderPropstat(status: string, properties: string[]): string {
 }
 
 function make_resource_path(request: Request): string {
-	return decodeResourcePath(new URL(request.url).pathname);
+	return toStoragePath(decodeResourcePath(new URL(request.url).pathname));
+}
+
+function toStoragePath(resourcePath: string): string {
+	return resourcePath === '' ? STORAGE_ROOT : `${STORAGE_ROOT}/${resourcePath}`;
 }
 
 async function assertLockPermission(
@@ -731,10 +735,9 @@ async function handle_get(request: Request, bucket: R2Bucket): Promise<Response>
 		}
 
 		let page = '',
-			prefix = resource_path;
-		if (resource_path !== '') {
-			page += `<a href="../">..</a><br>`;
 			prefix = `${resource_path}/`;
+		if (resource_path !== STORAGE_ROOT) {
+			page += `<a href="../">..</a><br>`;
 		}
 
 		for await (const object of listAll(bucket, prefix)) {
@@ -861,11 +864,11 @@ async function handle_delete(request: Request, bucket: R2Bucket): Promise<Respon
 		return lockResponse;
 	}
 
-	if (resource_path === '') {
+	if (resource_path === STORAGE_ROOT) {
 		let r2_objects,
 			cursor: string | undefined = undefined;
 		do {
-			r2_objects = await bucket.list({ cursor: cursor });
+			r2_objects = await bucket.list({ prefix: `${STORAGE_ROOT}/`, cursor: cursor });
 			let keys = r2_objects.objects.map((object) => object.key);
 			if (keys.length > 0) {
 				await bucket.delete(keys);
@@ -999,8 +1002,9 @@ async function handle_propfind(request: Request, bucket: R2Bucket): Promise<Resp
 	let page = `<?xml version="1.0" encoding="utf-8"?>
 <multistatus xmlns="DAV:">`;
 
-	if (resource_path === '') {
-		page += generate_propfind_response(null, propfindRequest);
+	if (resource_path === STORAGE_ROOT) {
+		const root = await bucket.head(STORAGE_ROOT);
+		page += generate_propfind_response(root, propfindRequest);
 		is_collection = true;
 	} else {
 		let object = await bucket.head(resource_path);
@@ -1018,7 +1022,7 @@ async function handle_propfind(request: Request, bucket: R2Bucket): Promise<Resp
 				break;
 			case '1':
 				{
-					let prefix = resource_path === '' ? resource_path : resource_path + '/';
+					let prefix = resource_path + '/';
 					for await (let object of listAll(bucket, prefix)) {
 						page += generate_propfind_response(object, propfindRequest);
 					}
@@ -1026,7 +1030,7 @@ async function handle_propfind(request: Request, bucket: R2Bucket): Promise<Resp
 				break;
 			case 'infinity':
 				{
-					let prefix = resource_path === '' ? resource_path : resource_path + '/';
+					let prefix = resource_path + '/';
 					for await (let object of listAll(bucket, prefix, true)) {
 						page += generate_propfind_response(object, propfindRequest);
 					}
@@ -1535,7 +1539,7 @@ const SUPPORT_METHODS = [
 	'UNLOCK',
 ];
 
-async function dispatch_handler(request: Request, bucket: R2Bucket): Promise<Response> {
+export async function handleWebDav(request: Request, bucket: R2Bucket): Promise<Response> {
 	switch (request.method) {
 		case 'OPTIONS': {
 			return new Response(null, {
@@ -1590,68 +1594,3 @@ async function dispatch_handler(request: Request, bucket: R2Bucket): Promise<Res
 		}
 	}
 }
-
-function is_authorized(authorization_header: string, username: string, password: string): boolean {
-	const encoder = new TextEncoder();
-
-	const header = encoder.encode(authorization_header);
-	const expected = encoder.encode(`Basic ${btoa(`${username}:${password}`)}`);
-
-	return timingSafeEqual(header, expected);
-}
-
-export default {
-	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-		const { bucket } = env;
-
-		if (
-			request.method !== 'OPTIONS' &&
-			!is_authorized(request.headers.get('Authorization') ?? '', env.USERNAME, env.PASSWORD)
-		) {
-			return new Response('Unauthorized', {
-				status: 401,
-				headers: {
-					'WWW-Authenticate': 'Basic realm="webdav"',
-				},
-			});
-		}
-
-		let response: Response = await dispatch_handler(request, bucket);
-
-		// Set CORS headers
-		response.headers.set('Access-Control-Allow-Origin', request.headers.get('Origin') ?? '*');
-		response.headers.set('Access-Control-Allow-Methods', SUPPORT_METHODS.join(', '));
-		response.headers.set(
-			'Access-Control-Allow-Headers',
-			[
-				'authorization',
-				'content-type',
-				'depth',
-				'overwrite',
-				'destination',
-				'range',
-				'if',
-				'lock-token',
-				'timeout',
-			].join(', '),
-		);
-		response.headers.set(
-			'Access-Control-Expose-Headers',
-			[
-				'content-type',
-				'content-length',
-				'dav',
-				'etag',
-				'last-modified',
-				'location',
-				'date',
-				'content-range',
-				'lock-token',
-			].join(', '),
-		);
-		response.headers.set('Access-Control-Allow-Credentials', 'false');
-		response.headers.set('Access-Control-Max-Age', '86400');
-
-		return response;
-	},
-};

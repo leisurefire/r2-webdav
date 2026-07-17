@@ -1,0 +1,23 @@
+{
+	"name": "@r2-webdav/dav-worker",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@r2-webdav/shared-types": "0.1.0",
+		"@xmldom/xmldom": "^0.9.8",
+		"ical.js": "^2.2.1"
+	},
+	"devDependencies": {
+		"@cloudflare/vitest-pool-workers": "^0.8.19",
+		"@cloudflare/workers-types": "^4.20250717.0",
+		"vitest": "^3.2.4",
+		"wrangler": "^4.15.2"
+	}
+}
