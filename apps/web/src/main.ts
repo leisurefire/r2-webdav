@@ -1421,6 +1421,10 @@ function paintBookmarkView(): void {
 	let folder = root;
 	for (const name of bookmarkFolderPath) folder = folder.folders.find((item) => item.name === name) ?? root;
 	if (folder === root && bookmarkFolderPath.length) bookmarkFolderPath = [];
+	while (folder.links.length === 0 && folder.folders.length === 1) {
+		folder = folder.folders[0];
+		bookmarkFolderPath = folder.path;
+	}
 	const cards = folder.links;
 	const folderButtons = folder.folders
 		.map(
@@ -1436,6 +1440,8 @@ function paintBookmarkView(): void {
 	refreshIcons();
 	bindBookmarkPreviews(content);
 	bindNotesNavigation(content);
+	const path = content.querySelector<HTMLElement>('.bookmark-path');
+	if (path) path.scrollLeft = path.scrollWidth;
 	content.querySelectorAll<HTMLElement>('[data-bookmark-folder]').forEach((button) =>
 		button.addEventListener('click', () => {
 			const key = button.dataset.bookmarkFolder ?? '';
@@ -1498,11 +1504,17 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 	const selected = data.items.find((note) => note.id === selectedId) ?? data.items[0];
 	const cards = data.items
 		.map(
-			(note) => `<button class="note-card ${note.id === selected?.id ? 'active' : ''}" data-note="${note.id}">
+			(
+				note,
+			) => `<article class="note-card ${note.id === selected?.id ? 'active' : ''}" data-note="${note.id}" role="button" tabindex="0">
 				<div class="note-card-title">${note.pinned ? '<i data-lucide="pin"></i>' : ''}<strong>${html(note.title)}</strong></div>
+				<div class="note-card-actions">
+					<button class="row-action" data-note-card-pin="${note.id}" title="${note.pinned ? t('unpin') : t('pin')}" aria-label="${note.pinned ? t('unpin') : t('pin')}"><i data-lucide="${note.pinned ? 'pin-off' : 'pin'}"></i></button>
+					<button class="row-action" data-note-card-archive="${note.id}" title="${note.archived ? t('restore') : t('archive')}" aria-label="${note.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
+				</div>
 				<p>${html(note.content.replace(/[#*_`>\[\]]/g, '').slice(0, 110) || '—')}</p>
 				<time>${new Date(note.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>
-			</button>`,
+			</article>`,
 		)
 		.join('');
 	content.innerHTML = `<div class="notes-layout">
@@ -1515,9 +1527,44 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 	</div>
 	${selected ? `<dialog class="note-dialog" id="note-dialog">${noteEditorMarkup(selected, true)}</dialog>` : ''}`;
 	refreshIcons();
-	content
-		.querySelectorAll<HTMLElement>('[data-note]')
-		.forEach((node) => node.addEventListener('click', () => paintNotes(data, node.dataset.note, true)));
+	content.querySelectorAll<HTMLElement>('[data-note]').forEach((node) => {
+		const openNote = () => paintNotes(data, node.dataset.note, true);
+		node.addEventListener('click', (event) => {
+			if (!(event.target as HTMLElement).closest('.note-card-actions')) openNote();
+		});
+		node.addEventListener('keydown', (event) => {
+			if ((event.key === 'Enter' || event.key === ' ') && event.target === node) {
+				event.preventDefault();
+				openNote();
+			}
+		});
+	});
+	const updateFromCard = async (noteId: string, changes: Partial<Pick<Note, 'pinned' | 'archived'>>): Promise<void> => {
+		try {
+			const updated = await api.updateNote(noteId, changes);
+			const index = data.items.findIndex((note) => note.id === updated.id);
+			if (index >= 0 && updated.archived !== notesArchived) {
+				data.items.splice(index, 1);
+				data.total = Math.max(0, data.total - 1);
+			} else if (index >= 0) data.items[index] = updated;
+			cacheNotes(data);
+			paintNotes(data, updated.archived === notesArchived ? updated.id : undefined);
+		} catch (error) {
+			toast(errorMessage(error));
+		}
+	};
+	content.querySelectorAll<HTMLElement>('[data-note-card-pin]').forEach((button) =>
+		button.addEventListener('click', () => {
+			const note = data.items.find((item) => item.id === button.dataset.noteCardPin);
+			if (note) void updateFromCard(note.id, { pinned: !note.pinned });
+		}),
+	);
+	content.querySelectorAll<HTMLElement>('[data-note-card-archive]').forEach((button) =>
+		button.addEventListener('click', () => {
+			const note = data.items.find((item) => item.id === button.dataset.noteCardArchive);
+			if (note) void updateFromCard(note.id, { archived: !note.archived });
+		}),
+	);
 	bindNotesNavigation(content);
 	content.querySelector('#new-note')?.addEventListener('click', async () => {
 		try {

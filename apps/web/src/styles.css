@@ -1185,12 +1185,14 @@ dialog::backdrop {
 }
 
 .note-card {
+	position: relative;
 	width: 100%;
 	padding: 15px;
 	border: 0;
 	border-radius: 12px;
 	background: transparent;
 	color: var(--ink);
+	cursor: pointer;
 	text-align: left;
 }
 
@@ -1221,6 +1223,34 @@ dialog::backdrop {
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	font-size: 14px;
+}
+
+.note-card-actions {
+	position: absolute;
+	top: 7px;
+	right: 7px;
+	display: flex;
+	gap: 1px;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 120ms ease;
+}
+
+.note-card:hover .note-card-actions,
+.note-card:focus-within .note-card-actions {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.note-card-actions .row-action {
+	width: 28px;
+	height: 28px;
+	background: var(--panel-bg);
+}
+
+.note-card-actions .row-action svg {
+	width: 14px;
+	height: 14px;
 }
 
 .note-card p {
@@ -2768,6 +2798,10 @@ body:has(.app-shell) {
 
 	.note-card.active {
 		box-shadow: none;
+	}
+
+	.note-card-actions {
+		display: none;
 	}
 
 	.note-editor-desktop {
