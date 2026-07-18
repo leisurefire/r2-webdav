@@ -1,6 +1,7 @@
 import type {
 	ApiResponse,
 	BookmarkHub,
+	BookmarkPreview,
 	CalendarEvent,
 	CalendarSummary,
 	DeviceSession,
@@ -174,6 +175,9 @@ export const api = {
 			if (error instanceof ApiError && error.status === 404) return null;
 			throw error;
 		}
+	},
+	bookmarkPreview(url: string): Promise<BookmarkPreview> {
+		return request(`/bookmarks/preview?url=${encodeURIComponent(url)}`);
 	},
 	createNote(title: string, content = ''): Promise<Note> {
 		return notesRequest('', {

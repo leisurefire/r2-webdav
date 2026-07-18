@@ -39,6 +39,7 @@ import {
 } from 'lucide';
 import type {
 	BookmarkHub,
+	BookmarkPreview,
 	CalendarEvent,
 	CalendarSummary,
 	DeviceSession,
@@ -1066,6 +1067,114 @@ interface BookmarkCard {
 	dateModified: number;
 }
 
+const BOOKMARK_PREVIEW_DB = 'r2-bookmark-previews';
+const BOOKMARK_PREVIEW_STORE = 'previews';
+let bookmarkPreviewDbPromise: Promise<IDBDatabase> | null = null;
+let bookmarkPreviewObserver: IntersectionObserver | null = null;
+let bookmarkPreviewGeneration = 0;
+let bookmarkPreviewActive = 0;
+const bookmarkPreviewQueue: Array<{ card: HTMLElement; generation: number }> = [];
+
+function bookmarkPreviewDb(): Promise<IDBDatabase> {
+	bookmarkPreviewDbPromise ??= new Promise((resolve, reject) => {
+		const request = indexedDB.open(BOOKMARK_PREVIEW_DB, 1);
+		request.addEventListener('upgradeneeded', () => {
+			if (!request.result.objectStoreNames.contains(BOOKMARK_PREVIEW_STORE))
+				request.result.createObjectStore(BOOKMARK_PREVIEW_STORE);
+		});
+		request.addEventListener('success', () => resolve(request.result));
+		request.addEventListener('error', () => reject(request.error));
+	});
+	return bookmarkPreviewDbPromise;
+}
+
+async function cachedBookmarkPreview(url: string): Promise<BookmarkPreview | null> {
+	try {
+		const database = await bookmarkPreviewDb();
+		return await new Promise((resolve, reject) => {
+			const request = database.transaction(BOOKMARK_PREVIEW_STORE).objectStore(BOOKMARK_PREVIEW_STORE).get(url);
+			request.addEventListener('success', () => resolve((request.result as BookmarkPreview | undefined) ?? null));
+			request.addEventListener('error', () => reject(request.error));
+		});
+	} catch {
+		return null;
+	}
+}
+
+async function cacheBookmarkPreview(url: string, preview: BookmarkPreview): Promise<void> {
+	try {
+		const database = await bookmarkPreviewDb();
+		await new Promise<void>((resolve, reject) => {
+			const transaction = database.transaction(BOOKMARK_PREVIEW_STORE, 'readwrite');
+			transaction.objectStore(BOOKMARK_PREVIEW_STORE).put(preview, url);
+			transaction.addEventListener('complete', () => resolve());
+			transaction.addEventListener('error', () => reject(transaction.error));
+		});
+	} catch {
+		// Preview caching is optional when private browsing disables IndexedDB.
+	}
+}
+
+function applyBookmarkPreview(card: HTMLElement, preview: BookmarkPreview): void {
+	const icon = card.querySelector<HTMLImageElement>('[data-bookmark-icon]');
+	if (icon && preview.favicon) {
+		icon.src = preview.favicon;
+		icon.hidden = false;
+	}
+	const cover = card.querySelector<HTMLElement>('[data-bookmark-cover]');
+	const coverImage = cover?.querySelector<HTMLImageElement>('img');
+	if (cover && coverImage && preview.image) {
+		coverImage.src = preview.image;
+		coverImage.hidden = false;
+		cover.classList.add('has-image');
+	}
+}
+
+async function loadBookmarkPreview(card: HTMLElement, generation: number): Promise<void> {
+	const url = card.dataset.bookmarkUrl;
+	if (!url) return;
+	let preview = await cachedBookmarkPreview(url);
+	if (!preview) {
+		try {
+			preview = await api.bookmarkPreview(url);
+			await cacheBookmarkPreview(url, preview);
+		} catch {
+			preview = {};
+		}
+	}
+	if (generation === bookmarkPreviewGeneration && card.isConnected) applyBookmarkPreview(card, preview);
+}
+
+function pumpBookmarkPreviews(): void {
+	while (bookmarkPreviewActive < 3 && bookmarkPreviewQueue.length) {
+		const item = bookmarkPreviewQueue.shift()!;
+		bookmarkPreviewActive += 1;
+		void loadBookmarkPreview(item.card, item.generation).finally(() => {
+			bookmarkPreviewActive -= 1;
+			pumpBookmarkPreviews();
+		});
+	}
+}
+
+function bindBookmarkPreviews(root: HTMLElement): void {
+	bookmarkPreviewObserver?.disconnect();
+	bookmarkPreviewQueue.length = 0;
+	const generation = ++bookmarkPreviewGeneration;
+	const grid = root.querySelector<HTMLElement>('.bookmarks-grid');
+	bookmarkPreviewObserver = new IntersectionObserver(
+		(entries, observer) => {
+			for (const entry of entries) {
+				if (!entry.isIntersecting) continue;
+				observer.unobserve(entry.target);
+				bookmarkPreviewQueue.push({ card: entry.target as HTMLElement, generation });
+			}
+			pumpBookmarkPreviews();
+		},
+		{ root: grid, rootMargin: '240px' },
+	);
+	root.querySelectorAll<HTMLElement>('[data-bookmark-url]').forEach((card) => bookmarkPreviewObserver?.observe(card));
+}
+
 function bookmarkCards(): BookmarkCard[] {
 	if (!bookmarkHub) return [];
 	const result: BookmarkCard[] = [];
@@ -1075,7 +1184,7 @@ function bookmarkCards(): BookmarkCard[] {
 				try {
 					const parsed = new URL(node.url);
 					result.push({
-						title: node.title.trim() || parsed.hostname,
+						title: node.title.trim(),
 						url: node.url,
 						domain: parsed.hostname,
 						path,
@@ -1092,10 +1201,9 @@ function bookmarkCards(): BookmarkCard[] {
 }
 
 function bookmarkCardMarkup(card: BookmarkCard): string {
-	const favicon = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(card.domain)}&sz=128`;
-	return `<a class="bookmark-card" href="${html(card.url)}" target="_blank" rel="noopener noreferrer">
-		<div class="bookmark-card-cover"><img src="${favicon}" alt="" loading="lazy" referrerpolicy="no-referrer"><span>${html(card.domain.slice(0, 1).toUpperCase())}</span></div>
-		<div class="bookmark-card-body"><h3>${html(card.title)}</h3><p>${html(card.domain)}</p><small>${html(card.path.filter(Boolean).join(' / '))}</small><time>${card.dateModified ? new Date(card.dateModified).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en') : ''}</time></div>
+	return `<a class="bookmark-card" data-bookmark-url="${html(card.url)}" href="${html(card.url)}" target="_blank" rel="noopener noreferrer" title="${html(card.title || card.url)}">
+		<div class="bookmark-card-cover" data-bookmark-cover><span>${html(card.domain.slice(0, 1).toUpperCase())}</span><img alt="" hidden></div>
+		<div class="bookmark-card-body">${card.title ? `<h3>${html(card.title)}</h3>` : ''}<div class="bookmark-link"><span class="bookmark-favicon"><span>${html(card.domain.slice(0, 1).toUpperCase())}</span><img data-bookmark-icon alt="" hidden></span><p>${html(card.url)}</p></div><div class="bookmark-card-meta"><small>${html(card.path.filter(Boolean).join(' / '))}</small><time>${card.dateModified ? new Date(card.dateModified).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en') : ''}</time></div></div>
 	</a>`;
 }
 
@@ -1250,6 +1358,7 @@ function paintBookmarkView(): void {
 		<div class="bookmarks-grid">${cards.length ? cards.map(bookmarkCardMarkup).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div>
 	</div>`;
 	refreshIcons();
+	bindBookmarkPreviews(content);
 	bindNotesNavigation(content);
 	content.querySelector('#notes-refresh')?.addEventListener('click', async () => {
 		await pullBookmarks(true);
