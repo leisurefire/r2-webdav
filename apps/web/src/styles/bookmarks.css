@@ -13,6 +13,17 @@
 	overflow-y: auto;
 }
 
+.bookmark-folder-select-wrap {
+	display: none;
+	min-width: 0;
+}
+
+.bookmark-folder-select {
+	width: 100%;
+	min-height: 38px;
+	padding-block: 6px;
+}
+
 .bookmark-folder {
 	width: 100%;
 	min-height: 38px;
@@ -274,14 +285,30 @@
 	}
 
 	.bookmark-folders {
-		flex: none;
-		display: flex;
-		gap: 6px;
-		padding: 0 0 8px;
-		border-right: 0;
-		border-bottom: 1px solid var(--line);
-		overflow-x: auto;
-		overflow-y: hidden;
+		display: none;
+	}
+
+	.bookmark-folder-select-wrap {
+		display: block;
+		flex: 1;
+		min-width: 90px;
+	}
+
+	.bookmark-folder-select {
+		min-height: 36px;
+		font-size: 12px;
+	}
+
+	.bookmark-layout .segment-control button {
+		padding-inline: 6px;
+		font-size: 11px;
+	}
+
+	.bookmark-layout .segment-control button[data-note-view='bookmarks'] {
+		max-width: 72px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.bookmark-folder {

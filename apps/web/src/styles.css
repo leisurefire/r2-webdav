@@ -22,6 +22,10 @@
 	--surface-strong: #f1f1f1;
 	--card-radius: 6.08px;
 	--pill-radius: 9999px;
+	--page-gutter-x: 28px;
+	--page-gutter-y: 22px;
+	--toolbar-gap: 8px;
+	--toolbar-spacing: 14px;
 }
 
 * {
@@ -520,6 +524,100 @@ select:focus-visible {
 	border-top: 1px solid var(--line);
 }
 
+.file-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+	align-content: start;
+	gap: 10px;
+}
+
+.file-card {
+	position: relative;
+	min-width: 0;
+	min-height: 82px;
+	display: flex;
+	align-items: stretch;
+	overflow: hidden;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--panel-bg);
+	transition:
+		box-shadow 140ms ease,
+		transform 140ms ease;
+}
+
+.file-card:hover {
+	transform: translateY(-1px);
+	box-shadow: 0 8px 20px rgb(0 0 0 / 0.08);
+}
+
+.file-card-open {
+	min-width: 0;
+	flex: 1;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 108px 12px 12px;
+	border: 0;
+	background: transparent;
+	color: var(--ink);
+	text-align: left;
+}
+
+.file-card-icon {
+	width: 42px;
+	height: 42px;
+	flex: none;
+	display: grid;
+	place-items: center;
+	border-radius: 6px;
+	background: var(--surface);
+	color: var(--muted);
+}
+
+.file-card-icon svg {
+	width: 20px;
+	height: 20px;
+}
+
+.file-card-copy {
+	min-width: 0;
+	display: grid;
+	gap: 5px;
+}
+
+.file-card-copy strong,
+.file-card-copy small {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.file-card-copy strong {
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.file-card-copy small {
+	color: var(--quiet);
+	font-size: 10px;
+}
+
+.file-card-actions {
+	position: absolute;
+	top: 7px;
+	right: 7px;
+	display: flex;
+	gap: 1px;
+	opacity: 0;
+	transition: opacity 120ms ease;
+}
+
+.file-card:hover .file-card-actions,
+.file-card:focus-within .file-card-actions {
+	opacity: 1;
+}
+
 .file-table th {
 	height: 42px;
 	color: var(--quiet);
@@ -768,6 +866,19 @@ tr:focus-within .row-actions {
 	font-size: 22px;
 	font-weight: 600;
 	line-height: 1.26;
+}
+
+.settings-section-heading {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+}
+
+.settings-section-heading svg {
+	width: 20px;
+	height: 20px;
+	color: var(--muted);
+	stroke-width: 1.7;
 }
 
 .field {
@@ -1709,6 +1820,15 @@ dialog::backdrop {
 		width: auto;
 	}
 
+	.file-grid {
+		grid-template-columns: 1fr;
+		gap: 8px;
+	}
+
+	.file-card-actions {
+		opacity: 1;
+	}
+
 	.file-actions {
 		width: 104px;
 	}
@@ -2086,9 +2206,10 @@ dialog::backdrop {
 	grid-column: 1 / -1;
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: var(--toolbar-gap);
 	min-height: 42px;
-	padding: 0 4px 10px;
+	padding: 0;
+	margin-bottom: var(--toolbar-spacing);
 }
 
 .notes-inner-toolbar .segment-control {
@@ -2105,7 +2226,7 @@ dialog::backdrop {
 .notes-list-cards {
 	display: flex;
 	flex-direction: column;
-	gap: 4px;
+	gap: 3px;
 }
 
 .note-editor {
@@ -2431,15 +2552,16 @@ body:has(.app-shell) {
 	height: 100%;
 	min-height: 0;
 	margin-inline: auto;
-	padding: 22px 28px;
+	padding: var(--page-gutter-y) var(--page-gutter-x);
 	overflow: auto;
 }
 
 .toolbar,
 .calendar-toolbar,
 .notes-toolbar {
-	min-height: 38px;
-	margin-bottom: 14px;
+	min-height: 42px;
+	gap: var(--toolbar-gap);
+	margin-bottom: var(--toolbar-spacing);
 	flex: none;
 }
 
@@ -2488,14 +2610,18 @@ body:has(.app-shell) {
 }
 
 .note-card {
-	padding: 11px 12px;
+	padding: 0;
 	border-radius: 6px;
+}
+
+.note-card-open {
+	padding: 9px 10px;
 }
 
 .note-card p {
 	-webkit-line-clamp: 1;
 	min-height: 17px;
-	margin: 5px 0;
+	margin: 4px 0;
 }
 
 .note-editor,
@@ -2637,6 +2763,12 @@ body:has(.app-shell) {
 }
 
 @media (max-width: 760px) {
+	:root {
+		--page-gutter-x: 12px;
+		--page-gutter-y: 12px;
+		--toolbar-spacing: 10px;
+	}
+
 	.app-shell,
 	.app-shell.sidebar-collapsed {
 		display: block;
@@ -2779,13 +2911,18 @@ body:has(.app-shell) {
 	}
 
 	.content {
-		padding: 12px 12px 14px;
+		padding: var(--page-gutter-y) var(--page-gutter-x) 14px;
 	}
 
 	.toolbar,
 	.calendar-toolbar,
-	.notes-toolbar {
-		margin-bottom: 10px;
+	.notes-toolbar,
+	.notes-inner-toolbar {
+		margin-bottom: var(--toolbar-spacing);
+	}
+
+	.notes-inner-toolbar {
+		padding: 0;
 	}
 
 	.calendar-toolbar h2 {
@@ -2820,6 +2957,10 @@ body:has(.app-shell) {
 
 	.note-card-actions {
 		display: none;
+	}
+
+	.note-card-title {
+		padding-right: 0;
 	}
 
 	.note-editor-desktop {

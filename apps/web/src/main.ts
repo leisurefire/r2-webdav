@@ -74,6 +74,15 @@ const messages = {
 		notesDesc: 'Capture ideas in Markdown and keep the important ones close.',
 		devicesDesc: 'Review and revoke every device signed in to this account.',
 		settingsDesc: 'Connection details for this workspace and its services.',
+		settingsConnection: 'Connection',
+		settingsLanguage: 'Language',
+		settingsLanguageHint: 'Choose the language used across this workspace.',
+		webdavUrl: 'WebDAV URL',
+		caldavUrl: 'CalDAV URL',
+		copy: 'Copy',
+		copied: 'Copied',
+		english: 'English',
+		chinese: 'Chinese',
 		connected: 'Storage connected',
 		logout: 'Log out',
 		account: 'Account',
@@ -122,6 +131,15 @@ const messages = {
 		notesDesc: '使用 Markdown 记录想法，并将重要内容置顶。',
 		devicesDesc: '查看并撤销此账户已登录的所有设备。',
 		settingsDesc: '查看工作区及服务的连接信息。',
+		settingsConnection: '连接',
+		settingsLanguage: '语言',
+		settingsLanguageHint: '选择工作区界面使用的语言。',
+		webdavUrl: 'WebDAV 地址',
+		caldavUrl: 'CalDAV 地址',
+		copy: '复制',
+		copied: '已复制',
+		english: 'English',
+		chinese: '中文',
 		connected: '存储已连接',
 		logout: '退出登录',
 		account: '账户',
@@ -275,7 +293,6 @@ function shell(page: Page, _title: string, content = '<div class="empty-state"><
 			</nav>
 			<div class="sidebar-footer"><div class="account-menu-wrap">
 				<div class="account-popover" id="account-popover" hidden>
-					<button id="language-toggle"><i data-lucide="languages"></i><span>${t('language')}</span></button>
 					<button data-route="/settings"><i data-lucide="settings"></i><span>${t('settings')}</span></button>
 					<button data-route="/devices"><i data-lucide="laptop"></i><span>${t('devices')}</span></button>
 					<div class="account-menu-separator"></div>
@@ -326,12 +343,6 @@ function shell(page: Page, _title: string, content = '<div class="empty-state"><
 			toggle.innerHTML = `<i data-lucide="${sidebarCollapsed ? 'panel-left-open' : 'panel-left-close'}"></i>`;
 			refreshIcons();
 		}
-	});
-	document.querySelector('#language-toggle')?.addEventListener('click', () => {
-		locale = locale === 'en' ? 'zh' : 'en';
-		localStorage.setItem('r2_locale', locale);
-		document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
-		void render();
 	});
 	refreshIcons();
 }
@@ -438,15 +449,14 @@ function paintFiles(listing: FileListing): void {
 	if (!content || pageFromPath() !== 'files' || listing.path !== currentPath) return;
 	const rows = listing.entries
 		.map(
-			(entry) => `<tr>
-			<td class="file-name"><button class="name-button" data-open="${html(entry.path)}" data-type="${entry.type}"><i data-lucide="${fileIcon(entry)}"></i><span>${html(entry.name)}</span></button></td>
-			<td class="file-size">${entry.type === 'file' ? formatBytes(entry.size) : '—'}</td>
-			<td class="file-date">${new Date(entry.modifiedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</td>
-			<td class="file-actions"><div class="row-actions">
-				${entry.type === 'file' ? `<button class="row-action" data-download="${html(entry.path)}" title="Download" aria-label="Download"><i data-lucide="download"></i></button>` : ''}
-				<button class="row-action" data-rename="${html(entry.path)}" title="Rename" aria-label="Rename"><i data-lucide="pencil"></i></button>
-				<button class="row-action danger" data-delete="${html(entry.path)}" title="Delete" aria-label="Delete"><i data-lucide="trash-2"></i></button>
-			</div></td></tr>`,
+			(entry) => `<article class="file-card">
+				<button class="file-card-open" data-open="${html(entry.path)}" data-type="${entry.type}"><span class="file-card-icon"><i data-lucide="${fileIcon(entry)}"></i></span><span class="file-card-copy"><strong>${html(entry.name)}</strong><small>${entry.type === 'file' ? formatBytes(entry.size) : locale === 'zh' ? '文件夹' : 'Folder'} · ${new Date(entry.modifiedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</small></span></button>
+				<div class="file-card-actions">
+					${entry.type === 'file' ? `<button class="row-action" data-download="${html(entry.path)}" title="${locale === 'zh' ? '下载' : 'Download'}" aria-label="${locale === 'zh' ? '下载' : 'Download'}"><i data-lucide="download"></i></button>` : ''}
+					<button class="row-action" data-rename="${html(entry.path)}" title="${locale === 'zh' ? '重命名' : 'Rename'}" aria-label="${locale === 'zh' ? '重命名' : 'Rename'}"><i data-lucide="pencil"></i></button>
+					<button class="row-action danger" data-delete="${html(entry.path)}" title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button>
+				</div>
+			</article>`,
 		)
 		.join('');
 	content.innerHTML = `<div class="toolbar"><div class="breadcrumbs">${breadcrumbMarkup(listing.path)}</div><span class="toolbar-spacer"></span>
@@ -454,7 +464,7 @@ function paintFiles(listing: FileListing): void {
 			<button class="button" id="mkdir"><i data-lucide="folder-plus"></i><span>${locale === 'zh' ? '新建文件夹' : 'New folder'}</span></button>
 			<input type="file" id="file-input" hidden multiple>
 		</div><div id="upload-status"></div><button class="button primary floating-primary-action" id="upload" title="${locale === 'zh' ? '上传' : 'Upload'}" aria-label="${locale === 'zh' ? '上传' : 'Upload'}"><i data-lucide="upload"></i><span>${locale === 'zh' ? '上传' : 'Upload'}</span></button>
-		${rows ? `<table class="file-table"><thead><tr><th class="file-name">${locale === 'zh' ? '名称' : 'Name'}</th><th>${locale === 'zh' ? '大小' : 'Size'}</th><th>${locale === 'zh' ? '修改时间' : 'Modified'}</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="empty-state"><div><i data-lucide="folder-open"></i><div>${locale === 'zh' ? '此文件夹为空' : 'This folder is empty'}</div></div></div>`}`;
+		${rows ? `<div class="file-grid">${rows}</div>` : `<div class="empty-state"><div><i data-lucide="folder-open"></i><div>${locale === 'zh' ? '此文件夹为空' : 'This folder is empty'}</div></div></div>`}`;
 	refreshIcons();
 	content.querySelectorAll<HTMLElement>('[data-path]').forEach((item) =>
 		item.addEventListener('click', () => {
@@ -480,12 +490,16 @@ function paintFiles(listing: FileListing): void {
 	content.querySelectorAll<HTMLElement>('[data-rename]').forEach((item) =>
 		item.addEventListener('click', async () => {
 			const source = item.dataset.rename!;
-			const name = await openTextDialog('Rename', 'Name', source.split('/').at(-1));
+			const name = await openTextDialog(
+				locale === 'zh' ? '重命名' : 'Rename',
+				locale === 'zh' ? '名称' : 'Name',
+				source.split('/').at(-1),
+			);
 			if (!name || name.includes('/')) return;
 			const parent = source.split('/').slice(0, -1).join('/');
 			try {
 				await api.move(source, parent ? `${parent}/${name}` : name);
-				toast('Renamed');
+				toast(locale === 'zh' ? '已重命名' : 'Renamed');
 				await renderFiles(true);
 			} catch (error) {
 				toast(errorMessage(error));
@@ -495,10 +509,19 @@ function paintFiles(listing: FileListing): void {
 	content.querySelectorAll<HTMLElement>('[data-delete]').forEach((item) =>
 		item.addEventListener('click', async () => {
 			const path = item.dataset.delete!;
-			if (!(await confirmAction('Delete item?', `${path.split('/').at(-1)} will be permanently deleted.`))) return;
+			if (
+				!(await confirmAction(
+					locale === 'zh' ? '删除此项目？' : 'Delete item?',
+					locale === 'zh'
+						? `${path.split('/').at(-1)} 将被永久删除。`
+						: `${path.split('/').at(-1)} will be permanently deleted.`,
+					t('delete'),
+				))
+			)
+				return;
 			try {
 				await api.deleteFile(path);
-				toast('Deleted');
+				toast(locale === 'zh' ? '已删除' : 'Deleted');
 				await renderFiles(true);
 			} catch (error) {
 				toast(errorMessage(error));
@@ -1141,6 +1164,18 @@ function bookmarkPathMarkup(path: string[]): string {
 	return `<nav class="bookmark-path" aria-label="${locale === 'zh' ? '当前收藏路径' : 'Current collection path'}">${crumbs.join('')}</nav>`;
 }
 
+function bookmarkFolderOptions(root: BookmarkFolder): BookmarkFolder[] {
+	const result: BookmarkFolder[] = [root];
+	const append = (folder: BookmarkFolder) => {
+		for (const child of folder.folders) {
+			result.push(child);
+			append(child);
+		}
+	};
+	append(root);
+	return result;
+}
+
 function noteCacheKey(archived = notesArchived): string {
 	return `r2_notes_v2_${archived ? 'archived' : 'active'}`;
 }
@@ -1426,6 +1461,12 @@ function paintBookmarkView(): void {
 		bookmarkFolderPath = folder.path;
 	}
 	const cards = folder.links;
+	const folderOptions = bookmarkFolderOptions(root)
+		.map(
+			(item) =>
+				`<option value="${html(item.key)}" ${item.path.join('\u001f') === bookmarkFolderPath.join('\u001f') ? 'selected' : ''}>${html(item.path.length ? item.path.join(' / ') : item.name)}</option>`,
+		)
+		.join('');
 	const folderButtons = folder.folders
 		.map(
 			(item) =>
@@ -1433,7 +1474,7 @@ function paintBookmarkView(): void {
 		)
 		.join('');
 	content.innerHTML = `<div class="notes-layout bookmark-layout">
-		<div class="notes-inner-toolbar">${notesTabsMarkup()}<span class="toolbar-spacer"></span><span class="note-count">${cards.length}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}" aria-label="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}"><i data-lucide="refresh-cw"></i></button></div>
+		<div class="notes-inner-toolbar">${notesTabsMarkup()}<div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择收藏目录' : 'Choose collection folder'}">${folderOptions}</select></div><span class="toolbar-spacer"></span><span class="note-count">${cards.length}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}" aria-label="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}"><i data-lucide="refresh-cw"></i></button></div>
 		<aside class="bookmark-folders"><button class="bookmark-folder ${folder === root ? 'active' : ''}" data-bookmark-folder=""><i data-lucide="folder-open"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderButtons || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</aside>
 		<div class="bookmarks-main">${bookmarkFolderPath.length ? bookmarkPathMarkup(bookmarkFolderPath) : ''}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card, true)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div></div>
 	</div>`;
@@ -1456,6 +1497,11 @@ function paintBookmarkView(): void {
 			paintBookmarkView();
 		}),
 	);
+	content.querySelector<HTMLSelectElement>('.bookmark-folder-select')?.addEventListener('change', (event) => {
+		const key = (event.target as HTMLSelectElement).value;
+		bookmarkFolderPath = key ? key.split('\u001f') : [];
+		paintBookmarkView();
+	});
 	content.querySelector('#notes-refresh')?.addEventListener('click', async () => {
 		await pullBookmarks(true);
 		if (bookmarkHub) paintBookmarkView();
@@ -1719,17 +1765,25 @@ function renderSettings(): void {
 		'settings',
 		t('settings'),
 		`<div class="settings">
-		<section class="settings-section"><h2>Connection</h2>
-			<div class="field"><label>WebDAV URL</label><div class="input-row"><input class="input" readonly value="${html(davOrigin)}/"><button class="button icon-button" data-copy="${html(davOrigin)}/" title="Copy WebDAV URL" aria-label="Copy WebDAV URL"><i data-lucide="copy"></i></button></div></div>
-			<div class="field"><label>CalDAV URL</label><div class="input-row"><input class="input" readonly value="${html(davOrigin)}/caldav/"><button class="button icon-button" data-copy="${html(davOrigin)}/caldav/" title="Copy CalDAV URL" aria-label="Copy CalDAV URL"><i data-lucide="copy"></i></button></div></div>
+		<section class="settings-section"><h2 class="settings-section-heading"><i data-lucide="cloud"></i><span>${t('settingsConnection')}</span></h2>
+			<div class="field"><label>${t('webdavUrl')}</label><div class="input-row"><input class="input" readonly value="${html(davOrigin)}/"><button class="button icon-button" data-copy="${html(davOrigin)}/" title="${t('copy')} ${t('webdavUrl')}" aria-label="${t('copy')} ${t('webdavUrl')}"><i data-lucide="copy"></i></button></div></div>
+			<div class="field"><label>${t('caldavUrl')}</label><div class="input-row"><input class="input" readonly value="${html(davOrigin)}/caldav/"><button class="button icon-button" data-copy="${html(davOrigin)}/caldav/" title="${t('copy')} ${t('caldavUrl')}" aria-label="${t('copy')} ${t('caldavUrl')}"><i data-lucide="copy"></i></button></div></div>
 		</section>
-		<section class="settings-section"><h2>API</h2><div class="field"><label>Base URL</label><input class="input" readonly value="${html(API_BASE || location.origin)}"></div></section>
+		<section class="settings-section"><h2 class="settings-section-heading"><i data-lucide="languages"></i><span>${t('settingsLanguage')}</span></h2>
+			<div class="field"><label for="language-select">${t('settingsLanguage')}</label><select class="input" id="language-select"><option value="en" ${locale === 'en' ? 'selected' : ''}>${t('english')}</option><option value="zh" ${locale === 'zh' ? 'selected' : ''}>${t('chinese')}</option></select><p class="muted">${t('settingsLanguageHint')}</p></div>
+		</section>
 	</div>`,
 	);
+	document.querySelector<HTMLSelectElement>('#language-select')?.addEventListener('change', (event) => {
+		locale = (event.target as HTMLSelectElement).value as Locale;
+		localStorage.setItem('r2_locale', locale);
+		document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
+		void render();
+	});
 	document.querySelectorAll<HTMLElement>('[data-copy]').forEach((button) =>
 		button.addEventListener('click', async () => {
 			await navigator.clipboard.writeText(button.dataset.copy!);
-			toast('Copied');
+			toast(t('copied'));
 		}),
 	);
 	refreshIcons();
