@@ -452,9 +452,8 @@ function paintFiles(listing: FileListing): void {
 	content.innerHTML = `<div class="toolbar"><div class="breadcrumbs">${breadcrumbMarkup(listing.path)}</div><span class="toolbar-spacer"></span>
 			<button class="button icon-button" id="files-refresh" title="${locale === 'zh' ? '刷新文件' : 'Refresh files'}" aria-label="${locale === 'zh' ? '刷新文件' : 'Refresh files'}"><i data-lucide="refresh-cw"></i></button>
 			<button class="button" id="mkdir"><i data-lucide="folder-plus"></i><span>${locale === 'zh' ? '新建文件夹' : 'New folder'}</span></button>
-			<button class="button primary" id="upload"><i data-lucide="upload"></i><span>${locale === 'zh' ? '上传' : 'Upload'}</span></button>
 			<input type="file" id="file-input" hidden multiple>
-		</div><div id="upload-status"></div>
+		</div><div id="upload-status"></div><button class="button primary floating-primary-action" id="upload" title="${locale === 'zh' ? '上传' : 'Upload'}" aria-label="${locale === 'zh' ? '上传' : 'Upload'}"><i data-lucide="upload"></i></button>
 		${rows ? `<table class="file-table"><thead><tr><th class="file-name">${locale === 'zh' ? '名称' : 'Name'}</th><th>${locale === 'zh' ? '大小' : 'Size'}</th><th>${locale === 'zh' ? '修改时间' : 'Modified'}</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="empty-state"><div><i data-lucide="folder-open"></i><div>${locale === 'zh' ? '此文件夹为空' : 'This folder is empty'}</div></div></div>`}`;
 	refreshIcons();
 	content.querySelectorAll<HTMLElement>('[data-path]').forEach((item) =>
@@ -943,7 +942,7 @@ async function renderCalendar(forceSync = false): Promise<void> {
 		}
 		const calendar = calendarCache.calendars[0];
 		if (!content.querySelector('#calendar-view')) {
-			content.innerHTML = `<div class="calendar-toolbar"><button class="button icon-button" id="cal-prev"><i data-lucide="chevron-left"></i></button><button class="button" id="cal-today">${locale === 'zh' ? '今天' : 'Today'}</button><button class="button icon-button" id="cal-next"><i data-lucide="chevron-right"></i></button><h2 id="calendar-title"></h2><span class="sync-status" id="calendar-sync"><span class="status-dot"></span>${locale === 'zh' ? '已缓存' : 'Cached'}</span><span class="toolbar-spacer"></span><button class="button icon-button" id="cal-refresh"><i data-lucide="refresh-cw"></i></button><button class="button primary" id="new-event"><i data-lucide="plus"></i><span>${locale === 'zh' ? '新建日程' : 'New event'}</span></button></div><div class="calendar" id="calendar-view"><div class="weekday-row">${(locale === 'zh' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).map((day) => `<div class="weekday">${day}</div>`).join('')}</div><div class="month-grid" id="month-grid"></div></div>`;
+			content.innerHTML = `<div class="calendar-toolbar"><button class="button icon-button" id="cal-prev"><i data-lucide="chevron-left"></i></button><button class="button" id="cal-today">${locale === 'zh' ? '今天' : 'Today'}</button><button class="button icon-button" id="cal-next"><i data-lucide="chevron-right"></i></button><h2 id="calendar-title"></h2><span class="sync-status" id="calendar-sync"><span class="status-dot"></span>${locale === 'zh' ? '已缓存' : 'Cached'}</span><span class="toolbar-spacer"></span><button class="button icon-button" id="cal-refresh"><i data-lucide="refresh-cw"></i></button></div><div class="calendar" id="calendar-view"><div class="weekday-row">${(locale === 'zh' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).map((day) => `<div class="weekday">${day}</div>`).join('')}</div><div class="month-grid" id="month-grid"></div></div><button class="button primary floating-primary-action" id="new-event" title="${locale === 'zh' ? '新建日程' : 'New event'}" aria-label="${locale === 'zh' ? '新建日程' : 'New event'}"><i data-lucide="plus"></i></button>`;
 			content.querySelector('#cal-prev')?.addEventListener('click', () => {
 				calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
 				void renderCalendar();
@@ -1026,6 +1025,8 @@ let notesData: NotePage | null = null;
 let notesLoadingMore = false;
 let notesRequest = 0;
 let mobileNoteDialogOpen = false;
+let flushMobileNote: (() => Promise<void>) | null = null;
+let mobileNoteId: string | undefined;
 let bookmarkHub: BookmarkHub | null = null;
 let bookmarkChecked = localStorage.getItem('r2_bookmarks_checked') === '1';
 
@@ -1127,6 +1128,19 @@ function bookmarkCardMarkup(card: BookmarkCard, loadPreview: boolean): string {
 	</a>`;
 }
 
+function bookmarkPathMarkup(path: string[]): string {
+	const rootLabel = locale === 'zh' ? '全部链接' : 'All links';
+	const crumbs = [`<button class="bookmark-path-item" data-bookmark-path="">${rootLabel}</button>`];
+	path.forEach((name, index) => {
+		const target = path.slice(0, index + 1).join('\u001f');
+		crumbs.push('<span class="bookmark-path-separator" aria-hidden="true">/</span>');
+		crumbs.push(
+			`<button class="bookmark-path-item ${index === path.length - 1 ? 'current' : ''}" data-bookmark-path="${html(target)}">${html(name)}</button>`,
+		);
+	});
+	return `<nav class="bookmark-path" aria-label="${locale === 'zh' ? '当前收藏路径' : 'Current collection path'}">${crumbs.join('')}</nav>`;
+}
+
 function noteCacheKey(archived = notesArchived): string {
 	return `r2_notes_v2_${archived ? 'archived' : 'active'}`;
 }
@@ -1186,6 +1200,17 @@ function markdown(value: string): string {
 	return output.join('');
 }
 
+function noteBlocksMarkup(value: string): string {
+	return value
+		.replaceAll('\r', '')
+		.split('\n')
+		.map(
+			(line, index) =>
+				`<div class="note-block" data-note-block="${index}" tabindex="0">${markdown(line) || '<p class="muted">Click to edit...</p>'}</div>`,
+		)
+		.join('');
+}
+
 function noteEditorMarkup(selected: Note, mobile = false): string {
 	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'}">
 		<form data-note-form>
@@ -1194,82 +1219,148 @@ function noteEditorMarkup(selected: Note, mobile = false): string {
 				<button type="button" class="row-action" data-note-archive title="${selected.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
 				<button type="button" class="row-action danger" data-note-delete title="${t('delete')}"><i data-lucide="trash-2"></i></button>
 			</div></div>
-			<div class="note-compose" data-note-compose><textarea data-note-content aria-label="${t('markdown')}">${html(selected.content)}</textarea><article class="note-render" data-note-render tabindex="0" title="${locale === 'zh' ? '点击编辑' : 'Click to edit'}">${markdown(selected.content) || '<p class="muted">Click to edit...</p>'}</article></div>
+			<div class="note-compose" data-note-compose><article class="note-render" data-note-render aria-label="${t('markdown')}" title="${locale === 'zh' ? '点击编辑' : 'Click to edit'}">${noteBlocksMarkup(selected.content)}</article></div>
 		</form>
 	</section>`;
 }
 
 function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobile: boolean): void {
 	const compose = root.querySelector<HTMLDivElement>('[data-note-compose]')!;
-	const textarea = root.querySelector<HTMLTextAreaElement>('[data-note-content]')!;
 	const noteRender = root.querySelector<HTMLElement>('[data-note-render]')!;
-	const startEditing = () => {
-		compose.classList.add('editing');
-		textarea.focus();
+	let draftContent = selected.content.replaceAll('\r', '');
+	let activeBlock: { index: number; editor: HTMLTextAreaElement; original: string } | null = null;
+	const startBlockEditing = (index: number) => {
+		if (activeBlock) return;
+		const block = noteRender.querySelector<HTMLElement>(`[data-note-block="${index}"]`);
+		if (!block) return;
+		const lines = draftContent.split('\n');
+		const original = lines[index] ?? '';
+		const editor = document.createElement('textarea');
+		editor.className = 'note-block-editor';
+		editor.rows = 1;
+		editor.value = original;
+		editor.setAttribute('aria-label', locale === 'zh' ? '编辑段落' : 'Edit paragraph');
+		block.replaceChildren(editor);
+		activeBlock = { index, editor, original };
+		editor.focus();
+		editor.select();
 	};
-	noteRender.addEventListener('click', startEditing);
+	noteRender.addEventListener('click', (event) => {
+		const block = (event.target as HTMLElement).closest<HTMLElement>('[data-note-block]');
+		if (block) startBlockEditing(Number(block.dataset.noteBlock));
+	});
 	noteRender.addEventListener('keydown', (event) => {
+		if ((event.target as HTMLElement).matches('.note-block-editor')) return;
 		if (event.key === 'Enter' || event.key === ' ') {
 			event.preventDefault();
-			startEditing();
+			const block = (event.target as HTMLElement).closest<HTMLElement>('[data-note-block]');
+			if (block) startBlockEditing(Number(block.dataset.noteBlock));
 		}
 	});
-	textarea.addEventListener('blur', () => {
-		noteRender.innerHTML = markdown(textarea.value) || '<p class="muted">Click to edit...</p>';
-		compose.classList.remove('editing');
-	});
-	textarea.addEventListener('keydown', (event) => {
-		if (event.key === 'Escape') textarea.blur();
-	});
+	const finishBlockEditing = (save: boolean) => {
+		if (!activeBlock) return;
+		const { index, editor, original } = activeBlock;
+		activeBlock = null;
+		if (!save) {
+			noteRender.innerHTML = noteBlocksMarkup(draftContent);
+			return;
+		}
+		const lines = draftContent.split('\n');
+		const replacement = editor.value.replaceAll('\r', '');
+		if (replacement === original) {
+			noteRender.innerHTML = noteBlocksMarkup(draftContent);
+			return;
+		}
+		lines.splice(index, 1, ...replacement.split('\n'));
+		draftContent = lines.join('\n');
+		noteRender.innerHTML = noteBlocksMarkup(draftContent);
+		queueSave({ content: draftContent });
+	};
 	const title = root.querySelector<HTMLInputElement>('[data-note-title]')!;
 	const status = root.querySelector<HTMLElement>('[data-note-save-status]');
-	const AUTOSAVE_DELAY = 600;
-	const AUTOSAVE_MIN_INTERVAL = 1_200;
-	let saveTimer = 0;
+	const AUTOSAVE_IDLE_DELAY = 2_500;
+	const AUTOSAVE_EDITING_INTERVAL = 8_000;
+	let idleSaveTimer = 0;
+	let slowSaveTimer = 0;
 	let lastSavedAt = 0;
-	let saving = false;
 	let pending: Partial<Pick<Note, 'title' | 'content'>> | null = null;
+	let activeSave: Promise<boolean> | null = null;
 	const paintSaveStatus = (value: string) => {
 		if (status) status.textContent = value;
 	};
-	const savePending = async (): Promise<void> => {
-		window.clearTimeout(saveTimer);
-		if (saving || !pending) return;
+	const savePending = (): Promise<boolean> => {
+		window.clearTimeout(idleSaveTimer);
+		window.clearTimeout(slowSaveTimer);
+		if (activeSave) return activeSave;
+		if (!pending) return Promise.resolve(true);
 		const changes = pending;
 		pending = null;
-		saving = true;
 		paintSaveStatus(locale === 'zh' ? '同步中…' : 'Syncing…');
-		try {
-			const updated = await api.updateNote(selected.id, changes);
-			Object.assign(selected, updated);
-			const index = data.items.findIndex((note) => note.id === updated.id);
-			if (index >= 0) data.items[index] = updated;
-			cacheNotes(data);
-			lastSavedAt = Date.now();
-			paintSaveStatus(locale === 'zh' ? '已同步' : 'Synced');
-			const time = root.querySelector<HTMLTimeElement>('.note-editor-head > time');
-			if (time) time.textContent = new Date(updated.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en');
-		} catch (error) {
-			pending = { ...changes, ...(pending ?? {}) };
-			paintSaveStatus(locale === 'zh' ? '同步失败' : 'Sync failed');
-			toast(errorMessage(error));
-		} finally {
-			saving = false;
-			if (pending) {
-				const wait = Math.max(AUTOSAVE_DELAY, AUTOSAVE_MIN_INTERVAL - (Date.now() - lastSavedAt));
-				saveTimer = window.setTimeout(() => void savePending(), wait);
+		activeSave = (async () => {
+			try {
+				const updated = await api.updateNote(selected.id, changes);
+				Object.assign(selected, updated);
+				const index = data.items.findIndex((note) => note.id === updated.id);
+				if (index >= 0) data.items[index] = updated;
+				cacheNotes(data);
+				lastSavedAt = Date.now();
+				paintSaveStatus(locale === 'zh' ? '已同步' : 'Synced');
+				const time = root.querySelector<HTMLTimeElement>('.note-editor-head > time');
+				if (time) time.textContent = new Date(updated.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en');
+				return true;
+			} catch (error) {
+				pending = { ...changes, ...(pending ?? {}) };
+				paintSaveStatus(locale === 'zh' ? '同步失败' : 'Sync failed');
+				toast(errorMessage(error));
+				return false;
+			} finally {
+				activeSave = null;
+				if (pending) scheduleAutosave();
 			}
+		})();
+		return activeSave;
+	};
+	const scheduleAutosave = () => {
+		window.clearTimeout(idleSaveTimer);
+		if (!pending) return;
+		idleSaveTimer = window.setTimeout(() => void savePending(), AUTOSAVE_IDLE_DELAY);
+		if (!slowSaveTimer) {
+			slowSaveTimer = window.setTimeout(() => {
+				slowSaveTimer = 0;
+				void savePending();
+			}, AUTOSAVE_EDITING_INTERVAL);
+		}
+	};
+	const flushPending = async (): Promise<void> => {
+		if (activeBlock) finishBlockEditing(true);
+		window.clearTimeout(idleSaveTimer);
+		window.clearTimeout(slowSaveTimer);
+		while (activeSave || pending) {
+			const saved = await (activeSave ?? savePending());
+			window.clearTimeout(idleSaveTimer);
+			window.clearTimeout(slowSaveTimer);
+			if (!saved) break;
 		}
 	};
 	const queueSave = (changes: Partial<Pick<Note, 'title' | 'content'>>) => {
 		pending = { ...pending, ...changes };
 		paintSaveStatus(locale === 'zh' ? '等待同步' : 'Pending');
-		window.clearTimeout(saveTimer);
-		const wait = Math.max(AUTOSAVE_DELAY, AUTOSAVE_MIN_INTERVAL - (Date.now() - lastSavedAt));
-		saveTimer = window.setTimeout(() => void savePending(), wait);
+		scheduleAutosave();
 	};
 	title.addEventListener('input', () => queueSave({ title: title.value }));
-	textarea.addEventListener('input', () => queueSave({ content: textarea.value }));
+	noteRender.addEventListener('focusout', (event) => {
+		if ((event.target as HTMLElement).matches('.note-block-editor')) finishBlockEditing(true);
+	});
+	noteRender.addEventListener('keydown', (event) => {
+		if (!(event.target as HTMLElement).matches('.note-block-editor')) return;
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			finishBlockEditing(false);
+		} else if (event.key === 'Enter') {
+			event.preventDefault();
+			finishBlockEditing(true);
+		}
+	});
 	const update = async (changes: Partial<Pick<Note, 'title' | 'content' | 'pinned' | 'archived'>>) => {
 		try {
 			const updated = await api.updateNote(selected.id, changes);
@@ -1306,14 +1397,21 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		}
 	});
 	root.querySelector('[data-note-close]')?.addEventListener('click', () => {
-		void savePending();
 		if (mobileNoteDialogOpen) history.back();
-		else root.closest('dialog')?.close();
+		else
+			void flushPending().then(() => {
+				root.closest('dialog')?.close();
+				paintNotes(data, selected.id);
+			});
 	});
+	if (mobile) {
+		flushMobileNote = flushPending;
+		mobileNoteId = selected.id;
+	}
 }
 
 function notesTabsMarkup(): string {
-	return `<div class="segment-control" role="tablist"><button class="${notesView === 'active' ? 'active' : ''}" data-note-view="active">${t('active')}</button>${bookmarkHub ? `<button class="${notesView === 'bookmarks' ? 'active' : ''}" data-note-view="bookmarks">${t('bookmarks')}</button>` : ''}<button class="${notesView === 'archived' ? 'active' : ''}" data-note-view="archived">${t('archived')}</button></div>`;
+	return `<div class="segment-control" role="tablist"><button class="${notesView === 'active' ? 'active' : ''}" data-note-view="active">${t('active')}</button>${bookmarkHub ? `<button class="${notesView === 'bookmarks' ? 'active' : ''}" data-note-view="bookmarks">${t('bookmarks')}</button>` : ''}</div><button class="button notes-archived-button ${notesView === 'archived' ? 'active' : ''}" data-note-archived><i data-lucide="archive"></i><span>${t('archived')}</span></button>`;
 }
 
 function paintBookmarkView(): void {
@@ -1333,7 +1431,7 @@ function paintBookmarkView(): void {
 	content.innerHTML = `<div class="notes-layout bookmark-layout">
 		<div class="notes-inner-toolbar">${notesTabsMarkup()}<span class="toolbar-spacer"></span><span class="bookmark-meta">${cards.length}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}" aria-label="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}"><i data-lucide="refresh-cw"></i></button></div>
 		<aside class="bookmark-folders"><button class="bookmark-folder ${folder === root ? 'active' : ''}" data-bookmark-folder=""><i data-lucide="folder-open"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderButtons || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</aside>
-		<div class="bookmarks-main">${bookmarkFolderPath.length ? `<button class="bookmark-back" id="bookmark-back"><i data-lucide="chevron-left"></i><span>${locale === 'zh' ? '返回文件夹' : 'Back to folders'}</span></button>` : ''}<div class="bookmarks-grid">${cards.length ? cards.map((card) => bookmarkCardMarkup(card, true)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div></div>
+		<div class="bookmarks-main">${bookmarkFolderPath.length ? bookmarkPathMarkup(bookmarkFolderPath) : ''}<div class="bookmarks-grid">${cards.length ? cards.map((card) => bookmarkCardMarkup(card, true)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div></div>
 	</div>`;
 	refreshIcons();
 	bindBookmarkPreviews(content);
@@ -1345,10 +1443,13 @@ function paintBookmarkView(): void {
 			paintBookmarkView();
 		}),
 	);
-	content.querySelector('#bookmark-back')?.addEventListener('click', () => {
-		bookmarkFolderPath = bookmarkFolderPath.slice(0, -1);
-		paintBookmarkView();
-	});
+	content.querySelectorAll<HTMLElement>('[data-bookmark-path]').forEach((button) =>
+		button.addEventListener('click', () => {
+			const key = button.dataset.bookmarkPath ?? '';
+			bookmarkFolderPath = key ? key.split('\u001f') : [];
+			paintBookmarkView();
+		}),
+	);
 	content.querySelector('#notes-refresh')?.addEventListener('click', async () => {
 		await pullBookmarks(true);
 		if (bookmarkHub) paintBookmarkView();
@@ -1376,6 +1477,15 @@ function bindNotesNavigation(content: HTMLElement): void {
 			}
 		}),
 	);
+	content.querySelectorAll<HTMLElement>('[data-note-archived]').forEach((node) =>
+		node.addEventListener('click', () => {
+			notesView = notesView === 'archived' ? 'active' : 'archived';
+			notesArchived = notesView === 'archived';
+			notesData = null;
+			paintNotes({ items: [], page: 1, pageSize: 20, total: 0, hasMore: false });
+			void renderNotes();
+		}),
+	);
 }
 
 function paintNotes(data: NotePage, selectedId?: string, openMobile = false): void {
@@ -1398,7 +1508,7 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 	content.innerHTML = `<div class="notes-layout">
 		<div class="notes-inner-toolbar">${notesTabsMarkup()}<span class="toolbar-spacer"></span><span class="note-count">${data.total}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}" aria-label="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}"><i data-lucide="refresh-cw"></i></button></div>
 		<aside class="notes-list"><div class="notes-list-cards">${cards || `<div class="notes-empty"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div>`}</div>
-			<button class="button primary floating-new-note" id="new-note" title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button>
+			<button class="button primary floating-primary-action" id="new-note" title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button>
 			<div class="notes-load-status" aria-live="polite">${notesLoadingMore ? '<i data-lucide="loader-circle"></i>' : ''}</div>
 		</aside>
 		${selected ? noteEditorMarkup(selected) : `<section class="note-editor note-editor-desktop"><div class="notes-empty large"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div></section>`}
@@ -1643,7 +1753,16 @@ async function render(): Promise<void> {
 window.addEventListener('popstate', () => {
 	if (mobileNoteDialogOpen) {
 		mobileNoteDialogOpen = false;
-		document.querySelector<HTMLDialogElement>('#note-dialog[open]')?.close();
+		const dialog = document.querySelector<HTMLDialogElement>('#note-dialog[open]');
+		const flush = flushMobileNote;
+		const selectedId = mobileNoteId;
+		flushMobileNote = null;
+		mobileNoteId = undefined;
+		void (async () => {
+			await flush?.();
+			dialog?.close();
+			if (pageFromPath() === 'notes' && notesData) paintNotes(notesData, selectedId);
+		})();
 		return;
 	}
 	void render();

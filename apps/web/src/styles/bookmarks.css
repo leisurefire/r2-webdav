@@ -14,15 +14,21 @@
 	width: 100%;
 	min-height: 38px;
 	display: grid;
-	grid-template-columns: 18px minmax(0, 1fr) auto;
+	grid-template-columns: 15px minmax(0, 1fr) auto;
 	align-items: center;
-	gap: 8px;
+	gap: 7px;
 	padding: 0 10px;
 	border: 0;
 	border-radius: 6px;
 	background: transparent;
 	color: var(--muted);
 	text-align: left;
+	font-size: 13px;
+}
+
+.bookmark-folder svg {
+	width: 15px;
+	height: 15px;
 }
 
 .bookmark-folder:hover,
@@ -60,24 +66,43 @@
 	flex-direction: column;
 }
 
-.bookmark-back {
+.bookmark-path {
 	align-self: flex-start;
 	min-height: 32px;
 	display: inline-flex;
 	align-items: center;
-	gap: 5px;
+	gap: 3px;
 	margin: 4px 0 0 4px;
-	padding: 0 8px;
-	border: 0;
-	border-radius: 6px;
-	background: transparent;
 	color: var(--muted);
 	font-size: 12px;
 }
 
-.bookmark-back:hover {
+.bookmark-path-item {
+	min-width: 0;
+	max-width: 220px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	padding: 5px 6px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: inherit;
+	font-size: inherit;
+}
+
+.bookmark-path-item:hover,
+.bookmark-path-item.current {
 	background: var(--hover-bg);
 	color: var(--ink);
+}
+
+.bookmark-path-item.current {
+	font-weight: 600;
+}
+
+.bookmark-path-separator {
+	color: var(--quiet);
 }
 
 .bookmarks-grid {
@@ -233,9 +258,14 @@
 	.bookmark-folder {
 		width: auto;
 		min-width: max-content;
-		grid-template-columns: 16px auto auto;
+		grid-template-columns: 15px auto auto;
 		min-height: 34px;
 		padding-inline: 8px;
+	}
+
+	.bookmark-folder svg {
+		width: 15px;
+		height: 15px;
 	}
 
 	.bookmarks-main {
@@ -250,16 +280,11 @@
 	}
 
 	.bookmark-card {
-		grid-template-columns: 56px minmax(0, 1fr);
+		grid-template-columns: minmax(0, 1fr);
 		height: 78px;
 	}
 
 	.bookmark-card-cover {
-		min-height: 76px;
-		font-size: 28px;
-	}
-
-	.bookmark-card-cover img {
 		display: none;
 	}
 }
