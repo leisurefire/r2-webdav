@@ -453,7 +453,7 @@ function paintFiles(listing: FileListing): void {
 			<button class="button icon-button" id="files-refresh" title="${locale === 'zh' ? '刷新文件' : 'Refresh files'}" aria-label="${locale === 'zh' ? '刷新文件' : 'Refresh files'}"><i data-lucide="refresh-cw"></i></button>
 			<button class="button" id="mkdir"><i data-lucide="folder-plus"></i><span>${locale === 'zh' ? '新建文件夹' : 'New folder'}</span></button>
 			<input type="file" id="file-input" hidden multiple>
-		</div><div id="upload-status"></div><button class="button primary floating-primary-action" id="upload" title="${locale === 'zh' ? '上传' : 'Upload'}" aria-label="${locale === 'zh' ? '上传' : 'Upload'}"><i data-lucide="upload"></i></button>
+		</div><div id="upload-status"></div><button class="button primary floating-primary-action" id="upload" title="${locale === 'zh' ? '上传' : 'Upload'}" aria-label="${locale === 'zh' ? '上传' : 'Upload'}"><i data-lucide="upload"></i><span>${locale === 'zh' ? '上传' : 'Upload'}</span></button>
 		${rows ? `<table class="file-table"><thead><tr><th class="file-name">${locale === 'zh' ? '名称' : 'Name'}</th><th>${locale === 'zh' ? '大小' : 'Size'}</th><th>${locale === 'zh' ? '修改时间' : 'Modified'}</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="empty-state"><div><i data-lucide="folder-open"></i><div>${locale === 'zh' ? '此文件夹为空' : 'This folder is empty'}</div></div></div>`}`;
 	refreshIcons();
 	content.querySelectorAll<HTMLElement>('[data-path]').forEach((item) =>
@@ -942,7 +942,7 @@ async function renderCalendar(forceSync = false): Promise<void> {
 		}
 		const calendar = calendarCache.calendars[0];
 		if (!content.querySelector('#calendar-view')) {
-			content.innerHTML = `<div class="calendar-toolbar"><button class="button icon-button" id="cal-prev"><i data-lucide="chevron-left"></i></button><button class="button" id="cal-today">${locale === 'zh' ? '今天' : 'Today'}</button><button class="button icon-button" id="cal-next"><i data-lucide="chevron-right"></i></button><h2 id="calendar-title"></h2><span class="sync-status" id="calendar-sync"><span class="status-dot"></span>${locale === 'zh' ? '已缓存' : 'Cached'}</span><span class="toolbar-spacer"></span><button class="button icon-button" id="cal-refresh"><i data-lucide="refresh-cw"></i></button></div><div class="calendar" id="calendar-view"><div class="weekday-row">${(locale === 'zh' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).map((day) => `<div class="weekday">${day}</div>`).join('')}</div><div class="month-grid" id="month-grid"></div></div><button class="button primary floating-primary-action" id="new-event" title="${locale === 'zh' ? '新建日程' : 'New event'}" aria-label="${locale === 'zh' ? '新建日程' : 'New event'}"><i data-lucide="plus"></i></button>`;
+			content.innerHTML = `<div class="calendar-toolbar"><button class="button icon-button" id="cal-prev"><i data-lucide="chevron-left"></i></button><button class="button" id="cal-today">${locale === 'zh' ? '今天' : 'Today'}</button><button class="button icon-button" id="cal-next"><i data-lucide="chevron-right"></i></button><h2 id="calendar-title"></h2><span class="sync-status" id="calendar-sync"><span class="status-dot"></span>${locale === 'zh' ? '已缓存' : 'Cached'}</span><span class="toolbar-spacer"></span><button class="button icon-button" id="cal-refresh"><i data-lucide="refresh-cw"></i></button></div><div class="calendar" id="calendar-view"><div class="weekday-row">${(locale === 'zh' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).map((day) => `<div class="weekday">${day}</div>`).join('')}</div><div class="month-grid" id="month-grid"></div></div><button class="button primary floating-primary-action" id="new-event" title="${locale === 'zh' ? '新建日程' : 'New event'}" aria-label="${locale === 'zh' ? '新建日程' : 'New event'}"><i data-lucide="plus"></i><span>${locale === 'zh' ? '新建日程' : 'New event'}</span></button>`;
 			content.querySelector('#cal-prev')?.addEventListener('click', () => {
 				calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
 				void renderCalendar();
@@ -1411,7 +1411,7 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 }
 
 function notesTabsMarkup(): string {
-	return `<div class="segment-control" role="tablist"><button class="${notesView === 'active' ? 'active' : ''}" data-note-view="active">${t('active')}</button>${bookmarkHub ? `<button class="${notesView === 'bookmarks' ? 'active' : ''}" data-note-view="bookmarks">${t('bookmarks')}</button>` : ''}</div><button class="button notes-archived-button ${notesView === 'archived' ? 'active' : ''}" data-note-archived><i data-lucide="archive"></i><span>${t('archived')}</span></button>`;
+	return `<div class="segment-control" role="tablist"><button class="${notesView === 'active' ? 'active' : ''}" data-note-view="active">${t('active')}</button>${bookmarkHub ? `<button class="${notesView === 'bookmarks' ? 'active' : ''}" data-note-view="bookmarks">${t('bookmarks')}</button>` : ''}</div>${notesView === 'bookmarks' ? '' : `<button class="button notes-archived-button ${notesView === 'archived' ? 'active' : ''}" data-note-archived><i data-lucide="archive"></i><span>${t('archived')}</span></button>`}`;
 }
 
 function paintBookmarkView(): void {
@@ -1433,9 +1433,9 @@ function paintBookmarkView(): void {
 		)
 		.join('');
 	content.innerHTML = `<div class="notes-layout bookmark-layout">
-		<div class="notes-inner-toolbar">${notesTabsMarkup()}<span class="toolbar-spacer"></span><span class="bookmark-meta">${cards.length}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}" aria-label="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}"><i data-lucide="refresh-cw"></i></button></div>
+		<div class="notes-inner-toolbar">${notesTabsMarkup()}<span class="toolbar-spacer"></span><span class="note-count">${cards.length}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}" aria-label="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}"><i data-lucide="refresh-cw"></i></button></div>
 		<aside class="bookmark-folders"><button class="bookmark-folder ${folder === root ? 'active' : ''}" data-bookmark-folder=""><i data-lucide="folder-open"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderButtons || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</aside>
-		<div class="bookmarks-main">${bookmarkFolderPath.length ? bookmarkPathMarkup(bookmarkFolderPath) : ''}<div class="bookmarks-grid">${cards.length ? cards.map((card) => bookmarkCardMarkup(card, true)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div></div>
+		<div class="bookmarks-main">${bookmarkFolderPath.length ? bookmarkPathMarkup(bookmarkFolderPath) : ''}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card, true)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div></div>
 	</div>`;
 	refreshIcons();
 	bindBookmarkPreviews(content);
@@ -1506,21 +1506,22 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 		.map(
 			(
 				note,
-			) => `<article class="note-card ${note.id === selected?.id ? 'active' : ''}" data-note="${note.id}" role="button" tabindex="0">
+			) => `<article class="note-card ${note.id === selected?.id ? 'active' : ''}"><button class="note-card-open" data-note="${note.id}">
 				<div class="note-card-title">${note.pinned ? '<i data-lucide="pin"></i>' : ''}<strong>${html(note.title)}</strong></div>
+				<p>${html(note.content.replace(/[#*_`>\[\]]/g, '').slice(0, 110) || '—')}</p>
+				<time>${new Date(note.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>
+			</button>
 				<div class="note-card-actions">
 					<button class="row-action" data-note-card-pin="${note.id}" title="${note.pinned ? t('unpin') : t('pin')}" aria-label="${note.pinned ? t('unpin') : t('pin')}"><i data-lucide="${note.pinned ? 'pin-off' : 'pin'}"></i></button>
 					<button class="row-action" data-note-card-archive="${note.id}" title="${note.archived ? t('restore') : t('archive')}" aria-label="${note.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
 				</div>
-				<p>${html(note.content.replace(/[#*_`>\[\]]/g, '').slice(0, 110) || '—')}</p>
-				<time>${new Date(note.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>
 			</article>`,
 		)
 		.join('');
 	content.innerHTML = `<div class="notes-layout">
 		<div class="notes-inner-toolbar">${notesTabsMarkup()}<span class="toolbar-spacer"></span><span class="note-count">${data.total}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}" aria-label="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}"><i data-lucide="refresh-cw"></i></button></div>
 		<aside class="notes-list"><div class="notes-list-cards">${cards || `<div class="notes-empty"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div>`}</div>
-			<button class="button primary floating-primary-action" id="new-note" title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button>
+			<button class="button primary floating-primary-action" id="new-note" title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i><span>${t('newNote')}</span></button>
 			<div class="notes-load-status" aria-live="polite">${notesLoadingMore ? '<i data-lucide="loader-circle"></i>' : ''}</div>
 		</aside>
 		${selected ? noteEditorMarkup(selected) : `<section class="note-editor note-editor-desktop"><div class="notes-empty large"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div></section>`}
@@ -1529,15 +1530,7 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 	refreshIcons();
 	content.querySelectorAll<HTMLElement>('[data-note]').forEach((node) => {
 		const openNote = () => paintNotes(data, node.dataset.note, true);
-		node.addEventListener('click', (event) => {
-			if (!(event.target as HTMLElement).closest('.note-card-actions')) openNote();
-		});
-		node.addEventListener('keydown', (event) => {
-			if ((event.key === 'Enter' || event.key === ' ') && event.target === node) {
-				event.preventDefault();
-				openNote();
-			}
-		});
+		node.addEventListener('click', openNote);
 	});
 	const updateFromCard = async (noteId: string, changes: Partial<Pick<Note, 'pinned' | 'archived'>>): Promise<void> => {
 		try {

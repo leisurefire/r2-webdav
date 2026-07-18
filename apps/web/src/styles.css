@@ -1187,12 +1187,20 @@ dialog::backdrop {
 .note-card {
 	position: relative;
 	width: 100%;
-	padding: 15px;
+	padding: 0;
 	border: 0;
 	border-radius: 12px;
 	background: transparent;
 	color: var(--ink);
-	cursor: pointer;
+	text-align: left;
+}
+
+.note-card-open {
+	width: 100%;
+	padding: 15px;
+	border: 0;
+	background: transparent;
+	color: inherit;
 	text-align: left;
 }
 
@@ -1210,6 +1218,7 @@ dialog::backdrop {
 	align-items: center;
 	gap: 7px;
 	min-width: 0;
+	padding-right: 56px;
 }
 
 .note-card-title svg {
@@ -2137,10 +2146,10 @@ dialog::backdrop {
 	right: 24px;
 	bottom: 24px;
 	z-index: 25;
-	width: 46px;
-	height: 46px;
-	padding: 0;
-	border-radius: 50%;
+	min-width: 120px;
+	height: 44px;
+	padding: 0 16px;
+	border-radius: var(--pill-radius);
 	box-shadow: 0 8px 18px rgb(0 0 0 / 0.15);
 }
 
@@ -2750,6 +2759,15 @@ body:has(.app-shell) {
 	.floating-primary-action {
 		right: 16px;
 		bottom: 80px;
+		min-width: 46px;
+		width: 46px;
+		height: 46px;
+		padding: 0;
+		border-radius: 50%;
+	}
+
+	.floating-primary-action span {
+		display: none;
 	}
 
 	.workspace {
