@@ -1962,3 +1962,549 @@ dialog::backdrop {
 		transition-duration: 0.01ms !important;
 	}
 }
+
+/* Unified application frame */
+:root {
+	--sidebar-bg: #f7f7f6;
+	--panel-bg: #ffffff;
+	--hover-bg: #ececeb;
+}
+
+html,
+body,
+#app {
+	height: 100%;
+}
+
+body:has(.app-shell) {
+	overflow: hidden;
+}
+
+.app-shell {
+	height: 100dvh;
+	min-height: 0;
+	grid-template-columns: 232px minmax(0, 1fr);
+	grid-template-rows: minmax(0, 1fr);
+	transition: grid-template-columns 180ms ease;
+}
+
+.app-shell.sidebar-collapsed {
+	grid-template-columns: 68px minmax(0, 1fr);
+}
+
+.global-header,
+.topbar {
+	display: none;
+}
+
+.sidebar {
+	position: relative;
+	top: 0;
+	height: 100dvh;
+	min-height: 0;
+	padding: 14px 12px 12px;
+	border-right: 1px solid var(--line);
+	background: var(--sidebar-bg);
+	overflow: visible;
+}
+
+.sidebar-head {
+	height: 40px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 0 4px 0 8px;
+}
+
+.sidebar-head .brand {
+	min-width: 0;
+	font-size: 17px;
+	font-weight: 700;
+}
+
+.brand-compact {
+	display: none;
+}
+
+.sidebar-toggle {
+	width: 30px;
+	height: 30px;
+	flex: none;
+	display: grid;
+	place-items: center;
+	padding: 0;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--muted);
+}
+
+.sidebar-toggle:hover {
+	background: var(--hover-bg);
+	color: var(--ink);
+}
+
+.sidebar-toggle svg {
+	width: 18px;
+	height: 18px;
+}
+
+.sidebar .nav {
+	margin-top: 20px;
+	gap: 4px;
+}
+
+.nav-button {
+	min-height: 40px;
+	border-radius: 6px;
+	padding: 0 10px;
+}
+
+.nav-button:hover,
+.nav-button.active {
+	background: var(--hover-bg);
+}
+
+.sidebar-footer {
+	padding: 0;
+	border: 0;
+}
+
+.user-menu-button {
+	min-height: 44px;
+	grid-template-columns: 30px minmax(0, 1fr) 15px;
+	gap: 8px;
+	padding: 6px 7px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--panel-bg);
+}
+
+.user-menu-button:hover,
+.account-menu-wrap.open .user-menu-button {
+	background: var(--hover-bg);
+}
+
+.user-avatar {
+	width: 30px;
+	height: 30px;
+	border-radius: 6px;
+}
+
+.user-copy {
+	display: block;
+}
+
+.user-copy strong {
+	font-size: 12px;
+}
+
+.account-popover {
+	border-radius: 8px;
+}
+
+.sidebar-collapsed .sidebar {
+	padding-inline: 8px;
+}
+
+.sidebar-collapsed .sidebar-head {
+	gap: 2px;
+	padding-inline: 3px 0;
+}
+
+.sidebar-collapsed .brand-full,
+.sidebar-collapsed .nav-button span,
+.sidebar-collapsed .user-copy,
+.sidebar-collapsed .user-chevron {
+	display: none;
+}
+
+.sidebar-collapsed .brand-compact {
+	display: inline;
+}
+
+.sidebar-collapsed .nav-button {
+	justify-content: center;
+	padding: 0;
+}
+
+.sidebar-collapsed .user-menu-button {
+	display: grid;
+	grid-template-columns: 1fr;
+	place-items: center;
+	padding: 5px;
+}
+
+.sidebar-collapsed .account-popover {
+	left: calc(100% + 8px);
+	right: auto;
+	bottom: 0;
+	width: 210px;
+}
+
+.workspace {
+	height: 100dvh;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.content {
+	width: min(100%, 1640px);
+	height: 100%;
+	min-height: 0;
+	margin-inline: auto;
+	padding: 22px 28px;
+	overflow: auto;
+}
+
+.toolbar,
+.calendar-toolbar,
+.notes-toolbar {
+	min-height: 38px;
+	margin-bottom: 14px;
+	flex: none;
+}
+
+.button:disabled {
+	cursor: default;
+}
+
+.file-table td {
+	height: 50px;
+}
+
+.content:has(#calendar-view),
+.content:has(.notes-layout) {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.calendar {
+	min-height: 0;
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+}
+
+.month-grid {
+	min-height: 0;
+	flex: 1;
+	grid-template-rows: repeat(6, minmax(0, 1fr));
+}
+
+.day-cell {
+	min-height: 0;
+}
+
+.notes-layout {
+	min-height: 0;
+	flex: 1;
+	grid-template-columns: minmax(230px, 292px) minmax(0, 1fr);
+	border-radius: 8px;
+}
+
+.notes-list {
+	min-height: 0;
+	overflow-y: auto;
+}
+
+.note-card {
+	padding: 11px 12px;
+	border-radius: 6px;
+}
+
+.note-card p {
+	-webkit-line-clamp: 1;
+	min-height: 17px;
+	margin: 5px 0;
+}
+
+.note-editor,
+.note-editor form,
+.note-compose {
+	min-height: 0;
+}
+
+.note-editor-head {
+	padding: 12px 18px;
+}
+
+.note-editor-head > input {
+	font-size: 20px;
+	letter-spacing: 0;
+}
+
+.note-compose {
+	position: relative;
+	flex: 1;
+	overflow: hidden;
+	background: var(--panel-bg);
+}
+
+.note-compose textarea,
+.note-render {
+	width: 100%;
+	height: 100%;
+	margin: 0;
+	padding: 24px clamp(24px, 5vw, 72px);
+	border: 0;
+	outline: 0;
+	overflow: auto;
+}
+
+.note-compose textarea {
+	display: none;
+	resize: none;
+	background: var(--panel-bg);
+	color: var(--ink);
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 13px;
+	line-height: 1.75;
+	tab-size: 2;
+}
+
+.note-compose.editing textarea {
+	display: block;
+}
+
+.note-compose.editing .note-render {
+	display: none;
+}
+
+.note-render {
+	color: var(--ink);
+	cursor: text;
+	line-height: 1.7;
+}
+
+.note-render h2,
+.note-render h3,
+.note-render h4,
+.note-render h5 {
+	margin: 24px 0 9px;
+}
+
+.note-render p {
+	margin: 0 0 10px;
+}
+
+.note-render code {
+	padding: 2px 5px;
+	border-radius: 4px;
+	background: var(--surface);
+	font-size: 0.88em;
+}
+
+.note-render blockquote {
+	margin: 18px 0;
+	padding-left: 14px;
+	border-left: 3px solid var(--ink);
+	color: var(--muted);
+}
+
+.note-savebar {
+	padding: 9px 14px;
+}
+
+.device-list {
+	max-width: 1100px;
+	gap: 8px;
+}
+
+.device-card {
+	grid-template-columns: 40px minmax(0, 1fr) auto;
+	gap: 14px;
+	padding: 14px 16px;
+	border-radius: 8px;
+}
+
+.device-icon {
+	width: 40px;
+	height: 40px;
+	border-radius: 6px;
+}
+
+.settings-section {
+	padding-bottom: 24px;
+	margin-bottom: 28px;
+}
+
+@media (max-width: 760px) {
+	.app-shell,
+	.app-shell.sidebar-collapsed {
+		display: block;
+		height: 100dvh;
+		padding: 58px 0 64px;
+	}
+
+	.sidebar,
+	.sidebar-collapsed .sidebar {
+		position: fixed;
+		z-index: 20;
+		top: 0;
+		bottom: auto;
+		width: 100%;
+		height: 58px;
+		padding: 8px 12px;
+		border: 0;
+		border-bottom: 1px solid var(--line);
+		overflow: visible;
+	}
+
+	.sidebar-head,
+	.sidebar-collapsed .sidebar-head {
+		height: 40px;
+		padding: 0 2px 0 4px;
+	}
+
+	.sidebar-collapsed .brand-full {
+		display: inline;
+	}
+
+	.sidebar-collapsed .brand-compact {
+		display: none;
+	}
+
+	.sidebar .nav {
+		position: fixed;
+		z-index: 20;
+		left: 0;
+		bottom: 0;
+		width: calc(100% - 58px);
+		height: 64px;
+		margin: 0;
+		padding: 6px 8px;
+		border-top: 1px solid var(--line);
+		background: var(--sidebar-bg);
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		transition: transform 180ms ease;
+	}
+
+	.sidebar-footer {
+		position: fixed;
+		z-index: 21;
+		right: 0;
+		bottom: 0;
+		width: 58px;
+		height: 64px;
+		padding: 7px 8px;
+		border-top: 1px solid var(--line);
+		background: var(--sidebar-bg);
+		transition: transform 180ms ease;
+	}
+
+	.sidebar-collapsed .sidebar .nav,
+	.sidebar-collapsed .sidebar-footer {
+		transform: translateY(100%);
+	}
+
+	.nav-button,
+	.sidebar-collapsed .nav-button {
+		min-height: 50px;
+		flex-direction: column;
+		justify-content: center;
+		gap: 3px;
+		padding: 0;
+		font-size: 10px;
+	}
+
+	.sidebar-collapsed .nav-button span {
+		display: inline;
+	}
+
+	.user-menu-button,
+	.sidebar-collapsed .user-menu-button {
+		height: 50px;
+		min-height: 0;
+		grid-template-columns: 1fr;
+		place-items: center;
+		padding: 4px;
+	}
+
+	.user-copy,
+	.user-chevron {
+		display: none;
+	}
+
+	.account-popover,
+	.sidebar-collapsed .account-popover {
+		left: auto;
+		right: 0;
+		bottom: calc(100% + 8px);
+		width: 210px;
+	}
+
+	.workspace {
+		height: calc(100dvh - 122px);
+	}
+
+	.sidebar-collapsed + .workspace {
+		height: calc(100dvh - 58px);
+	}
+
+	.content {
+		padding: 12px 12px 14px;
+	}
+
+	.toolbar,
+	.calendar-toolbar,
+	.notes-toolbar {
+		margin-bottom: 10px;
+	}
+
+	.calendar-toolbar h2 {
+		width: auto;
+		margin: 0 4px 0 0;
+		order: 0;
+	}
+
+	.sync-status {
+		order: 0;
+		margin: 0;
+	}
+
+	.day-cell {
+		min-height: 0;
+	}
+
+	.notes-layout {
+		grid-template-columns: 1fr;
+		grid-template-rows: minmax(120px, 30%) minmax(0, 1fr);
+	}
+
+	.notes-list {
+		max-height: none;
+		border-right: 0;
+		border-bottom: 1px solid var(--line);
+	}
+
+	.note-compose textarea,
+	.note-render {
+		padding: 18px;
+	}
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--sidebar-bg: #1b1b1b;
+		--panel-bg: #171717;
+		--hover-bg: #292929;
+	}
+
+	.sidebar,
+	.user-menu-button,
+	.note-compose,
+	.note-compose textarea,
+	.sidebar .nav,
+	.sidebar-footer {
+		background: var(--sidebar-bg);
+	}
+
+	.note-compose,
+	.note-compose textarea {
+		background: var(--panel-bg);
+	}
+}
