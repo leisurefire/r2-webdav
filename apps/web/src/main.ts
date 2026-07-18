@@ -1,5 +1,6 @@
 import {
 	Archive,
+	Bookmark,
 	CalendarDays,
 	Check,
 	ChevronLeft,
@@ -37,6 +38,7 @@ import {
 	createIcons,
 } from 'lucide';
 import type {
+	BookmarkHub,
 	CalendarEvent,
 	CalendarSummary,
 	DeviceSession,
@@ -76,6 +78,7 @@ const messages = {
 		language: '中文',
 		newNote: 'New note',
 		active: 'Active',
+		bookmarks: 'Link collection',
 		archived: 'Archived',
 		noNotes: 'No notes here yet',
 		save: 'Save changes',
@@ -123,6 +126,7 @@ const messages = {
 		language: 'English',
 		newNote: '新建便签',
 		active: '当前便签',
+		bookmarks: '链接收藏',
 		archived: '已归档',
 		noNotes: '这里还没有便签',
 		save: '保存更改',
@@ -187,6 +191,7 @@ function refreshIcons(): void {
 	createIcons({
 		icons: {
 			Archive,
+			Bookmark,
 			CalendarDays,
 			Check,
 			ChevronLeft,
@@ -262,7 +267,7 @@ function shell(page: Page, _title: string, content = '<div class="empty-state"><
 			<nav class="nav" aria-label="Primary navigation">
 				<button class="nav-button ${page === 'files' ? 'active' : ''}" data-route="/files" title="${t('files')}"><i data-lucide="folder"></i><span>${t('files')}</span></button>
 				<button class="nav-button ${page === 'calendar' ? 'active' : ''}" data-route="/calendar" title="${t('calendar')}"><i data-lucide="calendar-days"></i><span>${t('calendar')}</span></button>
-				<button class="nav-button ${page === 'notes' ? 'active' : ''}" data-route="/notes" title="${t('notes')}"><i data-lucide="sticky-note"></i><span>${t('notes')}</span></button>
+				<button class="nav-button ${page === 'notes' ? 'active' : ''}" data-route="/notes" title="${bookmarkHub ? (locale === 'zh' ? '收藏空间' : 'Collection') : t('notes')}"><i data-lucide="sticky-note"></i><span>${bookmarkHub ? (locale === 'zh' ? '收藏空间' : 'Collection') : t('notes')}</span></button>
 			</nav>
 			<div class="sidebar-footer"><div class="account-menu-wrap">
 				<div class="account-popover" id="account-popover" hidden>
@@ -1010,10 +1015,89 @@ async function renderCalendar(forceSync = false): Promise<void> {
 	}
 }
 
+type NotesView = 'active' | 'bookmarks' | 'archived';
+let notesView: NotesView = 'active';
 let notesArchived = false;
 let notesData: NotePage | null = null;
 let notesLoadingMore = false;
 let notesRequest = 0;
+let bookmarkHub: BookmarkHub | null = null;
+let bookmarkChecked = localStorage.getItem('r2_bookmarks_checked') === '1';
+
+function readBookmarkCache(): BookmarkHub | null {
+	try {
+		return JSON.parse(localStorage.getItem('r2_bookmarks_cache') ?? 'null') as BookmarkHub | null;
+	} catch {
+		return null;
+	}
+}
+
+bookmarkHub = readBookmarkCache();
+
+function cacheBookmarks(value: BookmarkHub | null): void {
+	bookmarkHub = value;
+	bookmarkChecked = true;
+	localStorage.setItem('r2_bookmarks_checked', '1');
+	if (value) localStorage.setItem('r2_bookmarks_cache', JSON.stringify(value));
+	else localStorage.removeItem('r2_bookmarks_cache');
+	const nav = document.querySelector<HTMLElement>('[data-route="/notes"]');
+	const label = value ? (locale === 'zh' ? '收藏空间' : 'Collection') : t('notes');
+	if (nav) {
+		nav.title = label;
+		const text = nav.querySelector('span');
+		if (text) text.textContent = label;
+	}
+}
+
+async function pullBookmarks(force = false): Promise<void> {
+	if (!force && bookmarkChecked) return;
+	try {
+		cacheBookmarks(await api.bookmarks());
+	} catch (error) {
+		if (force) toast(errorMessage(error));
+	}
+}
+
+interface BookmarkCard {
+	title: string;
+	url: string;
+	domain: string;
+	path: string[];
+	dateModified: number;
+}
+
+function bookmarkCards(): BookmarkCard[] {
+	if (!bookmarkHub) return [];
+	const result: BookmarkCard[] = [];
+	const visit = (nodes: BookmarkHub['nodes'], path: string[]) => {
+		for (const node of nodes) {
+			if (typeof node.url === 'string' && /^https?:\/\//i.test(node.url)) {
+				try {
+					const parsed = new URL(node.url);
+					result.push({
+						title: node.title.trim() || parsed.hostname,
+						url: node.url,
+						domain: parsed.hostname,
+						path,
+						dateModified: Number.isFinite(node.dateModified) ? node.dateModified : 0,
+					});
+				} catch {
+					// Ignore malformed links while preserving the rest of the backup.
+				}
+			} else if (Array.isArray(node.children)) visit(node.children, [...path, node.title.trim()]);
+		}
+	};
+	visit(bookmarkHub.nodes, []);
+	return result;
+}
+
+function bookmarkCardMarkup(card: BookmarkCard): string {
+	const favicon = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(card.domain)}&sz=128`;
+	return `<a class="bookmark-card" href="${html(card.url)}" target="_blank" rel="noopener noreferrer">
+		<div class="bookmark-card-cover"><img src="${favicon}" alt="" loading="lazy" referrerpolicy="no-referrer"><span>${html(card.domain.slice(0, 1).toUpperCase())}</span></div>
+		<div class="bookmark-card-body"><h3>${html(card.title)}</h3><p>${html(card.domain)}</p><small>${html(card.path.filter(Boolean).join(' / '))}</small></div>
+	</a>`;
+}
 
 function noteCacheKey(archived = notesArchived): string {
 	return `r2_notes_v2_${archived ? 'archived' : 'active'}`;
@@ -1077,14 +1161,14 @@ function markdown(value: string): string {
 function noteEditorMarkup(selected: Note, mobile = false): string {
 	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'}">
 		<form data-note-form>
-			<div class="note-editor-head"><input data-note-title value="${html(selected.title)}" aria-label="Title"><div class="note-actions">
+			<div class="note-editor-head"><input data-note-title value="${html(selected.title)}" aria-label="Title"><time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
 				<button type="button" class="row-action" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
 				<button type="button" class="row-action" data-note-archive title="${selected.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
 				<button type="button" class="row-action danger" data-note-delete title="${t('delete')}"><i data-lucide="trash-2"></i></button>
 				${mobile ? `<button type="button" class="row-action" data-note-close title="${locale === 'zh' ? '关闭' : 'Close'}"><i data-lucide="x"></i></button>` : ''}
+				<button class="button primary note-save" title="${t('save')}"><i data-lucide="check"></i><span>${t('save')}</span></button>
 			</div></div>
 			<div class="note-compose" data-note-compose><textarea data-note-content aria-label="${t('markdown')}">${html(selected.content)}</textarea><article class="note-render" data-note-render tabindex="0" title="${locale === 'zh' ? '点击编辑' : 'Click to edit'}">${markdown(selected.content) || '<p class="muted">Click to edit...</p>'}</article></div>
-			<div class="note-savebar"><span>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</span><button class="button primary"><i data-lucide="check"></i>${t('save')}</button></div>
 		</form>
 	</section>`;
 }
@@ -1153,9 +1237,56 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 	root.querySelector('[data-note-close]')?.addEventListener('click', () => root.closest('dialog')?.close());
 }
 
+function notesTabsMarkup(): string {
+	return `<div class="segment-control" role="tablist"><button class="${notesView === 'active' ? 'active' : ''}" data-note-view="active">${t('active')}</button>${bookmarkHub ? `<button class="${notesView === 'bookmarks' ? 'active' : ''}" data-note-view="bookmarks">${t('bookmarks')}</button>` : ''}<button class="${notesView === 'archived' ? 'active' : ''}" data-note-view="archived">${t('archived')}</button></div>`;
+}
+
+function paintBookmarkView(): void {
+	const content = document.querySelector<HTMLDivElement>('#page-content');
+	if (!content) return;
+	const cards = bookmarkCards();
+	content.innerHTML = `<div class="notes-layout bookmark-layout">
+		<div class="notes-inner-toolbar">${notesTabsMarkup()}<span class="toolbar-spacer"></span><span class="bookmark-meta">${cards.length}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}" aria-label="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}"><i data-lucide="refresh-cw"></i></button></div>
+		<div class="bookmarks-grid">${cards.length ? cards.map(bookmarkCardMarkup).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div>
+	</div>`;
+	refreshIcons();
+	bindNotesNavigation(content);
+	content.querySelector('#notes-refresh')?.addEventListener('click', async () => {
+		await pullBookmarks(true);
+		if (bookmarkHub) paintBookmarkView();
+		else {
+			notesView = 'active';
+			notesArchived = false;
+			paintNotes({ items: [], page: 1, pageSize: 20, total: 0, hasMore: false });
+			await renderNotes();
+		}
+	});
+}
+
+function bindNotesNavigation(content: HTMLElement): void {
+	content.querySelectorAll<HTMLElement>('[data-note-view]').forEach((node) =>
+		node.addEventListener('click', () => {
+			notesView = node.dataset.noteView as NotesView;
+			notesArchived = notesView === 'archived';
+			notesData = null;
+			if (notesView === 'bookmarks') {
+				paintBookmarkView();
+				void pullBookmarks();
+			} else {
+				paintNotes({ items: [], page: 1, pageSize: 20, total: 0, hasMore: false });
+				void renderNotes();
+			}
+		}),
+	);
+}
+
 function paintNotes(data: NotePage, selectedId?: string, openMobile = false): void {
 	const content = document.querySelector<HTMLDivElement>('#page-content');
 	if (!content) return;
+	if (notesView === 'bookmarks') {
+		paintBookmarkView();
+		return;
+	}
 	const selected = data.items.find((note) => note.id === selectedId) ?? data.items[0];
 	const cards = data.items
 		.map(
@@ -1166,12 +1297,10 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 			</button>`,
 		)
 		.join('');
-	content.innerHTML = `<div class="notes-toolbar">
-		<div class="segment-control"><button class="${!notesArchived ? 'active' : ''}" data-note-view="active">${t('active')}</button><button class="${notesArchived ? 'active' : ''}" data-note-view="archived">${t('archived')}</button></div>
-		<span class="toolbar-spacer"></span><span class="note-count">${data.total}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}" aria-label="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}"><i data-lucide="refresh-cw"></i></button><button class="button primary" id="new-note"><i data-lucide="plus"></i><span>${t('newNote')}</span></button>
-	</div>
-	<div class="notes-layout">
-		<aside class="notes-list">${cards || `<div class="notes-empty"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div>`}
+	content.innerHTML = `<div class="notes-layout">
+		<div class="notes-inner-toolbar">${notesTabsMarkup()}<span class="toolbar-spacer"></span><span class="note-count">${data.total}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}" aria-label="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}"><i data-lucide="refresh-cw"></i></button></div>
+		<aside class="notes-list"><div class="notes-list-cards">${cards || `<div class="notes-empty"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div>`}</div>
+			<button class="button primary floating-new-note" id="new-note" title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button>
 			<div class="notes-load-status" aria-live="polite">${notesLoadingMore ? '<i data-lucide="loader-circle"></i>' : ''}</div>
 		</aside>
 		${selected ? noteEditorMarkup(selected) : `<section class="note-editor note-editor-desktop"><div class="notes-empty large"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div></section>`}
@@ -1181,13 +1310,7 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 	content
 		.querySelectorAll<HTMLElement>('[data-note]')
 		.forEach((node) => node.addEventListener('click', () => paintNotes(data, node.dataset.note, true)));
-	content.querySelectorAll<HTMLElement>('[data-note-view]').forEach((node) =>
-		node.addEventListener('click', () => {
-			notesArchived = node.dataset.noteView === 'archived';
-			notesData = null;
-			void renderNotes();
-		}),
-	);
+	bindNotesNavigation(content);
 	content.querySelector('#new-note')?.addEventListener('click', async () => {
 		try {
 			const note = await api.createNote(locale === 'zh' ? '无标题便签' : 'Untitled note', '');
@@ -1199,7 +1322,10 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 			toast(errorMessage(error));
 		}
 	});
-	content.querySelector('#notes-refresh')?.addEventListener('click', () => void renderNotes(selected?.id, true));
+	content.querySelector('#notes-refresh')?.addEventListener('click', async () => {
+		await pullBookmarks(true);
+		await renderNotes(selected?.id, true);
+	});
 	const list = content.querySelector<HTMLElement>('.notes-list')!;
 	list.addEventListener(
 		'scroll',
@@ -1252,7 +1378,19 @@ async function loadMoreNotes(selectedId?: string, scrollTop = 0): Promise<void> 
 }
 
 async function renderNotes(selectedId?: string, forceSync = false, openMobile = false): Promise<void> {
-	shell('notes', t('notes'));
+	if (!document.querySelector('.notes-layout'))
+		shell('notes', bookmarkHub ? (locale === 'zh' ? '收藏空间' : 'Collection') : t('notes'));
+	const hadBookmarks = Boolean(bookmarkHub);
+	await pullBookmarks(false);
+	if (!hadBookmarks && bookmarkHub) {
+		const label = locale === 'zh' ? '收藏空间' : 'Collection';
+		const nav = document.querySelector<HTMLElement>('[data-route="/notes"] span');
+		if (nav) nav.textContent = label;
+	}
+	if (notesView === 'bookmarks') {
+		paintBookmarkView();
+		return;
+	}
 	const cached = forceSync ? null : cachedNotes();
 	if (cached) {
 		notesData = cached;

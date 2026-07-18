@@ -87,3 +87,22 @@ export interface NotePage {
 	total: number;
 	hasMore: boolean;
 }
+
+export interface BookmarkNode {
+	id: string;
+	title: string;
+	dateModified: number;
+	url?: string;
+	children?: BookmarkNode[];
+}
+
+export interface BookmarkHub {
+	version: string;
+	uniqueId: string;
+	clientInfo?: {
+		lastSyncedBy?: string;
+		syncedAt?: number;
+	};
+	sha?: string;
+	nodes: BookmarkNode[];
+}

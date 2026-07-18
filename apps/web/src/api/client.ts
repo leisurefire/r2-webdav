@@ -1,5 +1,6 @@
 import type {
 	ApiResponse,
+	BookmarkHub,
 	CalendarEvent,
 	CalendarSummary,
 	DeviceSession,
@@ -165,6 +166,14 @@ export const api = {
 	},
 	notes(page = 1, archived = false): Promise<NotePage> {
 		return notesRequest(`?page=${page}&limit=20&archived=${archived ? '1' : '0'}`);
+	},
+	async bookmarks(): Promise<BookmarkHub | null> {
+		try {
+			return await request<BookmarkHub>('/bookmarks');
+		} catch (error) {
+			if (error instanceof ApiError && error.status === 404) return null;
+			throw error;
+		}
 	},
 	createNote(title: string, content = ''): Promise<Note> {
 		return notesRequest('', {

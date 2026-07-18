@@ -1,4 +1,4 @@
-import type { CalendarEvent, CalendarSummary, FileEntry } from '@r2-webdav/shared-types';
+import type { BookmarkHub, CalendarEvent, CalendarSummary, FileEntry } from '@r2-webdav/shared-types';
 import { Lunar } from 'lunar-typescript';
 import type { Env } from '../env';
 import {
@@ -122,6 +122,19 @@ async function getContent(request: Request, url: URL, env: Env): Promise<Respons
 		etag: object.httpEtag,
 		downloadUrl: `/api/v1/fs/content?path=${encodeURIComponent(path)}&download=1`,
 	});
+}
+
+async function getBookmarks(env: Env): Promise<Response> {
+	const object = await env.bucket.get(fileKey('bookmarkhub.json'));
+	if (object === null) return jsonError('NOT_FOUND', 'Bookmark backup not found', 404);
+	try {
+		const value = JSON.parse(await object.text()) as Partial<BookmarkHub>;
+		if (typeof value.version !== 'string' || !Array.isArray(value.nodes))
+			return jsonError('BAD_REQUEST', 'Invalid bookmark backup format', 400);
+		return jsonData(value);
+	} catch {
+		return jsonError('BAD_REQUEST', 'Bookmark backup is not valid JSON', 400);
+	}
 }
 
 async function listCalendars(env: Env): Promise<Response> {
@@ -350,6 +363,7 @@ export async function handleApi(request: Request, env: Env, session: SessionCont
 		return davMutation(request, env, 'DELETE', filePath);
 	}
 	if (path === '/fs/content' && request.method === 'GET') return getContent(request, url, env);
+	if (path === '/bookmarks' && request.method === 'GET') return getBookmarks(env);
 	if (path === '/fs/content' && request.method === 'PUT') {
 		const filePath = normalizePath(url.searchParams.get('path'));
 		if (!filePath) return jsonError('BAD_REQUEST', 'A file path is required');

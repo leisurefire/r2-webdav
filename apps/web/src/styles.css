@@ -2035,6 +2035,201 @@ dialog::backdrop {
 	}
 }
 
+/* Notes stay inside one quiet workspace surface; controls belong to the document. */
+.notes-layout {
+	grid-template-rows: auto minmax(0, 1fr);
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+}
+
+.notes-inner-toolbar {
+	grid-column: 1 / -1;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 42px;
+	padding: 0 4px 10px;
+}
+
+.notes-inner-toolbar .segment-control {
+	background: var(--surface);
+}
+
+.notes-list {
+	position: relative;
+	padding: 8px 14px 48px 0;
+	border-right: 1px solid var(--line);
+	background: transparent;
+}
+
+.notes-list-cards {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.note-editor {
+	background: var(--panel-bg);
+}
+
+.note-editor-head {
+	padding: 12px 18px;
+}
+
+.note-editor-head > time {
+	flex: none;
+	color: var(--quiet);
+	font-size: 11px;
+	white-space: nowrap;
+}
+
+.note-actions {
+	align-items: center;
+}
+
+.note-save {
+	min-height: 32px;
+	padding-inline: 10px;
+}
+
+.note-save svg {
+	width: 15px;
+	height: 15px;
+}
+
+.note-savebar {
+	display: none;
+}
+
+.floating-new-note {
+	position: absolute;
+	right: 14px;
+	bottom: 12px;
+	z-index: 2;
+	width: 40px;
+	height: 40px;
+	padding: 0;
+	border-radius: 50%;
+	box-shadow: 0 8px 18px rgb(0 0 0 / 0.15);
+}
+
+.floating-new-note svg {
+	width: 18px;
+	height: 18px;
+}
+
+.bookmark-layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+}
+
+.bookmarks-grid {
+	min-height: 0;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+	align-content: start;
+	gap: 14px;
+	overflow: auto;
+	padding: 4px 0 24px;
+}
+
+.bookmark-card {
+	min-width: 0;
+	overflow: hidden;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--panel-bg);
+	color: var(--ink);
+	text-decoration: none;
+	transition:
+		transform 140ms ease,
+		box-shadow 140ms ease;
+}
+
+.bookmark-card:hover {
+	transform: translateY(-2px);
+	box-shadow: 0 8px 20px rgb(0 0 0 / 0.1);
+}
+
+.bookmark-card-cover {
+	position: relative;
+	height: 112px;
+	display: grid;
+	place-items: center;
+	background: #e8ecef;
+	color: #425466;
+	font-size: 42px;
+	font-weight: 700;
+}
+
+.bookmark-card-cover img {
+	position: absolute;
+	width: 44px;
+	height: 44px;
+	image-rendering: auto;
+}
+
+.bookmark-card-cover span {
+	opacity: 0.2;
+}
+
+.bookmark-card-body {
+	padding: 13px 14px 14px;
+}
+
+.bookmark-card-body h3 {
+	overflow: hidden;
+	margin: 0;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 14px;
+}
+
+.bookmark-card-body p,
+.bookmark-card-body small {
+	display: block;
+	overflow: hidden;
+	margin: 6px 0 0;
+	color: var(--muted);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 11px;
+}
+
+.bookmark-card-body small {
+	margin-top: 8px;
+	color: var(--quiet);
+	font-size: 10px;
+}
+
+@media (max-width: 760px) {
+	.notes-layout {
+		display: block;
+	}
+
+	.notes-inner-toolbar {
+		padding-bottom: 8px;
+	}
+
+	.notes-list {
+		padding-right: 0;
+	}
+
+	.bookmarks-grid {
+		grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+		padding-top: 8px;
+	}
+
+	.note-editor-head > time {
+		display: none;
+	}
+
+	.note-save span {
+		display: none;
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
 	*,
 	*::before,

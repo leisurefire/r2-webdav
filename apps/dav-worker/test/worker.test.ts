@@ -117,6 +117,35 @@ describe('authentication and file API', () => {
 		expect(await env.bucket.head('fs/default/docs/renamed.txt')).toBeNull();
 	});
 
+	it('reads bookmarkhub.json from the WebDAV root through the authenticated API', async () => {
+		const token = await login();
+		const headers = { Authorization: `Bearer ${token}` };
+		expect(
+			await SELF.fetch('https://dav.example.com/api/v1/bookmarks', { headers }).then((response) => response.status),
+		).toBe(404);
+
+		const backup = {
+			version: '1.0.3',
+			uniqueId: 'backup-id',
+			sha: 'abc123',
+			nodes: [
+				{
+					id: 'root_____bar',
+					title: 'Bookmarks',
+					dateModified: 1784384631584,
+					children: [{ id: 'link-1', title: '', dateModified: 1777102927053, url: 'https://example.com/' }],
+				},
+			],
+		};
+		await env.bucket.put('fs/default/bookmarkhub.json', JSON.stringify(backup), {
+			httpMetadata: { contentType: 'application/json' },
+		});
+		const response = await SELF.fetch('https://dav.example.com/api/v1/bookmarks', { headers });
+		expect(response.status).toBe(200);
+		const body = await response.json<{ ok: true; data: typeof backup }>();
+		expect(body.data).toEqual(backup);
+	});
+
 	it('tracks devices and revokes the selected access token', async () => {
 		const token = await login();
 		const headers = { Authorization: `Bearer ${token}` };
