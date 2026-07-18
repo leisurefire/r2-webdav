@@ -7,6 +7,9 @@
 
 /* Notes are a two-column workspace: one tree and one document. */
 .notes-layout {
+	display: grid;
+	min-height: 0;
+	flex: 1;
 	grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
 	grid-template-rows: auto minmax(0, 1fr);
 	gap: 14px;
@@ -14,6 +17,11 @@
 	border-radius: 0;
 	background: transparent;
 	overflow: visible;
+}
+
+.notes-layout > .note-editor {
+	grid-column: 2;
+	grid-row: 2;
 }
 
 .notes-folders,

@@ -1294,6 +1294,18 @@ function bookmarkFolderOptions(root: BookmarkFolder): BookmarkFolder[] {
 	return result;
 }
 
+function bookmarkFolderTreeMarkup(root: BookmarkFolder, selectedKey: string): string {
+	const renderFolders = (folders: BookmarkFolder[], depth: number): string =>
+		folders
+			.map((folder) => {
+				const active = folder.key === selectedKey;
+				return `<button class="bookmark-folder ${active ? 'active' : ''}" data-bookmark-folder="${html(folder.key)}" style="--bookmark-depth:${depth}"><i data-lucide="${active ? 'folder-open' : 'folder'}"></i><span>${html(folder.name)}</span><small>${folder.links.length}</small></button>${renderFolders(folder.folders, depth + 1)}`;
+			})
+			.join('');
+
+	return renderFolders(root.folders, 0);
+}
+
 function noteFolderCachePart(folderId = selectedNoteFolderId): string {
 	return folderId === undefined ? 'all' : folderId === null ? 'root' : encodeURIComponent(folderId);
 }
@@ -1688,21 +1700,17 @@ function paintBookmarkView(): void {
 		bookmarkFolderPath = folder.path;
 	}
 	const cards = folder.links;
+	const selectedFolderKey = bookmarkFolderPath.join('\u001f');
 	const folderOptions = bookmarkFolderOptions(root)
 		.map(
 			(item) =>
 				`<option value="${html(item.key)}" ${item.path.join('\u001f') === bookmarkFolderPath.join('\u001f') ? 'selected' : ''}>${html(item.path.length ? item.path.join(' / ') : item.name)}</option>`,
 		)
 		.join('');
-	const folderButtons = folder.folders
-		.map(
-			(item) =>
-				`<button class="bookmark-folder" data-bookmark-folder="${html(item.key)}"><i data-lucide="folder"></i><span>${html(item.name)}</span><small>${item.links.length}</small></button>`,
-		)
-		.join('');
+	const folderTree = bookmarkFolderTreeMarkup(root, selectedFolderKey);
 	content.innerHTML = `<div class="notes-layout bookmark-layout">
 		<div class="notes-inner-toolbar">${notesTabsMarkup()}<div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择收藏目录' : 'Choose collection folder'}">${folderOptions}</select></div><span class="toolbar-spacer"></span><span class="note-count">${cards.length}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}" aria-label="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}"><i data-lucide="refresh-cw"></i></button></div>
-		<aside class="bookmark-folders"><button class="bookmark-folder ${folder === root ? 'active' : ''}" data-bookmark-folder=""><i data-lucide="folder-open"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderButtons || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</aside>
+		<aside class="bookmark-folders"><div class="bookmark-folders-head"><strong>${locale === 'zh' ? '收藏目录' : 'Folders'}</strong></div><div class="bookmark-folder-tree"><button class="bookmark-folder bookmark-folder-root ${folder === root ? 'active' : ''}" data-bookmark-folder="" style="--bookmark-depth:0"><i data-lucide="folder-open"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderTree || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</div></aside>
 		<div class="bookmarks-main">${bookmarkFolderPath.length ? bookmarkPathMarkup(bookmarkFolderPath) : ''}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div></div>
 	</div>`;
 	refreshIcons();
