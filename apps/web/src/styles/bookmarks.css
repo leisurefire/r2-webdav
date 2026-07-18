@@ -3,10 +3,8 @@
 	display: grid;
 	grid-template-columns: minmax(240px, 288px) minmax(0, 1fr);
 	grid-template-rows: auto minmax(0, 1fr);
-	gap: 0;
-	border: 1px solid var(--line);
-	border-radius: 8px;
-	background: var(--panel-bg);
+	gap: 12px;
+	background: transparent;
 }
 
 .bookmark-folders {
@@ -17,7 +15,8 @@
 	flex-direction: column;
 	gap: 0;
 	padding: 10px;
-	border-right: 1px solid var(--line);
+	border: 1px solid var(--line);
+	border-radius: 8px;
 	overflow-y: auto;
 	overflow-x: hidden;
 	border-radius: 0;
@@ -156,6 +155,9 @@
 	min-height: 0;
 	display: flex;
 	flex-direction: column;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	padding: 0 12px;
 	overflow: hidden;
 }
 
