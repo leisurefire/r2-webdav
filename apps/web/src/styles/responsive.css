@@ -18,3 +18,40 @@
 		height: calc(100dvh - 122px);
 	}
 }
+
+@media (max-width: 760px) {
+	.notes-layout {
+		display: flex !important;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.notes-folders {
+		width: 100%;
+		max-height: min(46dvh, 360px);
+		flex: 0 1 auto;
+		padding: 8px;
+	}
+
+	.notes-tree {
+		max-height: min(38dvh, 280px);
+		padding-bottom: 8px;
+	}
+
+	.notes-tree-children {
+		padding-left: 12px;
+	}
+
+	.note-editor-desktop {
+		min-height: 0;
+		flex: 1;
+	}
+
+	.note-card-actions {
+		display: flex;
+	}
+
+	.bookmark-layout {
+		gap: 10px;
+	}
+}
