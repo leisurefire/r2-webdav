@@ -10,7 +10,9 @@ import {
 	Copy,
 	Database,
 	Download,
+	Eye,
 	File,
+	FileDown,
 	Film,
 	Folder,
 	FolderOpen,
@@ -18,7 +20,6 @@ import {
 	Image,
 	Languages,
 	Laptop,
-	LoaderCircle,
 	LogOut,
 	Music,
 	PanelLeftClose,
@@ -28,6 +29,7 @@ import {
 	PinOff,
 	Plus,
 	RefreshCw,
+	Save,
 	Settings,
 	Smartphone,
 	StickyNote,
@@ -37,6 +39,10 @@ import {
 	X,
 	createIcons,
 } from 'lucide';
+import { marked } from 'marked';
+import markedKatex from 'marked-katex-extension';
+import DOMPurify from 'dompurify';
+import 'katex/dist/katex.min.css';
 import type {
 	BookmarkHub,
 	CalendarEvent,
@@ -57,33 +63,34 @@ import './styles/responsive.css';
 
 type Page = 'files' | 'calendar' | 'notes' | 'devices' | 'settings';
 const app = document.querySelector<HTMLDivElement>('#app')!;
+marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 type Locale = 'en' | 'zh';
 let locale: Locale =
 	(localStorage.getItem('r2_locale') as Locale | null) ??
 	(navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en');
 const messages = {
 	en: {
-		workspace: 'Workspace',
+		workspace: 'TrueSpace',
 		files: 'Files',
 		calendar: 'Calendar',
 		notes: 'Notes',
 		devices: 'Devices',
 		settings: 'Settings',
-		filesDesc: 'Browse and manage everything stored in your R2 bucket.',
-		calendarDesc: 'Plan your schedule and keep CalDAV clients in sync.',
-		notesDesc: 'Capture ideas in Markdown and keep the important ones close.',
+		filesDesc: 'Browse and manage everything in your file space.',
+		calendarDesc: 'Plan your schedule and keep your calendars in sync.',
+		notesDesc: 'Capture ideas and keep the important ones close.',
 		devicesDesc: 'Review and revoke every device signed in to this account.',
-		settingsDesc: 'Connection details for this workspace and its services.',
+		settingsDesc: 'Connection details and preferences for TrueSpace.',
 		settingsConnection: 'Connection',
 		settingsLanguage: 'Language',
-		settingsLanguageHint: 'Choose the language used across this workspace.',
+		settingsLanguageHint: 'Choose the language used across TrueSpace.',
 		webdavUrl: 'WebDAV URL',
 		caldavUrl: 'CalDAV URL',
 		copy: 'Copy',
 		copied: 'Copied',
 		english: 'English',
 		chinese: 'Chinese',
-		connected: 'Storage connected',
+		connected: 'Your space is ready',
 		logout: 'Log out',
 		account: 'Account',
 		logoutConfirm: 'Are you sure you want to log out?',
@@ -110,27 +117,27 @@ const messages = {
 		expires: 'Expires',
 		revoke: 'Revoke',
 		welcome: 'Welcome back',
-		signIn: 'Sign in to continue to your workspace.',
+		signIn: 'Sign in to continue to TrueSpace.',
 		username: 'Username',
 		password: 'Password',
 		continue: 'Continue',
 		signingIn: 'Signing in…',
 		secureAccess: 'Secure access',
 		hero: 'Your files, notes, and time—together.',
-		heroCopy: 'A focused home for R2 storage, WebDAV, calendars, and Markdown notes.',
+		heroCopy: 'A calm home for your files, notes, collections, and calendars.',
 	},
 	zh: {
-		workspace: '工作区',
+		workspace: 'TrueSpace',
 		files: '文件',
 		calendar: '日历',
 		notes: '便签',
 		devices: '设备',
 		settings: '设置',
-		filesDesc: '浏览和管理 R2 存储桶中的所有内容。',
-		calendarDesc: '规划日程，并与 CalDAV 客户端保持同步。',
-		notesDesc: '使用 Markdown 记录想法，并将重要内容置顶。',
+		filesDesc: '浏览和管理文件空间中的全部内容。',
+		calendarDesc: '规划日程，并在不同设备间保持同步。',
+		notesDesc: '随手记录想法，并将重要内容置顶。',
 		devicesDesc: '查看并撤销此账户已登录的所有设备。',
-		settingsDesc: '查看工作区及服务的连接信息。',
+		settingsDesc: '管理 TrueSpace 的连接信息与使用偏好。',
 		settingsConnection: '连接',
 		settingsLanguage: '语言',
 		settingsLanguageHint: '选择工作区界面使用的语言。',
@@ -140,7 +147,7 @@ const messages = {
 		copied: '已复制',
 		english: 'English',
 		chinese: '中文',
-		connected: '存储已连接',
+		connected: '空间已就绪',
 		logout: '退出登录',
 		account: '账户',
 		logoutConfirm: '确定要退出当前账户吗？',
@@ -167,14 +174,14 @@ const messages = {
 		expires: '到期时间',
 		revoke: '移除',
 		welcome: '欢迎回来',
-		signIn: '登录后继续访问你的工作区。',
+		signIn: '登录后继续访问 TrueSpace。',
 		username: '用户名',
 		password: '密码',
 		continue: '继续',
 		signingIn: '登录中…',
 		secureAccess: '安全访问',
 		hero: '文件、便签与日程，尽在一处。',
-		heroCopy: '专注管理 R2 存储、WebDAV、日历与 Markdown 便签。',
+		heroCopy: '让文件、便签、收藏与日历自然地待在一起。',
 	},
 } as const;
 type MessageKey = keyof (typeof messages)['en'];
@@ -222,8 +229,10 @@ function refreshIcons(): void {
 			Cloud,
 			Copy,
 			Database,
-			Download,
-			File,
+				Download,
+				Eye,
+				File,
+				FileDown,
 			Film,
 			Folder,
 			FolderOpen,
@@ -231,7 +240,6 @@ function refreshIcons(): void {
 			Image,
 			Languages,
 			Laptop,
-			LoaderCircle,
 			LogOut,
 			Music,
 			PanelLeftClose,
@@ -240,7 +248,8 @@ function refreshIcons(): void {
 			Pin,
 			PinOff,
 			Plus,
-			RefreshCw,
+				RefreshCw,
+				Save,
 			Settings,
 			Smartphone,
 			StickyNote,
@@ -269,6 +278,10 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : 'Something went wrong';
 }
 
+function loadingMarkup(compact = false): string {
+	return `<div class="true-loading ${compact ? 'compact' : ''}" role="status" aria-label="${html(t('loading'))}"><span class="true-loading-line"></span><span class="true-loading-line"></span><span class="true-loading-line"></span><span class="visually-hidden">${html(t('loading'))}</span></div>`;
+}
+
 function pageFromPath(): Page {
 	const page = location.pathname.slice(1) as Page;
 	return ['files', 'calendar', 'notes', 'devices', 'settings'].includes(page) ? page : 'files';
@@ -279,7 +292,7 @@ function navigate(path: string): void {
 	void render();
 }
 
-function shell(page: Page, _title: string, content = '<div class="empty-state"><div>Loading...</div></div>'): void {
+function shell(page: Page, _title: string, content = loadingMarkup()): void {
 	app.innerHTML = `<div class="app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}">
 		<aside class="sidebar">
 			<div class="sidebar-head">
@@ -444,6 +457,99 @@ function cacheFiles(listing: FileListing): void {
 	localStorage.setItem(fileCacheKey(listing.path), JSON.stringify(listing));
 }
 
+function fileExtension(path: string): string {
+	return path.split('/').at(-1)?.split('.').at(-1)?.toLowerCase() ?? '';
+}
+
+function previewContentType(entry: FileEntry): string {
+	if (entry.contentType) return entry.contentType;
+	const ext = fileExtension(entry.path);
+	return ({ txt: 'text/plain', json: 'application/json', md: 'text/markdown',
+		png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+		mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', webm: 'video/webm', pdf: 'application/pdf' } as Record<string, string>)[ext] ?? 'application/octet-stream';
+}
+
+function canPreview(entry: FileEntry): boolean {
+	return entry.type === 'file' && entry.size <= 100 * 1024;
+}
+
+async function openFilePreview(entry: FileEntry): Promise<void> {
+	if (!canPreview(entry)) {
+		await api.download(entry.path);
+		return;
+	}
+	const dialog = document.createElement('dialog');
+	dialog.className = 'file-preview-dialog';
+	dialog.innerHTML = `<div class="file-preview-shell"><header class="file-preview-head"><strong>${html(entry.name)}</strong><span class="muted">${formatBytes(entry.size)}</span><span class="toolbar-spacer"></span><button class="row-action" data-preview-close title="${locale === 'zh' ? '关闭' : 'Close'}" aria-label="${locale === 'zh' ? '关闭' : 'Close'}"><i data-lucide="x"></i></button></header><div class="file-preview-body"><div class="loading-state">${loadingMarkup()}</div></div></div>`;
+	document.body.append(dialog);
+	refreshIcons();
+	const body = dialog.querySelector<HTMLElement>('.file-preview-body')!;
+	let objectUrl: string | null = null;
+	const close = () => dialog.close();
+	dialog.querySelector('[data-preview-close]')?.addEventListener('click', close);
+	dialog.addEventListener('close', () => {
+		if (objectUrl) URL.revokeObjectURL(objectUrl);
+		dialog.remove();
+	});
+	dialog.showModal();
+	try {
+		const blob = await api.previewFile(entry.path, entry.etag);
+		const type = previewContentType(entry);
+		const ext = fileExtension(entry.path);
+		if (ext === 'txt' || ext === 'json') {
+			let value = await blob.text();
+			if (ext === 'json') {
+				try { value = JSON.stringify(JSON.parse(value), null, 2); } catch { /* Keep invalid JSON editable. */ }
+			}
+			body.innerHTML = `<div class="file-text-editor"><textarea class="file-text-source" spellcheck="false" aria-label="${html(entry.name)}">${html(value)}</textarea><div class="file-preview-actions"><span class="muted" data-file-save-status></span><button class="button primary" data-file-save><i data-lucide="save"></i><span>${locale === 'zh' ? '手动保存' : 'Save manually'}</span></button></div></div>`;
+			body.querySelector('[data-file-save]')?.addEventListener('click', async () => {
+				const button = body.querySelector<HTMLButtonElement>('[data-file-save]')!;
+				const status = body.querySelector<HTMLElement>('[data-file-save-status]')!;
+				button.disabled = true;
+				status.textContent = locale === 'zh' ? '保存中…' : 'Saving…';
+				try {
+					await api.saveTextFile(entry.path, body.querySelector<HTMLTextAreaElement>('.file-text-source')!.value, type, entry.etag);
+					status.textContent = locale === 'zh' ? '已保存' : 'Saved';
+					entry.etag = (await api.fileInfo(entry.path)).etag;
+				} catch (error) {
+					status.textContent = errorMessage(error);
+				} finally { button.disabled = false; }
+			});
+		} else if (ext === 'md' || type === 'text/markdown') {
+			const value = await blob.text();
+			body.innerHTML = `<article class="file-markdown-preview">${renderMarkdown(value)}</article><div class="file-preview-actions"><button class="button primary" data-migrate-md><i data-lucide="file-down"></i><span>${locale === 'zh' ? '迁移到收藏空间' : 'Move to collection'}</span></button></div>`;
+			body.querySelector('[data-migrate-md]')?.addEventListener('click', async () => {
+				if (!(await confirmAction(locale === 'zh' ? '迁移 Markdown 文件？' : 'Move Markdown file?', locale === 'zh' ? '迁移成功后将删除文件空间中的原文件。' : 'The original file will be deleted after import.', locale === 'zh' ? '迁移' : 'Move'))) return;
+				try {
+					await api.createNote(entry.name.replace(/\.md$/i, '') || 'Untitled note', value);
+					await api.deleteFile(entry.path);
+					await api.clearFilePreview(entry.path);
+					dialog.close();
+					toast(locale === 'zh' ? '已迁移到收藏空间' : 'Moved to collection');
+					navigate('/notes');
+				} catch (error) { toast(errorMessage(error)); }
+			});
+		} else if (type.startsWith('image/')) {
+			objectUrl = URL.createObjectURL(blob);
+			body.innerHTML = `<div class="file-binary-preview"><img src="${objectUrl}" alt="${html(entry.name)}"></div>`;
+		} else if (type.startsWith('audio/')) {
+			objectUrl = URL.createObjectURL(blob);
+			body.innerHTML = `<div class="file-binary-preview"><audio controls src="${objectUrl}"></audio></div>`;
+		} else if (type.startsWith('video/')) {
+			objectUrl = URL.createObjectURL(blob);
+			body.innerHTML = `<div class="file-binary-preview"><video controls src="${objectUrl}"></video></div>`;
+		} else if (type === 'application/pdf') {
+			objectUrl = URL.createObjectURL(blob);
+			body.innerHTML = `<iframe class="file-pdf-preview" src="${objectUrl}" title="${html(entry.name)}"></iframe>`;
+		} else {
+			body.innerHTML = `<div class="empty-state"><div>${locale === 'zh' ? '此文件类型暂不支持内嵌预览，请下载查看。' : 'This file type cannot be previewed inline. Download it to view.'}</div></div>`;
+		}
+		refreshIcons();
+	} catch (error) {
+		body.innerHTML = `<div class="error-banner">${html(errorMessage(error))}</div>`;
+	}
+}
+
 function paintFiles(listing: FileListing): void {
 	const content = document.querySelector<HTMLDivElement>('#page-content');
 	if (!content || pageFromPath() !== 'files' || listing.path !== currentPath) return;
@@ -477,7 +583,10 @@ function paintFiles(listing: FileListing): void {
 			if (item.dataset.type === 'directory') {
 				currentPath = item.dataset.open!;
 				await renderFiles();
-			} else await api.download(item.dataset.open!);
+			} else {
+				const entry = listing.entries.find((candidate) => candidate.path === item.dataset.open);
+				if (entry) await openFilePreview(entry);
+			}
 		}),
 	);
 	content
@@ -499,6 +608,7 @@ function paintFiles(listing: FileListing): void {
 			const parent = source.split('/').slice(0, -1).join('/');
 			try {
 				await api.move(source, parent ? `${parent}/${name}` : name);
+				await api.clearFilePreview(source);
 				toast(locale === 'zh' ? '已重命名' : 'Renamed');
 				await renderFiles(true);
 			} catch (error) {
@@ -521,6 +631,7 @@ function paintFiles(listing: FileListing): void {
 				return;
 			try {
 				await api.deleteFile(path);
+				await api.clearFilePreview(path);
 				toast(locale === 'zh' ? '已删除' : 'Deleted');
 				await renderFiles(true);
 			} catch (error) {
@@ -1144,10 +1255,11 @@ function bookmarkFolderTree(): BookmarkFolder {
 	return build(bookmarkHub?.nodes ?? [], []);
 }
 
-function bookmarkCardMarkup(card: BookmarkCard, loadPreview: boolean): string {
-	return `<a class="bookmark-card" ${loadPreview ? `data-bookmark-preview data-bookmark-url="${html(card.url)}"` : ''} href="${html(card.url)}" target="_blank" rel="noopener noreferrer" title="${html(card.title || card.url)}">
-		<div class="bookmark-card-cover" data-bookmark-cover><span>${html(card.domain.slice(0, 1).toUpperCase())}</span><img alt="" hidden></div>
-		<div class="bookmark-card-body">${card.title ? `<h3>${html(card.title)}</h3>` : ''}<div class="bookmark-link"><span class="bookmark-favicon"><span>${html(card.domain.slice(0, 1).toUpperCase())}</span><img data-bookmark-icon alt="" hidden></span><p>${html(card.url)}</p></div><div class="bookmark-card-meta"><small>${html(card.path.filter(Boolean).join(' / '))}</small><time>${card.dateModified ? new Date(card.dateModified).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en') : ''}</time></div></div>
+function bookmarkCardMarkup(card: BookmarkCard): string {
+	let favicon = '';
+	try { favicon = new URL('/favicon.ico', card.url).href; } catch { /* The card URL was already validated. */ }
+	return `<a class="bookmark-card" href="${html(card.url)}" target="_blank" rel="noopener noreferrer" title="${html(card.title || card.url)}">
+		<div class="bookmark-card-body">${card.title ? `<h3>${html(card.title)}</h3>` : ''}<div class="bookmark-link"><span class="bookmark-favicon"><span data-bookmark-fallback>${html(card.domain.slice(0, 1).toUpperCase())}</span>${favicon ? `<img data-bookmark-icon src="${html(favicon)}" alt="" loading="lazy" referrerpolicy="no-referrer" hidden>` : ''}</span><p>${html(card.url)}</p></div><div class="bookmark-card-meta"><small>${html(card.path.filter(Boolean).join(' / '))}</small><time>${card.dateModified ? new Date(card.dateModified).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en') : ''}</time></div></div>
 	</a>`;
 }
 
@@ -1192,69 +1304,54 @@ function cachedNotes(): NotePage | null {
 	}
 }
 
-function inlineMarkdown(value: string): string {
-	return html(value)
-		.replace(/`([^`]+)`/g, '<code>$1</code>')
-		.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-		.replace(/__([^_]+)__/g, '<strong>$1</strong>')
-		.replace(/\*([^*]+)\*/g, '<em>$1</em>')
-		.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+interface MarkdownHeading {
+	id: string;
+	level: number;
+	text: string;
 }
 
-function markdown(value: string): string {
-	const output: string[] = [];
-	let list: 'ul' | 'ol' | null = null;
-	const closeList = () => {
-		if (list) output.push(`</${list}>`);
-		list = null;
-	};
-	for (const raw of value.replaceAll('\r', '').split('\n')) {
-		const heading = raw.match(/^(#{1,4})\s+(.+)$/);
-		const bullet = raw.match(/^[-*]\s+(.+)$/);
-		const numbered = raw.match(/^\d+\.\s+(.+)$/);
-		if (heading) {
-			closeList();
-			const level = heading[1].length + 1;
-			output.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
-		} else if (bullet || numbered) {
-			const next = bullet ? 'ul' : 'ol';
-			if (list !== next) {
-				closeList();
-				list = next;
-				output.push(`<${list}>`);
-			}
-			output.push(`<li>${inlineMarkdown((bullet ?? numbered)![1])}</li>`);
-		} else {
-			closeList();
-			if (!raw.trim()) output.push('<div class="markdown-space"></div>');
-			else if (raw.startsWith('> ')) output.push(`<blockquote>${inlineMarkdown(raw.slice(2))}</blockquote>`);
-			else output.push(`<p>${inlineMarkdown(raw)}</p>`);
-		}
-	}
-	closeList();
-	return output.join('');
+function renderMarkdownDocument(value: string): { html: string; headings: MarkdownHeading[] } {
+	const parsed = marked.parse(value, { async: false, breaks: true, gfm: true });
+	const sanitized = DOMPurify.sanitize(parsed, {
+		ADD_ATTR: ['target'],
+		ALLOW_DATA_ATTR: false,
+	});
+	const documentNode = new DOMParser().parseFromString(`<body>${sanitized}</body>`, 'text/html');
+	const headings: MarkdownHeading[] = [];
+	const usedIds = new Set<string>();
+	documentNode.body.querySelectorAll<HTMLHeadingElement>('h1, h2, h3, h4, h5, h6').forEach((heading) => {
+		const level = Number(heading.tagName.slice(1));
+		const base = heading.textContent?.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-') .replace(/^-|-$/g, '') || 'section';
+		let id = base;
+		let suffix = 2;
+		while (usedIds.has(id)) id = `${base}-${suffix++}`;
+		usedIds.add(id);
+		heading.id = id;
+		headings.push({ id, level, text: heading.textContent?.trim() ?? id });
+	});
+	documentNode.body.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((anchor) => {
+		anchor.target = '_blank';
+		anchor.rel = 'noopener noreferrer';
+	});
+	return { html: documentNode.body.innerHTML, headings };
 }
 
-function noteBlocksMarkup(value: string): string {
-	return value
-		.replaceAll('\r', '')
-		.split('\n')
-		.map(
-			(line, index) =>
-				`<div class="note-block" data-note-block="${index}" tabindex="0">${markdown(line) || '<p class="muted">Click to edit...</p>'}</div>`,
-		)
-		.join('');
+function renderMarkdown(value: string): string {
+	return renderMarkdownDocument(value).html;
 }
 
 function noteEditorMarkup(selected: Note, mobile = false): string {
 	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'}">
 		<form data-note-form>
 			<div class="note-editor-head">${mobile ? `<button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>` : ''}<input data-note-title value="${html(selected.title)}" aria-label="Title"><span class="note-save-status" data-note-save-status aria-live="polite"></span><time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
+				<button type="button" class="row-action note-mode active" data-note-mode="preview" title="${t('preview')}" aria-label="${t('preview')}"><i data-lucide="eye"></i></button>
+				<button type="button" class="row-action note-mode" data-note-mode="edit" title="${locale === 'zh' ? '编辑' : 'Edit'}" aria-label="${locale === 'zh' ? '编辑' : 'Edit'}"><i data-lucide="pencil"></i></button>
+				<button type="button" class="row-action" data-note-export title="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}" aria-label="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}"><i data-lucide="file-down"></i></button>
 				<button type="button" class="row-action" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
 				<button type="button" class="row-action" data-note-archive title="${selected.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
 				<button type="button" class="row-action danger" data-note-delete title="${t('delete')}"><i data-lucide="trash-2"></i></button>
 			</div></div>
-			<div class="note-compose" data-note-compose><article class="note-render" data-note-render aria-label="${t('markdown')}" title="${locale === 'zh' ? '点击编辑' : 'Click to edit'}">${noteBlocksMarkup(selected.content)}</article></div>
+			<div class="note-compose previewing" data-note-compose><aside class="note-outline" data-note-outline></aside><div class="note-document"><textarea class="note-source" data-note-source spellcheck="true" aria-label="${t('markdown')}">${html(selected.content)}</textarea><article class="note-render" data-note-render aria-label="${t('preview')}" title="${locale === 'zh' ? '点击进入编辑' : 'Click to edit'}"></article></div></div>
 		</form>
 	</section>`;
 }
@@ -1262,55 +1359,9 @@ function noteEditorMarkup(selected: Note, mobile = false): string {
 function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobile: boolean): void {
 	const compose = root.querySelector<HTMLDivElement>('[data-note-compose]')!;
 	const noteRender = root.querySelector<HTMLElement>('[data-note-render]')!;
+	const source = root.querySelector<HTMLTextAreaElement>('[data-note-source]')!;
+	const outline = root.querySelector<HTMLElement>('[data-note-outline]')!;
 	let draftContent = selected.content.replaceAll('\r', '');
-	let activeBlock: { index: number; editor: HTMLTextAreaElement; original: string } | null = null;
-	const startBlockEditing = (index: number) => {
-		if (activeBlock) return;
-		const block = noteRender.querySelector<HTMLElement>(`[data-note-block="${index}"]`);
-		if (!block) return;
-		const lines = draftContent.split('\n');
-		const original = lines[index] ?? '';
-		const editor = document.createElement('textarea');
-		editor.className = 'note-block-editor';
-		editor.rows = 1;
-		editor.value = original;
-		editor.setAttribute('aria-label', locale === 'zh' ? '编辑段落' : 'Edit paragraph');
-		block.replaceChildren(editor);
-		activeBlock = { index, editor, original };
-		editor.focus();
-		editor.select();
-	};
-	noteRender.addEventListener('click', (event) => {
-		const block = (event.target as HTMLElement).closest<HTMLElement>('[data-note-block]');
-		if (block) startBlockEditing(Number(block.dataset.noteBlock));
-	});
-	noteRender.addEventListener('keydown', (event) => {
-		if ((event.target as HTMLElement).matches('.note-block-editor')) return;
-		if (event.key === 'Enter' || event.key === ' ') {
-			event.preventDefault();
-			const block = (event.target as HTMLElement).closest<HTMLElement>('[data-note-block]');
-			if (block) startBlockEditing(Number(block.dataset.noteBlock));
-		}
-	});
-	const finishBlockEditing = (save: boolean) => {
-		if (!activeBlock) return;
-		const { index, editor, original } = activeBlock;
-		activeBlock = null;
-		if (!save) {
-			noteRender.innerHTML = noteBlocksMarkup(draftContent);
-			return;
-		}
-		const lines = draftContent.split('\n');
-		const replacement = editor.value.replaceAll('\r', '');
-		if (replacement === original) {
-			noteRender.innerHTML = noteBlocksMarkup(draftContent);
-			return;
-		}
-		lines.splice(index, 1, ...replacement.split('\n'));
-		draftContent = lines.join('\n');
-		noteRender.innerHTML = noteBlocksMarkup(draftContent);
-		queueSave({ content: draftContent });
-	};
 	const title = root.querySelector<HTMLInputElement>('[data-note-title]')!;
 	const status = root.querySelector<HTMLElement>('[data-note-save-status]');
 	const AUTOSAVE_IDLE_DELAY = 2_500;
@@ -1367,7 +1418,6 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		}
 	};
 	const flushPending = async (): Promise<void> => {
-		if (activeBlock) finishBlockEditing(true);
 		window.clearTimeout(idleSaveTimer);
 		window.clearTimeout(slowSaveTimer);
 		while (activeSave || pending) {
@@ -1383,19 +1433,58 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		scheduleAutosave();
 	};
 	title.addEventListener('input', () => queueSave({ title: title.value }));
-	noteRender.addEventListener('focusout', (event) => {
-		if ((event.target as HTMLElement).matches('.note-block-editor')) finishBlockEditing(true);
+	const paintPreview = () => {
+		const rendered = renderMarkdownDocument(draftContent);
+		noteRender.innerHTML = rendered.html || `<p class="muted">${locale === 'zh' ? '空便签' : 'Empty note'}</p>`;
+		outline.innerHTML = rendered.headings.length
+			? `<strong>${locale === 'zh' ? '目录' : 'Contents'}</strong>${rendered.headings.map((heading) => `<button type="button" data-outline-target="${html(heading.id)}" style="--outline-level:${heading.level}">${html(heading.text)}</button>`).join('')}`
+			: `<span class="muted">${locale === 'zh' ? '添加标题后生成目录' : 'Headings create an outline'}</span>`;
+		outline.querySelectorAll<HTMLElement>('[data-outline-target]').forEach((button) => button.addEventListener('click', () => {
+			noteRender.querySelector(`#${CSS.escape(button.dataset.outlineTarget!)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		}));
+	};
+	const setMode = (mode: 'edit' | 'preview') => {
+		compose.classList.toggle('previewing', mode === 'preview');
+		root.querySelectorAll<HTMLElement>('[data-note-mode]').forEach((button) => button.classList.toggle('active', button.dataset.noteMode === mode));
+		if (mode === 'preview') paintPreview();
+		else source.focus();
+	};
+	root.querySelectorAll<HTMLElement>('[data-note-mode]').forEach((button) => button.addEventListener('click', () => setMode(button.dataset.noteMode as 'edit' | 'preview')));
+	noteRender.addEventListener('click', (event) => {
+		if ((event.target as HTMLElement).closest('a')) return;
+		setMode('edit');
 	});
-	noteRender.addEventListener('keydown', (event) => {
-		if (!(event.target as HTMLElement).matches('.note-block-editor')) return;
-		if (event.key === 'Escape') {
-			event.preventDefault();
-			finishBlockEditing(false);
-		} else if (event.key === 'Enter') {
-			event.preventDefault();
-			finishBlockEditing(true);
+	source.addEventListener('input', () => {
+		draftContent = source.value.replaceAll('\r', '');
+		queueSave({ content: draftContent });
+	});
+	source.addEventListener('paste', (event) => {
+		const images = event.clipboardData ? [...event.clipboardData.files].filter((file) => file.type.startsWith('image/')) : [];
+		if (!images.length) return;
+		event.preventDefault();
+		const image = images[0];
+		if (image.size > 256 * 1024) {
+			toast(locale === 'zh' ? '图片超过 256 KB，暂不允许粘贴' : 'Images over 256 KB cannot be pasted yet');
+			return;
 		}
+		const reader = new FileReader();
+		reader.addEventListener('load', () => {
+			const start = source.selectionStart;
+			const markdownImage = `![${image.name || (locale === 'zh' ? '图片' : 'image')}](${String(reader.result)})`;
+			source.setRangeText(markdownImage, start, source.selectionEnd, 'end');
+			source.dispatchEvent(new Event('input', { bubbles: true }));
+		});
+		reader.readAsDataURL(image);
 	});
+	root.querySelector('[data-note-export]')?.addEventListener('click', () => {
+		const objectUrl = URL.createObjectURL(new Blob([draftContent], { type: 'text/markdown;charset=utf-8' }));
+		const anchor = document.createElement('a');
+		anchor.href = objectUrl;
+		anchor.download = `${(title.value.trim() || 'note').replace(/[\\/:*?"<>|]/g, '_')}.md`;
+		anchor.click();
+		URL.revokeObjectURL(objectUrl);
+	});
+	paintPreview();
 	const update = async (changes: Partial<Pick<Note, 'title' | 'content' | 'pinned' | 'archived'>>) => {
 		try {
 			const updated = await api.updateNote(selected.id, changes);
@@ -1476,7 +1565,7 @@ function paintBookmarkView(): void {
 	content.innerHTML = `<div class="notes-layout bookmark-layout">
 		<div class="notes-inner-toolbar">${notesTabsMarkup()}<div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择收藏目录' : 'Choose collection folder'}">${folderOptions}</select></div><span class="toolbar-spacer"></span><span class="note-count">${cards.length}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}" aria-label="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}"><i data-lucide="refresh-cw"></i></button></div>
 		<aside class="bookmark-folders"><button class="bookmark-folder ${folder === root ? 'active' : ''}" data-bookmark-folder=""><i data-lucide="folder-open"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderButtons || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</aside>
-		<div class="bookmarks-main">${bookmarkFolderPath.length ? bookmarkPathMarkup(bookmarkFolderPath) : ''}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card, true)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div></div>
+		<div class="bookmarks-main">${bookmarkFolderPath.length ? bookmarkPathMarkup(bookmarkFolderPath) : ''}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div></div>
 	</div>`;
 	refreshIcons();
 	bindBookmarkPreviews(content);
@@ -1568,7 +1657,7 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 		<div class="notes-inner-toolbar">${notesTabsMarkup()}<span class="toolbar-spacer"></span><span class="note-count">${data.total}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}" aria-label="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}"><i data-lucide="refresh-cw"></i></button></div>
 		<aside class="notes-list"><div class="notes-list-cards">${cards || `<div class="notes-empty"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div>`}</div>
 			<button class="button primary floating-primary-action" id="new-note" title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i><span>${t('newNote')}</span></button>
-			<div class="notes-load-status" aria-live="polite">${notesLoadingMore ? '<i data-lucide="loader-circle"></i>' : ''}</div>
+			<div class="notes-load-status" aria-live="polite">${notesLoadingMore ? loadingMarkup(true) : ''}</div>
 		</aside>
 		${selected ? noteEditorMarkup(selected) : `<section class="note-editor note-editor-desktop"><div class="notes-empty large"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div></section>`}
 	</div>
@@ -1653,8 +1742,7 @@ async function loadMoreNotes(selectedId?: string, scrollTop = 0): Promise<void> 
 	notesLoadingMore = true;
 	const status = document.querySelector<HTMLElement>('.notes-load-status');
 	if (status) {
-		status.innerHTML = '<i data-lucide="loader-circle"></i>';
-		refreshIcons();
+		status.innerHTML = loadingMarkup(true);
 	}
 	const archived = notesArchived;
 	try {
@@ -1792,9 +1880,9 @@ function renderSettings(): void {
 function renderLogin(): void {
 	app.innerHTML = `<main class="login-page">
 		<button class="login-language language-button" id="language-toggle"><i data-lucide="languages"></i><span>${t('language')}</span></button>
-		<section class="login-intro" aria-hidden="true"><div class="intro-brand"><span class="brand-wordmark inverse">R2</span><span>Dashboard</span></div><div class="intro-copy"><span class="intro-index">01 / 04</span><h1>${t('hero')}</h1><p>${t('heroCopy')}</p></div><div class="storage-signal"><span>R2</span><i data-lucide="cloud"></i></div></section>
-		<section class="login-panel"><div class="login-box"><div class="login-brand"><span class="brand-wordmark">R2</span><span>Dashboard</span></div><div class="login-heading"><span class="page-kicker">${t('secureAccess')}</span><h2>${t('welcome')}</h2><p>${t('signIn')}</p></div>
-		<form class="login-form" id="login-form"><div class="field"><label for="username">${t('username')}</label><input class="input" id="username" autocomplete="username" required></div><div class="field"><label for="password">${t('password')}</label><input class="input" id="password" type="password" autocomplete="current-password" required></div><div id="login-error"></div><button class="button primary" id="login-submit">${t('continue')}</button></form><p class="login-footnote">Protected by your private Worker credentials.</p></div></section>
+		<section class="login-intro" aria-hidden="true"><div class="intro-brand"><span class="brand-wordmark inverse">T</span><span>TrueSpace</span></div><div class="intro-copy"><span class="intro-index">01 / 04</span><h1>${t('hero')}</h1><p>${t('heroCopy')}</p></div><div class="storage-signal"><span>True</span><i data-lucide="cloud"></i></div></section>
+		<section class="login-panel"><div class="login-box"><div class="login-brand"><span class="brand-wordmark">T</span><span>TrueSpace</span></div><div class="login-heading"><span class="page-kicker">${t('secureAccess')}</span><h2>${t('welcome')}</h2><p>${t('signIn')}</p></div>
+		<form class="login-form" id="login-form"><div class="field"><label for="username">${t('username')}</label><input class="input" id="username" autocomplete="username" required></div><div class="field"><label for="password">${t('password')}</label><input class="input" id="password" type="password" autocomplete="current-password" required></div><div id="login-error"></div><button class="button primary" id="login-submit">${t('continue')}</button></form><p class="login-footnote">${locale === 'zh' ? '仅限授权用户访问。' : 'Authorized access only.'}</p></div></section>
 	</main>`;
 	refreshIcons();
 	document.querySelector('#language-toggle')?.addEventListener('click', () => {

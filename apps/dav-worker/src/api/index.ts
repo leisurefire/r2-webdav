@@ -1,4 +1,4 @@
-import type { BookmarkHub, BookmarkPreview, CalendarEvent, CalendarSummary, FileEntry } from '@r2-webdav/shared-types';
+import type { BookmarkHub, CalendarEvent, CalendarSummary, FileEntry } from '@r2-webdav/shared-types';
 import { Lunar } from 'lunar-typescript';
 import type { Env } from '../env';
 import {
@@ -135,163 +135,6 @@ async function getBookmarks(env: Env): Promise<Response> {
 	} catch {
 		return jsonError('BAD_REQUEST', 'Bookmark backup is not valid JSON', 400);
 	}
-}
-
-const BOOKMARK_PREVIEW_PREFIX = 'internal/bookmark-previews/';
-
-function remoteUrl(value: string | null): URL | null {
-	if (!value) return null;
-	try {
-		const url = new URL(value);
-		if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
-		if (url.port && !['80', '443'].includes(url.port)) return null;
-		const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-		if (
-			host === 'localhost' ||
-			host.endsWith('.localhost') ||
-			host.includes(':') ||
-			/^0(?:\.|$)/.test(host) ||
-			/^10(?:\.|$)/.test(host) ||
-			/^127(?:\.|$)/.test(host) ||
-			/^169\.254(?:\.|$)/.test(host) ||
-			/^172\.(?:1[6-9]|2\d|3[01])(?:\.|$)/.test(host) ||
-			/^192\.168(?:\.|$)/.test(host)
-		)
-			return null;
-		return url;
-	} catch {
-		return null;
-	}
-}
-
-async function previewKey(url: string): Promise<string> {
-	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(url));
-	return `${BOOKMARK_PREVIEW_PREFIX}${[...new Uint8Array(digest)]
-		.map((value) => value.toString(16).padStart(2, '0'))
-		.join('')}.json`;
-}
-
-async function limitedBytes(response: Response, limit: number): Promise<Uint8Array | null> {
-	const declared = Number(response.headers.get('Content-Length') ?? 0);
-	if (declared > limit) return null;
-	if (!response.body) return new Uint8Array();
-	const reader = response.body.getReader();
-	const chunks: Uint8Array[] = [];
-	let size = 0;
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		size += value.byteLength;
-		if (size > limit) {
-			await reader.cancel();
-			return null;
-		}
-		chunks.push(value);
-	}
-	const result = new Uint8Array(size);
-	let offset = 0;
-	for (const chunk of chunks) {
-		result.set(chunk, offset);
-		offset += chunk.byteLength;
-	}
-	return result;
-}
-
-function attribute(tag: string, name: string): string | null {
-	const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i'));
-	return match?.[1] ?? match?.[2] ?? match?.[3] ?? null;
-}
-
-function pageAssets(markup: string, base: URL): { favicon?: URL; image?: URL } {
-	let favicon: URL | undefined;
-	let image: URL | undefined;
-	for (const tag of markup.match(/<(?:link|meta)\b[^>]*>/gi) ?? []) {
-		const rel = attribute(tag, 'rel')?.toLowerCase() ?? '';
-		const property = (attribute(tag, 'property') ?? attribute(tag, 'name'))?.toLowerCase();
-		const candidate = rel.includes('icon') ? attribute(tag, 'href') : attribute(tag, 'content');
-		if (!candidate) continue;
-		try {
-			const url = new URL(candidate, base);
-			if (!remoteUrl(url.href)) continue;
-			if (!favicon && rel.includes('icon')) favicon = url;
-			if (!image && ['og:image', 'twitter:image', 'twitter:image:src'].includes(property ?? '')) image = url;
-		} catch {
-			// Ignore malformed metadata while continuing through the page head.
-		}
-	}
-	return { favicon, image };
-}
-
-function base64(bytes: Uint8Array): string {
-	let binary = '';
-	for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-		binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-	}
-	return btoa(binary);
-}
-
-async function fetchImageData(url: URL, limit: number): Promise<string | undefined> {
-	try {
-		const response = await fetch(url, {
-			headers: {
-				Accept: 'image/avif,image/webp,image/png,image/jpeg,image/gif,image/x-icon,*/*;q=0.2',
-				'User-Agent': 'TrueSpace Bookmark Preview/1.0',
-			},
-			redirect: 'follow',
-			signal: AbortSignal.timeout(6_000),
-		});
-		const type = response.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase() ?? '';
-		if (!response.ok || !/^image\/(?:avif|webp|png|jpeg|gif|x-icon|vnd\.microsoft\.icon)$/.test(type)) return;
-		const bytes = await limitedBytes(response, limit);
-		return bytes?.length ? `data:${type};base64,${base64(bytes)}` : undefined;
-	} catch {
-		return;
-	}
-}
-
-async function getBookmarkPreview(url: URL, env: Env): Promise<Response> {
-	const target = remoteUrl(url.searchParams.get('url'));
-	if (!target) return jsonError('BAD_REQUEST', 'A public HTTP(S) bookmark URL is required');
-	const includeImage = url.searchParams.get('image') !== '0';
-	const key = await previewKey(target.href);
-	const cacheKey = includeImage ? key : `${key}.favicon`;
-	const cached = await env.bucket.get(cacheKey);
-	if (cached) {
-		try {
-			const preview = JSON.parse(await cached.text()) as BookmarkPreview;
-			return jsonData(includeImage ? preview : { favicon: preview.favicon });
-		} catch {
-			// Replace corrupt cache entries below.
-		}
-	}
-
-	let assets: { favicon?: URL; image?: URL } = {};
-	try {
-		const page = await fetch(target, {
-			headers: {
-				Accept: 'text/html,application/xhtml+xml',
-				'User-Agent': 'Mozilla/5.0 (compatible; TrueSpace Bookmark Preview/1.0)',
-			},
-			redirect: 'follow',
-			signal: AbortSignal.timeout(6_000),
-		});
-		const finalUrl = remoteUrl(page.url);
-		const type = page.headers.get('Content-Type')?.toLowerCase() ?? '';
-		if (page.ok && finalUrl && (type.includes('text/html') || type.includes('application/xhtml+xml'))) {
-			const bytes = await limitedBytes(page, 384 * 1024);
-			if (bytes) assets = pageAssets(new TextDecoder().decode(bytes), finalUrl);
-		}
-	} catch {
-		// The conventional favicon remains useful when the page itself blocks crawlers.
-	}
-	assets.favicon ??= new URL('/favicon.ico', target);
-	const [favicon, image] = await Promise.all([
-		fetchImageData(assets.favicon, 96 * 1024),
-		includeImage && assets.image ? fetchImageData(assets.image, 256 * 1024) : Promise.resolve(undefined),
-	]);
-	const preview: BookmarkPreview = { ...(favicon ? { favicon } : {}), ...(image ? { image } : {}) };
-	await env.bucket.put(cacheKey, JSON.stringify(preview), { httpMetadata: { contentType: 'application/json' } });
-	return jsonData(preview);
 }
 
 async function listCalendars(env: Env): Promise<Response> {
@@ -521,7 +364,6 @@ export async function handleApi(request: Request, env: Env, session: SessionCont
 	}
 	if (path === '/fs/content' && request.method === 'GET') return getContent(request, url, env);
 	if (path === '/bookmarks' && request.method === 'GET') return getBookmarks(env);
-	if (path === '/bookmarks/preview' && request.method === 'GET') return getBookmarkPreview(url, env);
 	if (path === '/fs/content' && request.method === 'PUT') {
 		const filePath = normalizePath(url.searchParams.get('path'));
 		if (!filePath) return jsonError('BAD_REQUEST', 'A file path is required');

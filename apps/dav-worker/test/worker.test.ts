@@ -120,11 +120,6 @@ describe('authentication and file API', () => {
 	it('reads bookmarkhub.json from the WebDAV root through the authenticated API', async () => {
 		const token = await login();
 		const headers = { Authorization: `Bearer ${token}` };
-		const blockedPreview = await SELF.fetch(
-			'https://dav.example.com/api/v1/bookmarks/preview?url=http%3A%2F%2F127.0.0.1%2Ffavicon.ico',
-			{ headers },
-		);
-		expect(blockedPreview.status).toBe(400);
 		expect(
 			await SELF.fetch('https://dav.example.com/api/v1/bookmarks', { headers }).then((response) => response.status),
 		).toBe(404);

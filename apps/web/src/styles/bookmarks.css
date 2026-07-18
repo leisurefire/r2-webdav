@@ -1,6 +1,7 @@
 .bookmark-layout {
 	display: grid;
 	grid-template-columns: 220px minmax(0, 1fr);
+	gap: 14px;
 }
 
 .bookmark-folders {
@@ -8,8 +9,7 @@
 	display: flex;
 	flex-direction: column;
 	gap: 4px;
-	padding: 8px 14px 48px 0;
-	border-right: 1px solid var(--line);
+	padding: 8px 0 48px;
 	overflow-y: auto;
 }
 
@@ -32,9 +32,9 @@
 	align-items: center;
 	gap: 7px;
 	padding: 0 10px;
-	border: 0;
+	border: 1px solid var(--line);
 	border-radius: 6px;
-	background: transparent;
+	background: var(--panel-bg);
 	color: var(--muted);
 	text-align: left;
 	font-size: 13px;
@@ -47,8 +47,9 @@
 
 .bookmark-folder:hover,
 .bookmark-folder.active {
-	background: var(--panel-bg);
+	background: var(--hover-bg);
 	color: var(--ink);
+	box-shadow: 0 4px 12px rgb(0 0 0 / 0.06);
 }
 
 .bookmark-folder.active {
@@ -92,7 +93,11 @@
 	display: inline-flex;
 	align-items: center;
 	gap: 3px;
-	margin: 4px 0 0 4px;
+	margin: 4px 0 8px;
+	padding: 4px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--panel-bg);
 	color: var(--muted);
 	font-size: 12px;
 	overflow-x: auto;
@@ -158,9 +163,9 @@
 
 .bookmark-card {
 	min-width: 0;
-	height: 104px;
+	height: 92px;
 	display: grid;
-	grid-template-columns: 82px minmax(0, 1fr);
+	grid-template-columns: minmax(0, 1fr);
 	align-items: stretch;
 	overflow: hidden;
 	border: 1px solid var(--line);
@@ -174,38 +179,10 @@
 }
 
 .bookmark-card:hover {
-	transform: translateY(-2px);
-	box-shadow: 0 8px 20px rgb(0 0 0 / 0.1);
+	transform: translateY(-1px);
+	box-shadow: 0 8px 20px rgb(0 0 0 / 0.08);
 }
 
-.bookmark-card-cover {
-	position: relative;
-	min-height: 102px;
-	display: grid;
-	place-items: center;
-	background: #e8ecef;
-	color: #425466;
-	font-size: 42px;
-	font-weight: 700;
-}
-
-.bookmark-card-cover img {
-	position: absolute;
-	inset: 0;
-	width: 100%;
-	height: 100%;
-	object-fit: cover;
-}
-
-.bookmark-card-cover.has-image {
-	background: #dfe5e9;
-}
-
-.bookmark-card-cover span {
-	opacity: 0.2;
-}
-
-.bookmark-card-cover span[hidden],
 .bookmark-favicon span[hidden] {
 	display: none;
 }
@@ -338,9 +315,5 @@
 	.bookmark-card {
 		grid-template-columns: minmax(0, 1fr);
 		height: 78px;
-	}
-
-	.bookmark-card-cover {
-		display: none;
 	}
 }

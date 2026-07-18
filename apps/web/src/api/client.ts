@@ -1,7 +1,6 @@
 import type {
 	ApiResponse,
 	BookmarkHub,
-	BookmarkPreview,
 	CalendarEvent,
 	CalendarSummary,
 	DeviceSession,
@@ -48,7 +47,7 @@ async function requestFrom<T>(base: string, path: string, init: RequestInit = {}
 	} catch {
 		throw new ApiError(
 			response.status >= 500
-				? `Server request failed (${response.status}). Check the Worker deployment logs.`
+				? `TrueSpace is temporarily unavailable (${response.status}). Please try again shortly.`
 				: response.statusText || 'Request failed',
 			response.status,
 		);
@@ -88,8 +87,42 @@ export const api = {
 	listFiles(path: string): Promise<FileListing> {
 		return request(`/fs?path=${encodeURIComponent(path)}`);
 	},
-	fileInfo(path: string): Promise<{ downloadUrl: string; contentType: string }> {
+	fileInfo(path: string): Promise<{ downloadUrl: string; contentType: string; size: number; etag: string }> {
 		return request(`/fs/content?path=${encodeURIComponent(path)}`);
+	},
+	async previewFile(path: string, etag?: string): Promise<Blob> {
+		const cache = await caches.open('r2-file-previews-v1');
+		const cacheKey = new Request(`${location.origin}/__r2_preview__/${encodeURIComponent(path)}`);
+		const cached = await cache.match(cacheKey);
+		if (cached && (!etag || cached.headers.get('X-R2-ETag') === etag)) return cached.blob();
+		const response = await fetch(`${API_BASE}/api/v1/fs/content?path=${encodeURIComponent(path)}&download=1`, {
+			headers: authHeaders(),
+			credentials: 'include',
+		});
+		if (!response.ok) throw new ApiError('Preview failed', response.status);
+		const contentLength = Number(response.headers.get('Content-Length') ?? 0);
+		if (contentLength > 100 * 1024) throw new ApiError('This file is too large to preview', 413);
+		const blob = await response.blob();
+		const headers = new Headers(response.headers);
+		if (etag) headers.set('X-R2-ETag', etag);
+		await cache.put(cacheKey, new Response(blob, { headers }));
+		return blob;
+	},
+	async clearFilePreview(path: string): Promise<void> {
+		const cache = await caches.open('r2-file-previews-v1');
+		await cache.delete(new Request(`${location.origin}/__r2_preview__/${encodeURIComponent(path)}`));
+	},
+	async saveTextFile(path: string, content: string, contentType: string, etag?: string): Promise<void> {
+		const headers = new Headers({ 'Content-Type': contentType || 'text/plain; charset=utf-8' });
+		if (etag) headers.set('If-Match', etag);
+		const response = await fetch(`${API_BASE}/api/v1/fs/content?path=${encodeURIComponent(path)}`, {
+			method: 'PUT',
+			headers: authHeaders(headers),
+			credentials: 'include',
+			body: content,
+		});
+		if (!response.ok) throw new ApiError('Save failed', response.status);
+		await this.clearFilePreview(path);
 	},
 	async download(path: string): Promise<void> {
 		const response = await fetch(`${API_BASE}/api/v1/fs/content?path=${encodeURIComponent(path)}&download=1`, {
@@ -175,9 +208,6 @@ export const api = {
 			if (error instanceof ApiError && error.status === 404) return null;
 			throw error;
 		}
-	},
-	bookmarkPreview(url: string, includeImage = true): Promise<BookmarkPreview> {
-		return request(`/bookmarks/preview?url=${encodeURIComponent(url)}${includeImage ? '' : '&image=0'}`);
 	},
 	createNote(title: string, content = ''): Promise<Note> {
 		return notesRequest('', {

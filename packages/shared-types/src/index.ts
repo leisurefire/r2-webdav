@@ -106,8 +106,3 @@ export interface BookmarkHub {
 	sha?: string;
 	nodes: BookmarkNode[];
 }
-
-export interface BookmarkPreview {
-	favicon?: string;
-	image?: string;
-}

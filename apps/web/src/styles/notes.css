@@ -28,3 +28,152 @@
 		bottom: 2px;
 	}
 }
+
+.note-mode.active {
+	background: var(--surface-strong);
+	color: var(--ink);
+}
+
+.note-compose {
+	display: grid;
+	grid-template-columns: minmax(150px, 200px) minmax(0, 1fr);
+}
+
+.note-document {
+	min-width: 0;
+	min-height: 0;
+	height: 100%;
+	overflow: hidden;
+}
+
+.note-outline {
+	min-width: 0;
+	padding: 22px 14px;
+	border-right: 1px solid var(--line);
+	overflow: auto;
+}
+
+.note-outline > strong {
+	display: block;
+	margin: 0 8px 10px;
+	font-size: 11px;
+}
+
+.note-outline > span {
+	display: block;
+	padding: 0 8px;
+	font-size: 11px;
+	line-height: 1.5;
+}
+
+.note-outline button {
+	width: 100%;
+	min-height: 30px;
+	padding: 5px 8px 5px calc(8px + (var(--outline-level) - 1) * 8px);
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--muted);
+	font-size: 11px;
+	line-height: 1.35;
+	text-align: left;
+}
+
+.note-outline button:hover {
+	background: var(--surface);
+	color: var(--ink);
+}
+
+.note-compose:not(.previewing) .note-source {
+	display: block;
+}
+
+.note-compose:not(.previewing) .note-render,
+.note-compose:not(.previewing) .note-outline {
+	display: none;
+}
+
+.note-source {
+	caret-color: var(--ink);
+}
+
+.note-render pre,
+.file-markdown-preview pre {
+	max-width: 100%;
+	padding: 14px 16px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--surface);
+	overflow: auto;
+}
+
+.note-render pre code,
+.file-markdown-preview pre code {
+	padding: 0;
+	background: transparent;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 12px;
+	line-height: 1.6;
+}
+
+.note-render table,
+.file-markdown-preview table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 16px 0;
+}
+
+.note-render th,
+.note-render td,
+.file-markdown-preview th,
+.file-markdown-preview td {
+	padding: 8px 10px;
+	border: 1px solid var(--line);
+	text-align: left;
+}
+
+.note-render img,
+.file-markdown-preview img {
+	max-width: 100%;
+	height: auto;
+	border-radius: 6px;
+}
+
+.note-render .katex-display,
+.file-markdown-preview .katex-display {
+	max-width: 100%;
+	overflow-x: auto;
+	overflow-y: hidden;
+}
+
+@media (max-width: 760px) {
+	.note-compose {
+		display: grid;
+		grid-template-columns: 1fr;
+		grid-template-rows: auto minmax(0, 1fr);
+	}
+
+	.note-outline {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 7px 10px;
+		border-right: 0;
+		border-bottom: 1px solid var(--line);
+		overflow-x: auto;
+	}
+
+	.note-outline > strong,
+	.note-outline > span {
+		flex: none;
+		margin: 0;
+		white-space: nowrap;
+	}
+
+	.note-outline button {
+		width: auto;
+		flex: none;
+		padding: 5px 8px;
+		white-space: nowrap;
+	}
+}
