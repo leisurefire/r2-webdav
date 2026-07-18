@@ -10,7 +10,7 @@
 	display: grid;
 	min-height: 0;
 	flex: 1;
-	grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+	grid-template-columns: minmax(240px, 288px) minmax(0, 1fr);
 	grid-template-rows: auto minmax(0, 1fr);
 	gap: 0;
 	border: 1px solid var(--line);
@@ -72,7 +72,9 @@
 	margin-bottom: 0;
 	border-radius: 0;
 	background: transparent;
-	transition: background 140ms ease, color 140ms ease;
+	transition:
+		background 140ms ease,
+		color 140ms ease;
 }
 
 .note-tree-special > button,
@@ -123,7 +125,9 @@
 	font-size: 16px;
 	line-height: 1;
 	transform-origin: center;
-	transition: transform 140ms ease, color 140ms ease;
+	transition:
+		transform 140ms ease,
+		color 140ms ease;
 }
 
 .note-folder-card.expanded > button .tree-caret,
@@ -346,6 +350,7 @@
 
 .note-editor-head {
 	gap: 10px;
+	flex-wrap: wrap;
 }
 
 .note-heading {
@@ -391,6 +396,12 @@
 	font-size: 20px;
 	font-weight: 650;
 	letter-spacing: 0;
+}
+
+@media (max-width: 1200px) {
+	.note-editor-desktop .note-editor-head > time {
+		display: none;
+	}
 }
 
 .note-render pre,
@@ -522,6 +533,12 @@
 	.note-mobile-back {
 		display: grid;
 		flex: none;
+	}
+
+	.note-editor-mobile .note-actions {
+		width: 100%;
+		flex-basis: 100%;
+		justify-content: flex-end;
 	}
 
 	.note-editor-mobile .note-save-status {

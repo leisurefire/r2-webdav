@@ -231,10 +231,10 @@ function refreshIcons(): void {
 			Cloud,
 			Copy,
 			Database,
-				Download,
-				Eye,
-				File,
-				FileDown,
+			Download,
+			Eye,
+			File,
+			FileDown,
 			Film,
 			Folder,
 			FolderOpen,
@@ -251,8 +251,8 @@ function refreshIcons(): void {
 			Pin,
 			PinOff,
 			Plus,
-				RefreshCw,
-				Save,
+			RefreshCw,
+			Save,
 			Settings,
 			Smartphone,
 			StickyNote,
@@ -467,9 +467,27 @@ function fileExtension(path: string): string {
 function previewContentType(entry: FileEntry): string {
 	if (entry.contentType) return entry.contentType;
 	const ext = fileExtension(entry.path);
-	return ({ txt: 'text/plain', json: 'application/json', md: 'text/markdown',
-		png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
-		mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', webm: 'video/webm', pdf: 'application/pdf' } as Record<string, string>)[ext] ?? 'application/octet-stream';
+	return (
+		(
+			{
+				txt: 'text/plain',
+				json: 'application/json',
+				md: 'text/markdown',
+				png: 'image/png',
+				jpg: 'image/jpeg',
+				jpeg: 'image/jpeg',
+				gif: 'image/gif',
+				webp: 'image/webp',
+				svg: 'image/svg+xml',
+				mp3: 'audio/mpeg',
+				wav: 'audio/wav',
+				ogg: 'audio/ogg',
+				mp4: 'video/mp4',
+				webm: 'video/webm',
+				pdf: 'application/pdf',
+			} as Record<string, string>
+		)[ext] ?? 'application/octet-stream'
+	);
 }
 
 function canPreview(entry: FileEntry): boolean {
@@ -502,7 +520,11 @@ async function openFilePreview(entry: FileEntry): Promise<void> {
 		if (ext === 'txt' || ext === 'json') {
 			let value = await blob.text();
 			if (ext === 'json') {
-				try { value = JSON.stringify(JSON.parse(value), null, 2); } catch { /* Keep invalid JSON editable. */ }
+				try {
+					value = JSON.stringify(JSON.parse(value), null, 2);
+				} catch {
+					/* Keep invalid JSON editable. */
+				}
 			}
 			body.innerHTML = `<div class="file-text-editor"><textarea class="file-text-source" spellcheck="false" aria-label="${html(entry.name)}">${html(value)}</textarea><div class="file-preview-actions"><span class="muted" data-file-save-status></span><button class="button primary" data-file-save><i data-lucide="save"></i><span>${locale === 'zh' ? '手动保存' : 'Save manually'}</span></button></div></div>`;
 			body.querySelector('[data-file-save]')?.addEventListener('click', async () => {
@@ -511,18 +533,34 @@ async function openFilePreview(entry: FileEntry): Promise<void> {
 				button.disabled = true;
 				status.textContent = locale === 'zh' ? '保存中…' : 'Saving…';
 				try {
-					await api.saveTextFile(entry.path, body.querySelector<HTMLTextAreaElement>('.file-text-source')!.value, type, entry.etag);
+					await api.saveTextFile(
+						entry.path,
+						body.querySelector<HTMLTextAreaElement>('.file-text-source')!.value,
+						type,
+						entry.etag,
+					);
 					status.textContent = locale === 'zh' ? '已保存' : 'Saved';
 					entry.etag = (await api.fileInfo(entry.path)).etag;
 				} catch (error) {
 					status.textContent = errorMessage(error);
-				} finally { button.disabled = false; }
+				} finally {
+					button.disabled = false;
+				}
 			});
 		} else if (ext === 'md' || type === 'text/markdown') {
 			const value = await blob.text();
 			body.innerHTML = `<article class="file-markdown-preview">${renderMarkdown(value)}</article><div class="file-preview-actions"><button class="button primary" data-migrate-md><i data-lucide="file-down"></i><span>${locale === 'zh' ? '迁移到收藏空间' : 'Move to collection'}</span></button></div>`;
 			body.querySelector('[data-migrate-md]')?.addEventListener('click', async () => {
-				if (!(await confirmAction(locale === 'zh' ? '迁移 Markdown 文件？' : 'Move Markdown file?', locale === 'zh' ? '迁移成功后将删除文件空间中的原文件。' : 'The original file will be deleted after import.', locale === 'zh' ? '迁移' : 'Move'))) return;
+				if (
+					!(await confirmAction(
+						locale === 'zh' ? '迁移 Markdown 文件？' : 'Move Markdown file?',
+						locale === 'zh'
+							? '迁移成功后将删除文件空间中的原文件。'
+							: 'The original file will be deleted after import.',
+						locale === 'zh' ? '迁移' : 'Move',
+					))
+				)
+					return;
 				try {
 					await api.createNote(entry.name.replace(/\.md$/i, '') || 'Untitled note', value);
 					await api.deleteFile(entry.path);
@@ -530,7 +568,9 @@ async function openFilePreview(entry: FileEntry): Promise<void> {
 					dialog.close();
 					toast(locale === 'zh' ? '已迁移到收藏空间' : 'Moved to collection');
 					navigate('/notes');
-				} catch (error) { toast(errorMessage(error)); }
+				} catch (error) {
+					toast(errorMessage(error));
+				}
 			});
 		} else if (type.startsWith('image/')) {
 			objectUrl = URL.createObjectURL(blob);
@@ -1264,7 +1304,11 @@ function bookmarkFolderTree(): BookmarkFolder {
 
 function bookmarkCardMarkup(card: BookmarkCard): string {
 	let favicon = '';
-	try { favicon = new URL('/favicon.ico', card.url).href; } catch { /* The card URL was already validated. */ }
+	try {
+		favicon = new URL('/favicon.ico', card.url).href;
+	} catch {
+		/* The card URL was already validated. */
+	}
 	return `<a class="bookmark-card" href="${html(card.url)}" target="_blank" rel="noopener noreferrer" title="${html(card.title || card.url)}">
 		<div class="bookmark-card-body">${card.title ? `<h3>${html(card.title)}</h3>` : ''}<div class="bookmark-link"><span class="bookmark-favicon"><span data-bookmark-fallback>${html(card.domain.slice(0, 1).toUpperCase())}</span>${favicon ? `<img data-bookmark-icon src="${html(favicon)}" alt="" loading="lazy" referrerpolicy="no-referrer" hidden>` : ''}</span><p>${html(card.url)}</p></div><div class="bookmark-card-meta"><small>${html(card.path.filter(Boolean).join(' / '))}</small><time>${card.dateModified ? new Date(card.dateModified).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en') : ''}</time></div></div>
 	</a>`;
@@ -1341,7 +1385,8 @@ async function loadNoteFolders(force = false): Promise<void> {
 	try {
 		noteFolders = await api.noteFolders();
 		noteFoldersLoaded = true;
-		if (selectedNoteFolderId && !noteFolders.some((folder) => folder.id === selectedNoteFolderId)) selectedNoteFolderId = undefined;
+		if (selectedNoteFolderId && !noteFolders.some((folder) => folder.id === selectedNoteFolderId))
+			selectedNoteFolderId = undefined;
 	} catch (error) {
 		if (force) toast(errorMessage(error));
 	}
@@ -1364,7 +1409,12 @@ function renderMarkdownDocument(value: string): { html: string; headings: Markdo
 	const usedIds = new Set<string>();
 	documentNode.body.querySelectorAll<HTMLHeadingElement>('h1, h2, h3, h4, h5, h6').forEach((heading) => {
 		const level = Number(heading.tagName.slice(1));
-		const base = heading.textContent?.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-') .replace(/^-|-$/g, '') || 'section';
+		const base =
+			heading.textContent
+				?.trim()
+				.toLowerCase()
+				.replace(/[^\p{L}\p{N}]+/gu, '-')
+				.replace(/^-|-$/g, '') || 'section';
 		let id = base;
 		let suffix = 2;
 		while (usedIds.has(id)) id = `${base}-${suffix++}`;
@@ -1499,12 +1549,21 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		const rendered = renderMarkdownDocument(draftContent);
 		noteRender.innerHTML = rendered.html || `<p class="muted">${locale === 'zh' ? '空便签' : 'Empty note'}</p>`;
 		outline.innerHTML = rendered.headings.length
-			? rendered.headings.map((heading) => `<button type="button" data-outline-target="${html(heading.id)}" aria-label="${html(heading.text)}" title="${html(heading.text)}" style="--outline-level:${heading.level}"><span></span></button>`).join('')
+			? rendered.headings
+					.map(
+						(heading) =>
+							`<button type="button" data-outline-target="${html(heading.id)}" aria-label="${html(heading.text)}" title="${html(heading.text)}" style="--outline-level:${heading.level}"><span></span></button>`,
+					)
+					.join('')
 			: '';
 		outline.classList.toggle('empty', rendered.headings.length === 0);
-		outline.querySelectorAll<HTMLElement>('[data-outline-target]').forEach((button) => button.addEventListener('click', () => {
-			noteRender.querySelector(`#${CSS.escape(button.dataset.outlineTarget!)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-		}));
+		outline.querySelectorAll<HTMLElement>('[data-outline-target]').forEach((button) =>
+			button.addEventListener('click', () => {
+				noteRender
+					.querySelector(`#${CSS.escape(button.dataset.outlineTarget!)}`)
+					?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			}),
+		);
 		updateOutlineActive();
 	};
 	const updateOutlineActive = () => {
@@ -1513,15 +1572,23 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		for (const heading of headings) {
 			if (heading.offsetTop - noteRender.scrollTop <= 72) active = heading;
 		}
-		outline.querySelectorAll<HTMLElement>('[data-outline-target]').forEach((button) => button.classList.toggle('active', button.dataset.outlineTarget === active?.id));
+		outline
+			.querySelectorAll<HTMLElement>('[data-outline-target]')
+			.forEach((button) => button.classList.toggle('active', button.dataset.outlineTarget === active?.id));
 	};
 	const setMode = (mode: 'edit' | 'preview') => {
 		compose.classList.toggle('previewing', mode === 'preview');
-		root.querySelectorAll<HTMLElement>('[data-note-mode]').forEach((button) => button.classList.toggle('active', button.dataset.noteMode === mode));
+		root
+			.querySelectorAll<HTMLElement>('[data-note-mode]')
+			.forEach((button) => button.classList.toggle('active', button.dataset.noteMode === mode));
 		if (mode === 'preview') paintPreview();
 		else source.focus();
 	};
-	root.querySelectorAll<HTMLElement>('[data-note-mode]').forEach((button) => button.addEventListener('click', () => setMode(button.dataset.noteMode as 'edit' | 'preview')));
+	root
+		.querySelectorAll<HTMLElement>('[data-note-mode]')
+		.forEach((button) =>
+			button.addEventListener('click', () => setMode(button.dataset.noteMode as 'edit' | 'preview')),
+		);
 	noteRender.addEventListener('click', (event) => {
 		if ((event.target as HTMLElement).closest('a')) return;
 		setMode('edit');
@@ -1532,7 +1599,9 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		queueSave({ content: draftContent });
 	});
 	source.addEventListener('paste', (event) => {
-		const images = event.clipboardData ? [...event.clipboardData.files].filter((file) => file.type.startsWith('image/')) : [];
+		const images = event.clipboardData
+			? [...event.clipboardData.files].filter((file) => file.type.startsWith('image/'))
+			: [];
 		if (!images.length) return;
 		event.preventDefault();
 		const image = images[0];
@@ -1594,7 +1663,7 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		if (!(await confirmAction(`${t('delete')}?`, selected.title, t('delete')))) return;
 		try {
 			await api.deleteNote(selected.id);
-			validatedNotePages.delete(noteCacheKey());
+			invalidateNoteCaches();
 			await renderNotes(undefined, true);
 		} catch (error) {
 			toast(errorMessage(error));
@@ -1631,11 +1700,18 @@ function noteCardMarkup(note: Note, selected?: Note): string {
 
 function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 	const active = (folderId: string | null | undefined) =>
-		notesView === 'active' && ((folderId === undefined && selectedNoteFolderId === undefined) || folderId === selectedNoteFolderId) ? 'active' : '';
+		notesView === 'active' &&
+		((folderId === undefined && selectedNoteFolderId === undefined) || folderId === selectedNoteFolderId)
+			? 'active'
+			: '';
 	const notesFor = (folderId: string | null) => data.items.filter((note) => (note.folderId ?? null) === folderId);
-	const noteChildren = (items: Note[]) => items.length ? `<div class="notes-tree-children">${items.map((note) => noteCardMarkup(note, selected)).join('')}</div>` : '';
+	const noteChildren = (items: Note[]) =>
+		items.length
+			? `<div class="notes-tree-children">${items.map((note) => noteCardMarkup(note, selected)).join('')}</div>`
+			: '';
 	const folderRow = (folder: NoteFolder) => {
-		const expanded = notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === folder.id);
+		const expanded =
+			notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === folder.id);
 		return `<div class="note-folder-card ${active(folder.id)} ${expanded ? 'expanded' : ''}" data-note-folder-drop="${html(folder.id)}"><button type="button" data-note-folder-filter="${html(folder.id)}"><span class="tree-caret" aria-hidden="true">&gt;</span><span>${html(folder.name)}</span><small>${folder.noteCount}</small></button><div class="note-folder-actions"><button class="row-action" data-rename-note-folder="${html(folder.id)}" title="${locale === 'zh' ? '重命名' : 'Rename'}" aria-label="${locale === 'zh' ? '重命名' : 'Rename'}"><i data-lucide="pencil"></i></button><button class="row-action danger" data-delete-note-folder="${html(folder.id)}" title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button></div>${expanded ? noteChildren(notesFor(folder.id)) : ''}</div>`;
 	};
 	const rootNotes = notesFor(null);
@@ -1660,43 +1736,78 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 		notesData = null;
 		void renderNotes(undefined, false);
 	};
-	content.querySelectorAll<HTMLElement>('[data-note-folder-filter]').forEach((button) => button.addEventListener('click', () => selectFolder(button.dataset.noteFolderFilter ?? 'all')));
+	content
+		.querySelectorAll<HTMLElement>('[data-note-folder-filter]')
+		.forEach((button) =>
+			button.addEventListener('click', () => selectFolder(button.dataset.noteFolderFilter ?? 'all')),
+		);
 	content.querySelector('[data-new-note-folder]')?.addEventListener('click', async () => {
-		const name = await openTextDialog(locale === 'zh' ? '新建便签目录' : 'New note folder', locale === 'zh' ? '目录名称' : 'Folder name');
+		const name = await openTextDialog(
+			locale === 'zh' ? '新建便签目录' : 'New note folder',
+			locale === 'zh' ? '目录名称' : 'Folder name',
+		);
 		if (!name) return;
 		try {
 			const created = await api.createNoteFolder(name);
 			noteFolders.push(created);
 			selectedNoteFolderId = created.id;
-			validatedNotePages.delete(noteCacheKey());
+			invalidateNoteCaches();
 			await renderNotes(undefined, true);
-		} catch (error) { toast(errorMessage(error)); }
+		} catch (error) {
+			toast(errorMessage(error));
+		}
 	});
-	content.querySelectorAll<HTMLElement>('[data-rename-note-folder]').forEach((button) => button.addEventListener('click', async (event) => {
-		event.stopPropagation();
-		const folder = noteFolders.find((item) => item.id === button.dataset.renameNoteFolder);
-		if (!folder) return;
-		const name = await openTextDialog(locale === 'zh' ? '重命名便签目录' : 'Rename note folder', locale === 'zh' ? '目录名称' : 'Folder name', folder.name);
-		if (!name || name === folder.name) return;
-		try {
-			const updated = await api.updateNoteFolder(folder.id, name);
-			Object.assign(folder, updated);
-			paintNotes(data, data.items[0]?.id);
-		} catch (error) { toast(errorMessage(error)); }
-	}));
-	content.querySelectorAll<HTMLElement>('[data-delete-note-folder]').forEach((button) => button.addEventListener('click', async (event) => {
-		event.stopPropagation();
-		const folder = noteFolders.find((item) => item.id === button.dataset.deleteNoteFolder);
-		if (!folder || !(await confirmAction(locale === 'zh' ? '删除便签目录？' : 'Delete note folder?', locale === 'zh' ? '目录中的便签会移到未分类，不会被删除。' : 'Notes in this folder will move to Unfiled and will not be deleted.', t('delete')))) return;
-		try {
-			await api.deleteNoteFolder(folder.id);
-			noteFolders = noteFolders.filter((item) => item.id !== folder.id);
-			if (selectedNoteFolderId === folder.id) selectedNoteFolderId = undefined;
-			await renderNotes(undefined, true);
-		} catch (error) { toast(errorMessage(error)); }
-	}));
+	content.querySelectorAll<HTMLElement>('[data-rename-note-folder]').forEach((button) =>
+		button.addEventListener('click', async (event) => {
+			event.stopPropagation();
+			const folder = noteFolders.find((item) => item.id === button.dataset.renameNoteFolder);
+			if (!folder) return;
+			const name = await openTextDialog(
+				locale === 'zh' ? '重命名便签目录' : 'Rename note folder',
+				locale === 'zh' ? '目录名称' : 'Folder name',
+				folder.name,
+			);
+			if (!name || name === folder.name) return;
+			try {
+				const updated = await api.updateNoteFolder(folder.id, name);
+				Object.assign(folder, updated);
+				paintNotes(data, data.items[0]?.id);
+			} catch (error) {
+				toast(errorMessage(error));
+			}
+		}),
+	);
+	content.querySelectorAll<HTMLElement>('[data-delete-note-folder]').forEach((button) =>
+		button.addEventListener('click', async (event) => {
+			event.stopPropagation();
+			const folder = noteFolders.find((item) => item.id === button.dataset.deleteNoteFolder);
+			if (
+				!folder ||
+				!(await confirmAction(
+					locale === 'zh' ? '删除便签目录？' : 'Delete note folder?',
+					locale === 'zh'
+						? '目录中的便签会移到未分类，不会被删除。'
+						: 'Notes in this folder will move to Unfiled and will not be deleted.',
+					t('delete'),
+				))
+			)
+				return;
+			try {
+				await api.deleteNoteFolder(folder.id);
+				noteFolders = noteFolders.filter((item) => item.id !== folder.id);
+				if (selectedNoteFolderId === folder.id) selectedNoteFolderId = undefined;
+				invalidateNoteCaches();
+				await renderNotes(undefined, true);
+			} catch (error) {
+				toast(errorMessage(error));
+			}
+		}),
+	);
 	content.querySelectorAll<HTMLElement>('[data-note-folder-drop]').forEach((target) => {
-		target.addEventListener('dragover', (event) => { event.preventDefault(); target.classList.add('drag-over'); });
+		target.addEventListener('dragover', (event) => {
+			event.preventDefault();
+			target.classList.add('drag-over');
+		});
 		target.addEventListener('dragleave', () => target.classList.remove('drag-over'));
 		target.addEventListener('drop', async (event) => {
 			event.preventDefault();
@@ -1704,13 +1815,16 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 			const noteId = event.dataTransfer?.getData('text/x-truespace-note');
 			if (!noteId || target.dataset.noteFolderDrop === 'all') return;
 			const archive = target.dataset.noteFolderDrop === 'archive';
-			const folderId = target.dataset.noteFolderDrop === 'root' ? null : archive ? undefined : target.dataset.noteFolderDrop;
+			const folderId =
+				target.dataset.noteFolderDrop === 'root' ? null : archive ? undefined : target.dataset.noteFolderDrop;
 			try {
 				await api.updateNote(noteId, archive ? { archived: true } : { folderId });
 				await loadNoteFolders(true);
-				validatedNotePages.delete(noteCacheKey());
+				invalidateNoteCaches();
 				await renderNotes(undefined, true);
-			} catch (error) { toast(errorMessage(error)); }
+			} catch (error) {
+				toast(errorMessage(error));
+			}
 		});
 	});
 }
@@ -1866,10 +1980,14 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 	bindNotesFolders(content, data);
 	content.querySelector('#new-note')?.addEventListener('click', async () => {
 		try {
-			const note = await api.createNote(locale === 'zh' ? '无标题便签' : 'Untitled note', '', typeof selectedNoteFolderId === 'string' ? selectedNoteFolderId : null);
+			const note = await api.createNote(
+				locale === 'zh' ? '无标题便签' : 'Untitled note',
+				'',
+				typeof selectedNoteFolderId === 'string' ? selectedNoteFolderId : null,
+			);
 			notesArchived = false;
 			notesData = null;
-			validatedNotePages.delete(noteCacheKey());
+			invalidateNoteCaches();
 			await renderNotes(note.id, true, true);
 		} catch (error) {
 			toast(errorMessage(error));
@@ -1918,7 +2036,13 @@ async function loadMoreNotes(selectedId?: string, scrollTop = 0): Promise<void> 
 	const folderId = selectedNoteFolderId;
 	try {
 		const next = await api.notes(current.page + 1, archived, folderId);
-		if (notesData !== current || archived !== notesArchived || folderId !== selectedNoteFolderId || pageFromPath() !== 'notes') return;
+		if (
+			notesData !== current ||
+			archived !== notesArchived ||
+			folderId !== selectedNoteFolderId ||
+			pageFromPath() !== 'notes'
+		)
+			return;
 		const knownIds = new Set(current.items.map((note) => note.id));
 		current.items.push(...next.items.filter((note) => !knownIds.has(note.id)));
 		current.page = next.page;
@@ -1969,7 +2093,8 @@ async function renderNotes(selectedId?: string, forceSync = false, openMobile = 
 	const request = ++notesRequest;
 	try {
 		const data = await api.notes(1, requestedArchived, requestedFolderId);
-		if (request !== notesRequest || requestedArchived !== notesArchived || requestedFolderId !== selectedNoteFolderId) return;
+		if (request !== notesRequest || requestedArchived !== notesArchived || requestedFolderId !== selectedNoteFolderId)
+			return;
 		notesData = data;
 		cacheNotes(data, requestedArchived);
 		if (pageFromPath() === 'notes') paintNotes(data, selectedId, openMobile);

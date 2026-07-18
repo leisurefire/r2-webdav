@@ -1,7 +1,7 @@
 /* Link collections share the same quiet surfaces as the notes tree. */
 .notes-layout.bookmark-layout {
 	display: grid;
-	grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+	grid-template-columns: minmax(240px, 288px) minmax(0, 1fr);
 	grid-template-rows: auto minmax(0, 1fr);
 	gap: 0;
 	border: 1px solid var(--line);
@@ -68,7 +68,9 @@
 	text-align: left;
 	font-size: 12px;
 	text-overflow: ellipsis;
-	transition: background 140ms ease, box-shadow 140ms ease;
+	transition:
+		background 140ms ease,
+		box-shadow 140ms ease;
 }
 
 .bookmark-folder:hover,
@@ -99,7 +101,9 @@
 	font-size: 16px;
 	line-height: 1;
 	transform-origin: center;
-	transition: transform 140ms ease, color 140ms ease;
+	transition:
+		transform 140ms ease,
+		color 140ms ease;
 }
 
 .bookmark-tree-node.expanded > .bookmark-folder .tree-caret,
@@ -115,6 +119,10 @@
 	top: 50%;
 	width: 12px;
 	border-top: 1px solid var(--line);
+}
+
+.bookmark-folder-tree > .bookmark-tree-node > .bookmark-folder::before {
+	display: none;
 }
 
 .bookmark-folder span,
@@ -253,7 +261,9 @@
 	text-decoration: none;
 	border: 1px solid var(--line);
 	box-shadow: none;
-	transition: box-shadow 140ms ease, background 140ms ease;
+	transition:
+		box-shadow 140ms ease,
+		background 140ms ease;
 }
 
 .bookmark-card:hover {
