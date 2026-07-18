@@ -1,6 +1,6 @@
 export interface Env {
 	bucket: R2Bucket;
-	notes: D1Database;
+	NOTES_DB: D1Database;
 	USERNAME: string;
 	PASSWORD: string;
 	JWT_SECRET?: string;

@@ -3,6 +3,10 @@ import type { Env } from '../env';
 
 const encoder = new TextEncoder();
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+const SESSION_TABLE = 'r2_webdav_sessions';
+let schemaReady: Promise<void> | null = null;
+
+export class DatabaseSetupError extends Error {}
 
 export interface SessionContext {
 	id: string;
@@ -45,35 +49,46 @@ async function hashToken(token: string): Promise<string> {
 }
 
 export async function ensureDatabase(env: Env): Promise<void> {
-	await env.notes.exec(`
-		CREATE TABLE IF NOT EXISTS sessions (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			token_hash TEXT NOT NULL UNIQUE,
-			device_name TEXT NOT NULL,
-			browser TEXT NOT NULL,
-			platform TEXT NOT NULL,
-			device_type TEXT NOT NULL,
-			ip TEXT,
-			user_agent TEXT,
-			created_at TEXT NOT NULL,
-			last_seen_at TEXT NOT NULL,
-			expires_at TEXT NOT NULL
-		);
-		CREATE INDEX IF NOT EXISTS sessions_user_expiry ON sessions(user_id, expires_at);
-		CREATE TABLE IF NOT EXISTS user_notes (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			title TEXT NOT NULL,
-			content TEXT NOT NULL DEFAULT '',
-			is_pinned INTEGER NOT NULL DEFAULT 0,
-			is_archived INTEGER NOT NULL DEFAULT 0,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL,
-			accessed_at TEXT NOT NULL
-		);
-		CREATE INDEX IF NOT EXISTS notes_user_order ON user_notes(user_id, is_archived, is_pinned DESC, updated_at DESC);
-	`);
+	if (!env.NOTES_DB) throw new DatabaseSetupError('D1 binding NOTES_DB is missing');
+	schemaReady ??= env.NOTES_DB.batch([
+		env.NOTES_DB.prepare(`CREATE TABLE IF NOT EXISTS ${SESSION_TABLE} (
+				id TEXT PRIMARY KEY,
+				user_id TEXT NOT NULL,
+				token_hash TEXT NOT NULL UNIQUE,
+				device_name TEXT NOT NULL,
+				browser TEXT NOT NULL,
+				platform TEXT NOT NULL,
+				device_type TEXT NOT NULL,
+				ip TEXT,
+				user_agent TEXT,
+				created_at TEXT NOT NULL,
+				last_seen_at TEXT NOT NULL,
+				expires_at TEXT NOT NULL
+			)`),
+		env.NOTES_DB.prepare(
+			`CREATE INDEX IF NOT EXISTS r2_webdav_sessions_user_expiry ON ${SESSION_TABLE}(user_id, expires_at)`,
+		),
+		env.NOTES_DB.prepare(`CREATE TABLE IF NOT EXISTS r2_webdav_notes (
+				id TEXT PRIMARY KEY,
+				user_id TEXT NOT NULL,
+				title TEXT NOT NULL,
+				content TEXT NOT NULL DEFAULT '',
+				is_pinned INTEGER NOT NULL DEFAULT 0,
+				is_archived INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL,
+				accessed_at TEXT NOT NULL
+			)`),
+		env.NOTES_DB.prepare(
+			'CREATE INDEX IF NOT EXISTS r2_webdav_notes_user_order ON r2_webdav_notes(user_id, is_archived, is_pinned DESC, updated_at DESC)',
+		),
+	]).then(() => undefined);
+	try {
+		await schemaReady;
+	} catch (error) {
+		schemaReady = null;
+		throw new DatabaseSetupError(error instanceof Error ? error.message : 'D1 schema initialization failed');
+	}
 }
 
 function deviceDetails(
@@ -132,12 +147,11 @@ export async function createSession(request: Request, env: Env): Promise<Session
 	const now = new Date();
 	const expiresAt = new Date(now.getTime() + SESSION_TTL_SECONDS * 1000).toISOString();
 	const device = deviceDetails(request);
-	await env.notes
-		.prepare(
-			`INSERT INTO sessions
+	await env.NOTES_DB.prepare(
+		`INSERT INTO ${SESSION_TABLE}
 			(id, user_id, token_hash, device_name, browser, platform, device_type, ip, user_agent, created_at, last_seen_at, expires_at)
 			VALUES (?, 'default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
+	)
 		.bind(
 			id,
 			await hashToken(token),
@@ -166,19 +180,19 @@ export async function authorizeSession(request: Request, env: Env): Promise<Sess
 	const token = getRequestToken(request);
 	if (!token) return null;
 	await ensureDatabase(env);
-	const row = await env.notes
-		.prepare('SELECT id, user_id, expires_at FROM sessions WHERE token_hash = ?')
+	const row = await env.NOTES_DB.prepare(`SELECT id, user_id, expires_at FROM ${SESSION_TABLE} WHERE token_hash = ?`)
 		.bind(await hashToken(token))
 		.first<{ id: string; user_id: string; expires_at: string }>();
 	if (!row) return null;
 	if (Date.parse(row.expires_at) <= Date.now()) {
-		await env.notes.prepare('DELETE FROM sessions WHERE id = ?').bind(row.id).run();
+		await env.NOTES_DB.prepare(`DELETE FROM ${SESSION_TABLE} WHERE id = ?`).bind(row.id).run();
 		return null;
 	}
 	const now = new Date().toISOString();
 	const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString();
-	await env.notes
-		.prepare('UPDATE sessions SET last_seen_at = ?, expires_at = ?, ip = COALESCE(?, ip) WHERE id = ?')
+	await env.NOTES_DB.prepare(
+		`UPDATE ${SESSION_TABLE} SET last_seen_at = ?, expires_at = ?, ip = COALESCE(?, ip) WHERE id = ?`,
+	)
 		.bind(now, expiresAt, request.headers.get('CF-Connecting-IP'), row.id)
 		.run();
 	return { id: row.id, token, userId: row.user_id, expiresAt };
@@ -188,20 +202,18 @@ export async function revokeRequestSession(request: Request, env: Env): Promise<
 	const token = getRequestToken(request);
 	if (!token) return;
 	await ensureDatabase(env);
-	await env.notes
-		.prepare('DELETE FROM sessions WHERE token_hash = ?')
+	await env.NOTES_DB.prepare(`DELETE FROM ${SESSION_TABLE} WHERE token_hash = ?`)
 		.bind(await hashToken(token))
 		.run();
 }
 
 export async function listSessions(env: Env, currentId: string, userId = 'default'): Promise<DeviceSession[]> {
 	await ensureDatabase(env);
-	await env.notes.prepare('DELETE FROM sessions WHERE expires_at <= ?').bind(new Date().toISOString()).run();
-	const result = await env.notes
-		.prepare(
-			`SELECT id, user_id, device_name, browser, platform, device_type, ip, created_at, last_seen_at, expires_at
-			FROM sessions WHERE user_id = ? ORDER BY last_seen_at DESC`,
-		)
+	await env.NOTES_DB.prepare(`DELETE FROM ${SESSION_TABLE} WHERE expires_at <= ?`).bind(new Date().toISOString()).run();
+	const result = await env.NOTES_DB.prepare(
+		`SELECT id, user_id, device_name, browser, platform, device_type, ip, created_at, last_seen_at, expires_at
+			FROM ${SESSION_TABLE} WHERE user_id = ? ORDER BY last_seen_at DESC`,
+	)
 		.bind(userId)
 		.all<SessionRow>();
 	return result.results.map((row) => ({
@@ -220,7 +232,9 @@ export async function listSessions(env: Env, currentId: string, userId = 'defaul
 
 export async function revokeSession(env: Env, id: string, userId = 'default'): Promise<boolean> {
 	await ensureDatabase(env);
-	const result = await env.notes.prepare('DELETE FROM sessions WHERE id = ? AND user_id = ?').bind(id, userId).run();
+	const result = await env.NOTES_DB.prepare(`DELETE FROM ${SESSION_TABLE} WHERE id = ? AND user_id = ?`)
+		.bind(id, userId)
+		.run();
 	return (result.meta.changes ?? 0) > 0;
 }
 

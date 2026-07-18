@@ -2,6 +2,7 @@ import type { CalendarEvent, CalendarSummary, FileEntry, Note, NotePage } from '
 import type { Env } from '../env';
 import {
 	createSession,
+	DatabaseSetupError,
 	ensureDatabase,
 	listSessions,
 	revokeRequestSession,
@@ -238,26 +239,26 @@ async function listNotes(url: URL, env: Env, session: SessionContext): Promise<R
 	const archived = url.searchParams.get('archived') === '1' ? 1 : 0;
 	const offset = (page - 1) * pageSize;
 	const [rows, count] = await Promise.all([
-		env.notes
-			.prepare(
-				`SELECT id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at
-				FROM user_notes WHERE user_id = ? AND is_archived = ?
+		env.NOTES_DB.prepare(
+			`SELECT id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at
+				FROM r2_webdav_notes WHERE user_id = ? AND is_archived = ?
 				ORDER BY is_pinned DESC, updated_at DESC LIMIT ? OFFSET ?`,
-			)
+		)
 			.bind(session.userId, archived, pageSize, offset)
 			.all<NoteRow>(),
-		env.notes
-			.prepare('SELECT COUNT(*) AS total FROM user_notes WHERE user_id = ? AND is_archived = ?')
+		env.NOTES_DB.prepare('SELECT COUNT(*) AS total FROM r2_webdav_notes WHERE user_id = ? AND is_archived = ?')
 			.bind(session.userId, archived)
 			.first<{ total: number }>(),
 	]);
 	const now = new Date().toISOString();
 	if (rows.results.length) {
-		await env.notes.batch(
+		await env.NOTES_DB.batch(
 			rows.results.map((row) =>
-				env.notes
-					.prepare('UPDATE user_notes SET accessed_at = ? WHERE id = ? AND user_id = ?')
-					.bind(now, row.id, session.userId),
+				env.NOTES_DB.prepare('UPDATE r2_webdav_notes SET accessed_at = ? WHERE id = ? AND user_id = ?').bind(
+					now,
+					row.id,
+					session.userId,
+				),
 			),
 		);
 	}
@@ -280,11 +281,10 @@ async function createNote(request: Request, env: Env, session: SessionContext): 
 	if (title.length > 200) return jsonError('BAD_REQUEST', 'Note title is too long');
 	const id = crypto.randomUUID();
 	const now = new Date().toISOString();
-	await env.notes
-		.prepare(
-			`INSERT INTO user_notes (id, user_id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at)
+	await env.NOTES_DB.prepare(
+		`INSERT INTO r2_webdav_notes (id, user_id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at)
 			VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?)`,
-		)
+	)
 		.bind(id, session.userId, title, input?.content ?? '', now, now, now)
 		.run();
 	return jsonData(
@@ -330,15 +330,15 @@ async function updateNote(request: Request, env: Env, session: SessionContext, i
 	const now = new Date().toISOString();
 	updates.push('updated_at = ?', 'accessed_at = ?');
 	values.push(now, now, id, session.userId);
-	const changed = await env.notes
-		.prepare(`UPDATE user_notes SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`)
+	const changed = await env.NOTES_DB.prepare(
+		`UPDATE r2_webdav_notes SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`,
+	)
 		.bind(...values)
 		.run();
 	if (!(changed.meta.changes ?? 0)) return jsonError('NOT_FOUND', 'Note not found', 404);
-	const row = await env.notes
-		.prepare(
-			'SELECT id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at FROM user_notes WHERE id = ? AND user_id = ?',
-		)
+	const row = await env.NOTES_DB.prepare(
+		'SELECT id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at FROM r2_webdav_notes WHERE id = ? AND user_id = ?',
+	)
 		.bind(id, session.userId)
 		.first<NoteRow>();
 	return jsonData(noteFromRow(row!));
@@ -346,8 +346,7 @@ async function updateNote(request: Request, env: Env, session: SessionContext, i
 
 async function deleteNote(env: Env, session: SessionContext, id: string): Promise<Response> {
 	await ensureDatabase(env);
-	const result = await env.notes
-		.prepare('DELETE FROM user_notes WHERE id = ? AND user_id = ?')
+	const result = await env.NOTES_DB.prepare('DELETE FROM r2_webdav_notes WHERE id = ? AND user_id = ?')
 		.bind(id, session.userId)
 		.run();
 	if (!(result.meta.changes ?? 0)) return jsonError('NOT_FOUND', 'Note not found', 404);
@@ -373,8 +372,15 @@ export async function handleApi(request: Request, env: Env, session: SessionCont
 					},
 				},
 			);
-		} catch {
-			return jsonError('INTERNAL_ERROR', 'Unable to create a session', 500);
+		} catch (error) {
+			console.error('Session creation failed', error);
+			return jsonError(
+				'INTERNAL_ERROR',
+				error instanceof DatabaseSetupError
+					? `Session database is unavailable: ${error.message}. Redeploy the Worker with the NOTES_DB D1 binding and apply its migrations.`
+					: 'Unable to create a session. Check the Worker logs for the underlying D1 error.',
+				500,
+			);
 		}
 	}
 	if (path === '/auth/logout' && request.method === 'POST') {

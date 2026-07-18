@@ -8,7 +8,7 @@ binding = "bucket"
 bucket_name = "true-bucket"
 
 [[d1_databases]]
-binding = "notes"
+binding = "NOTES_DB"
 database_name = "notes"
 database_id = "0dcb94cd-c8b4-4dfa-8a32-4328ddae0aa3"
 

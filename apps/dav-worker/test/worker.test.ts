@@ -14,7 +14,11 @@ async function clearBucket(): Promise<void> {
 
 async function clearState(): Promise<void> {
 	await clearBucket();
-	await env.notes.exec('DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS user_notes;');
+	try {
+		await env.NOTES_DB.exec('DELETE FROM r2_webdav_sessions; DELETE FROM r2_webdav_notes;');
+	} catch {
+		// The first login initializes the local D1 schema.
+	}
 }
 
 async function login(): Promise<string> {

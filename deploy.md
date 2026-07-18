@@ -1,6 +1,6 @@
 # Cloudflare 部署指南
 
-本指南使用单用户模式，不需要 KV、D1 或 Pages Functions。建议先用 `workers.dev` 和 `pages.dev` 验证，再绑定自己的域名。
+本指南使用单用户模式，不需要 KV 或 Pages Functions。设备会话与便签使用名为 `notes` 的 D1 数据库。建议先用 `workers.dev` 和 `pages.dev` 验证，再绑定自己的域名。
 
 当前项目已固定使用：
 
@@ -78,7 +78,26 @@ openssl rand -base64 32
 
 密钥只存储在 Worker Secret 中，不要写入 `.env`、`wrangler.toml` 或 Git。
 
-## 4. 首次部署 Worker
+## 4. 配置 D1 数据库
+
+项目通过 `NOTES_DB` binding 访问名为 `notes` 的 D1 数据库。确认 `apps/dav-worker/wrangler.toml` 中的 `database_id` 指向当前 Cloudflare 账号内的数据库：
+
+```toml
+[[d1_databases]]
+binding = "NOTES_DB"
+database_name = "notes"
+database_id = "0dcb94cd-c8b4-4dfa-8a32-4328ddae0aa3"
+```
+
+首次部署或新增 migration 后，在仓库根目录执行：
+
+```bash
+npm run db:migrate -w @r2-webdav/dav-worker
+```
+
+该命令会在远端建立项目专用的 `r2_webdav_sessions` 和 `r2_webdav_notes` 表。Worker 运行时也会执行幂等初始化，但正式部署仍建议先应用 migration，以便在登录前发现绑定或权限错误。
+
+## 5. 首次部署 Worker
 
 先在 `apps/dav-worker/wrangler.toml` 中设置 Pages 的预期生产地址。假设 Pages 项目名为 `my-r2-webdav-ui`：
 
@@ -108,7 +127,7 @@ curl https://my-r2-webdav-worker.<subdomain>.workers.dev/api/v1/health
 
 应返回包含 `"ok":true` 和 `"status":"ok"` 的 JSON。
 
-## 5. 构建并部署 Pages
+## 6. 构建并部署 Pages
 
 回到仓库根目录，创建 `apps/web/.env.production.local`：
 
@@ -145,7 +164,7 @@ https://my-r2-webdav-ui.pages.dev/login
 - 没有尾部 `/`。
 - 修改 `wrangler.toml` 后重新执行了 `npx wrangler deploy`。
 
-## 6. 绑定自定义域名
+## 7. 绑定自定义域名
 
 推荐：
 
@@ -181,7 +200,7 @@ npm run build -w @r2-webdav/web
 npm run deploy:web
 ```
 
-## 7. 客户端连接
+## 8. 客户端连接
 
 WebDAV：
 
@@ -207,7 +226,7 @@ https://dav.example.com/caldav/default/calendars/
 
 优先用 DAVx5 或 Apple Calendar 验证，再连接华为日历。客户端必须使用 HTTPS。
 
-## 8. 上线检查
+## 9. 上线检查
 
 ```bash
 npm run typecheck
@@ -224,51 +243,89 @@ npm run format:check
 4. WebDAV 客户端上传文件后，在网页文件页确认可见。
 5. CalDAV 客户端新建事件后，在网页日历确认可见。
 
-## 9. 旧版本数据
+## 10. 旧版本数据
 
 旧版 `r2-webdav` 把文件直接存储在 Bucket 根目录；新版使用 `fs/default/`。现有 Bucket 上线前，必须把旧文件复制到这个前缀并保留 HTTP metadata 与 custom metadata。
 
 不要直接在生产 Bucket 上批量移动后立即切流。先复制到临时 Bucket 或使用预发布 Worker 验证 WebDAV 的 PROPFIND、锁和目录元数据，再切换生产域名。日历数据位于 `caldav/default/`，不要移动到文件前缀。
 
-## 10. 开启 GitHub Actions 自动部署
+## 11. 使用 Cloudflare 原生 Git 自动部署
 
-仓库已包含 `.github/workflows/deploy.yml`。它会在代码推送到 `main` 后依次执行类型检查、测试、前端构建、Worker 部署和 Pages 部署，也可以在 GitHub 的 **Actions > deploy > Run workflow** 中手动触发。
+仓库不使用 GitHub Actions 发布。`.github/workflows/ci.yml` 只负责代码检查，不接触 Cloudflare；Worker 与 Pages 分别通过 Cloudflare Dashboard 连接同一个 GitHub 仓库。
 
-### 10.1 创建 Cloudflare API Token
+### 11.1 连接 Worker
 
-在 Cloudflare Dashboard 的 **My Profile > API Tokens > Create Token** 中创建自定义 Token，并限制到本项目所在账号。至少授予以下 Account 权限：
+1. 打开 Cloudflare Dashboard 的 **Workers & Pages**。
+2. 进入现有 Worker `r2-webdav-x`。
+3. 打开 **Settings > Builds**（部分界面显示为 **Builds & deployments**）。
+4. 选择 **Connect to Git**，授权 Cloudflare 访问 GitHub 仓库。
+5. 选择本仓库，并填写以下配置：
 
-- **Workers Scripts: Edit**
-- **Cloudflare Pages: Edit**
-- **Workers R2 Storage: Edit**
+| 配置 | 值 |
+| --- | --- |
+| Production branch | `main` |
+| Root directory | `/` 或留空（仓库根目录） |
+| Build command | `npm run db:migrate -w @r2-webdav/dav-worker` |
+| Deploy command | `npm run deploy:worker` |
+| Non-production branch deploys | 按需开启；生产环境建议先关闭 |
 
-如果后续把自定义域名路由也写入 Wrangler 配置，再为对应 Zone 增加 **Workers Routes: Edit**。不要使用 Global API Key。
+不要把 Root directory 设置为 `apps/dav-worker`。本项目使用 npm workspaces，并依赖仓库中的 `packages/shared-types`，构建必须从仓库根目录执行。
 
-账号 ID 可在 Cloudflare Dashboard 任一域名或 Workers 概览右侧找到，也可以执行 `npx wrangler whoami` 查看。
+Worker 的 D1、R2 和普通变量由 `apps/dav-worker/wrangler.toml` 提供。登录密钥继续保存在 Worker 的 **Settings > Variables and Secrets**：
 
-### 10.2 配置 GitHub Environment
+- `USERNAME`
+- `PASSWORD`
+- `JWT_SECRET`（为兼容旧部署可以保留）
 
-打开 GitHub 仓库：
+Cloudflare 原生 Builds 不需要在 GitHub 中保存 `CLOUDFLARE_API_TOKEN` 或 `CLOUDFLARE_ACCOUNT_ID`。首次构建时，Build command 会向远端 `notes` D1 应用 migration，然后 Deploy command 发布 Worker。
 
-1. 进入 **Settings > Environments**，创建名为 `production` 的 Environment。
-2. 在该 Environment 的 **Secrets** 中添加：
-   - `CLOUDFLARE_API_TOKEN`：上一步创建的 Token。
-   - `CLOUDFLARE_ACCOUNT_ID`：Cloudflare Account ID。
-3. 在该 Environment 的 **Variables** 中添加：
-   - `VITE_API_BASE`：生产 Worker 地址，例如 `https://r2-webdav-x.9694151.workers.dev`，末尾不要加 `/`。
+### 11.2 连接 Pages
 
-`USERNAME`、`PASSWORD`、`JWT_SECRET` 仍然只保存在 Cloudflare Worker Secrets 中，不需要也不应该复制到 GitHub。重新部署 Worker 不会删除这些 Secret。
+Pages 也需要单独连接 GitHub：
 
-### 10.3 首次启用
+1. 返回 **Workers & Pages**，选择 **Create application > Pages > Connect to Git**。
+2. 选择同一个 GitHub 仓库。
+3. 使用以下构建配置：
 
-先确认 `apps/dav-worker/wrangler.toml` 中的 Worker 名称、R2 Bucket 和 `CORS_ORIGIN`，以及 `apps/web/package.json` 中 Pages 项目名都指向生产资源。然后提交并推送：
+| 配置 | 值 |
+| --- | --- |
+| Project name | `webdav-ui`，若名称已被 Direct Upload 项目占用则先使用新名称 |
+| Production branch | `main` |
+| Framework preset | `None` 或 `Vite` |
+| Root directory | `/` 或留空 |
+| Build command | `npm run build -w @r2-webdav/web` |
+| Build output directory | `apps/web/dist` |
+
+在 Pages 的 **Settings > Environment variables** 中为 Production 和 Preview 分别设置：
+
+```text
+VITE_API_BASE=https://r2-webdav-x.9694151.workers.dev
+NODE_VERSION=20
+```
+
+`VITE_API_BASE` 末尾不要加 `/`。如果使用自定义 Worker 域名，应改成该域名。
+
+> 通过 `wrangler pages deploy` 创建的 Direct Upload Pages 项目通常不能直接转换为 Git 集成。如果现有 `webdav-ui` 页面没有 **Connect to Git**，请新建 Git 集成项目。确认新项目可登录后，再迁移自定义域名；不要在验证前删除当前生产项目。
+
+### 11.3 CORS 与自定义域名
+
+新 Pages 项目的默认域名可能发生变化。把它加入 `apps/dav-worker/wrangler.toml`：
+
+```toml
+[vars]
+CORS_ORIGIN = "https://webdav-ui.pages.dev,https://webdav-ui.127631.xyz"
+```
+
+提交后 Worker 会由 Cloudflare 自动重新部署。确认新 Pages 域名登录正常后，再移除旧域名。
+
+### 11.4 启用后的发布流程
+
+以后只需推送 `main`：
 
 ```bash
-git add .
-git commit -m "Modernize workspace UI and enable automatic deploys"
 git push origin main
 ```
 
-在 GitHub 的 **Actions** 页面观察 `deploy` 工作流。首次成功后，每次推送到 `main` 都会自动发布；Pull Request 只运行现有 `ci` 工作流，不会发布生产环境。
+Cloudflare 会分别触发 Worker 与 Pages 构建。可在各自项目的 **Deployments** 页面查看日志或回滚。由于两个项目独立构建，首次配置时建议先成功部署 Worker，再启用 Pages 的生产构建。
 
-如果希望部署前人工确认，可以在 `production` Environment 中启用 **Required reviewers**。这样构建和测试仍会自动运行，但发布步骤会等待审核。
+若不希望 GitHub 继续运行代码检查，可以另外禁用或删除 `.github/workflows/ci.yml`；它不会执行部署，因此默认保留。
