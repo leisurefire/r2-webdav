@@ -3,6 +3,7 @@ import {
 	Bookmark,
 	CalendarDays,
 	Check,
+	ChevronDown,
 	ChevronLeft,
 	ChevronRight,
 	ChevronUp,
@@ -225,6 +226,7 @@ function refreshIcons(): void {
 			Bookmark,
 			CalendarDays,
 			Check,
+			ChevronDown,
 			ChevronLeft,
 			ChevronRight,
 			ChevronUp,
@@ -1340,12 +1342,14 @@ function bookmarkFolderOptions(root: BookmarkFolder): BookmarkFolder[] {
 }
 
 function bookmarkFolderTreeMarkup(root: BookmarkFolder, selectedKey: string): string {
+	const caret = (expanded: boolean) =>
+		`<i class="tree-caret-icon" data-lucide="${expanded ? 'chevron-down' : 'chevron-right'}" aria-hidden="true"></i>`;
 	const renderFolders = (folders: BookmarkFolder[], depth: number): string =>
 		folders
 			.map((folder) => {
 				const active = folder.key === selectedKey;
 				const expanded = bookmarkExpandedFolders.has(folder.key) || active;
-				return `<div class="bookmark-tree-node ${expanded ? 'expanded' : ''}" style="--bookmark-depth:${depth}"><button class="bookmark-folder ${active ? 'active' : ''}" data-bookmark-folder="${html(folder.key)}"><span class="tree-caret" aria-hidden="true">&gt;</span><span>${html(folder.name)}</span><small>${folder.links.length}</small></button>${expanded && folder.folders.length ? `<div class="bookmark-tree-children">${renderFolders(folder.folders, depth + 1)}</div>` : ''}</div>`;
+				return `<div class="bookmark-tree-node ${expanded ? 'expanded' : ''}" style="--bookmark-depth:${depth}"><button class="bookmark-folder ${active ? 'active' : ''}" data-bookmark-folder="${html(folder.key)}">${caret(expanded)}<span>${html(folder.name)}</span><small>${folder.links.length}</small></button>${expanded && folder.folders.length ? `<div class="bookmark-tree-children">${renderFolders(folder.folders, depth + 1)}</div>` : ''}</div>`;
 			})
 			.join('');
 
@@ -1557,6 +1561,7 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 					.join('')
 			: '';
 		outline.classList.toggle('empty', rendered.headings.length === 0);
+		compose.classList.toggle('has-outline', rendered.headings.length > 0);
 		outline.querySelectorAll<HTMLElement>('[data-outline-target]').forEach((button) =>
 			button.addEventListener('click', () => {
 				noteRender
@@ -1699,6 +1704,8 @@ function noteCardMarkup(note: Note, selected?: Note): string {
 }
 
 function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
+	const caret = (expanded: boolean) =>
+		`<i class="tree-caret-icon" data-lucide="${expanded ? 'chevron-down' : 'chevron-right'}" aria-hidden="true"></i>`;
 	const active = (folderId: string | null | undefined) =>
 		notesView === 'active' &&
 		((folderId === undefined && selectedNoteFolderId === undefined) || folderId === selectedNoteFolderId)
@@ -1712,14 +1719,14 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 	const folderRow = (folder: NoteFolder) => {
 		const expanded =
 			notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === folder.id);
-		return `<div class="note-folder-card ${active(folder.id)} ${expanded ? 'expanded' : ''}" data-note-folder-drop="${html(folder.id)}"><button type="button" data-note-folder-filter="${html(folder.id)}"><span class="tree-caret" aria-hidden="true">&gt;</span><span>${html(folder.name)}</span><small>${folder.noteCount}</small></button><div class="note-folder-actions"><button class="row-action" data-rename-note-folder="${html(folder.id)}" title="${locale === 'zh' ? '重命名' : 'Rename'}" aria-label="${locale === 'zh' ? '重命名' : 'Rename'}"><i data-lucide="pencil"></i></button><button class="row-action danger" data-delete-note-folder="${html(folder.id)}" title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button></div>${expanded ? noteChildren(notesFor(folder.id)) : ''}</div>`;
+		return `<div class="note-folder-card ${active(folder.id)} ${expanded ? 'expanded' : ''}" data-note-folder-drop="${html(folder.id)}"><button type="button" data-note-folder-filter="${html(folder.id)}">${caret(expanded)}<span>${html(folder.name)}</span><small>${folder.noteCount}</small></button><div class="note-folder-actions"><button class="row-action" data-rename-note-folder="${html(folder.id)}" title="${locale === 'zh' ? '重命名' : 'Rename'}" aria-label="${locale === 'zh' ? '重命名' : 'Rename'}"><i data-lucide="pencil"></i></button><button class="row-action danger" data-delete-note-folder="${html(folder.id)}" title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button></div>${expanded ? noteChildren(notesFor(folder.id)) : ''}</div>`;
 	};
 	const rootNotes = notesFor(null);
 	return `<aside class="notes-folders" aria-label="${locale === 'zh' ? '便签目录' : 'Note folders'}">
 		<div class="notes-folders-head"><strong>${locale === 'zh' ? '便签目录' : 'Folders'}</strong><button class="row-action" data-new-note-folder title="${locale === 'zh' ? '新建目录' : 'New folder'}" aria-label="${locale === 'zh' ? '新建目录' : 'New folder'}"><i data-lucide="folder-plus"></i></button></div>
 		<div class="notes-tree" data-notes-tree>
 			<div class="note-tree-special ${active(undefined)}" data-note-folder-drop="all"><button type="button" data-note-folder-filter="all"><i data-lucide="sticky-note"></i><span>${locale === 'zh' ? '全部便签' : 'All notes'}</span><small>${selectedNoteFolderId === undefined && notesView === 'active' ? data.total : ''}</small></button></div>
-			<div class="note-tree-special ${notesView === 'active' && selectedNoteFolderId === null ? 'active' : ''} ${notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === null) ? 'expanded' : ''}" data-note-folder-drop="root"><button type="button" data-note-folder-filter="root"><span class="tree-caret" aria-hidden="true">&gt;</span><span>${locale === 'zh' ? '未分类' : 'Unfiled'}</span><small>${rootNotes.length || ''}</small></button>${notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === null) ? noteChildren(rootNotes) : ''}</div>
+			<div class="note-tree-special ${notesView === 'active' && selectedNoteFolderId === null ? 'active' : ''} ${notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === null) ? 'expanded' : ''}" data-note-folder-drop="root"><button type="button" data-note-folder-filter="root">${caret(notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === null))}<span>${locale === 'zh' ? '未分类' : 'Unfiled'}</span><small>${rootNotes.length || ''}</small></button>${notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === null) ? noteChildren(rootNotes) : ''}</div>
 			${noteFolders.map(folderRow).join('')}
 			<div class="note-tree-special archive-tree-item ${notesView === 'archived' ? 'active' : ''}" data-note-folder-drop="archive"><button type="button" data-note-archived><i data-lucide="archive"></i><span>${t('archived')}</span><small>${notesView === 'archived' ? data.total : ''}</small></button>${notesView === 'archived' ? noteChildren(data.items) : ''}</div>
 		</div>
@@ -1851,7 +1858,7 @@ function paintBookmarkView(): void {
 	const folderTree = bookmarkFolderTreeMarkup(root, selectedFolderKey);
 	content.innerHTML = `<div class="notes-layout bookmark-layout">
 		<div class="notes-inner-toolbar">${notesTabsMarkup()}<div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择收藏目录' : 'Choose collection folder'}">${folderOptions}</select></div><span class="toolbar-spacer"></span><span class="note-count">${cards.length}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}" aria-label="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}"><i data-lucide="refresh-cw"></i></button></div>
-		<aside class="bookmark-folders"><div class="bookmark-folders-head"><strong>${locale === 'zh' ? '收藏目录' : 'Folders'}</strong></div><div class="bookmark-folder-tree"><button class="bookmark-folder bookmark-folder-root expanded ${folder === root ? 'active' : ''}" data-bookmark-folder="" style="--bookmark-depth:0"><span class="tree-caret" aria-hidden="true">&gt;</span><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderTree || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</div></aside>
+		<aside class="bookmark-folders"><div class="bookmark-folders-head"><strong>${locale === 'zh' ? '收藏目录' : 'Folders'}</strong></div><div class="bookmark-folder-tree"><button class="bookmark-folder bookmark-folder-root expanded ${folder === root ? 'active' : ''}" data-bookmark-folder="" style="--bookmark-depth:0"><i class="tree-caret-icon" data-lucide="chevron-down" aria-hidden="true"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderTree || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</div></aside>
 		<div class="bookmarks-main">${bookmarkFolderPath.length ? bookmarkPathMarkup(bookmarkFolderPath) : ''}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div></div>
 	</div>`;
 	refreshIcons();

@@ -116,26 +116,11 @@
 	height: 15px;
 }
 
-.tree-caret {
-	width: 14px;
-	height: 16px;
-	display: inline-grid;
-	place-items: center;
+.tree-caret-icon {
+	width: 15px;
+	height: 15px;
 	color: var(--quiet);
-	font-size: 16px;
-	line-height: 1;
-	transform-origin: center;
-	transition:
-		transform 140ms ease,
-		color 140ms ease;
-}
-
-.note-folder-card.expanded > button .tree-caret,
-.note-tree-special.expanded > button .tree-caret,
-.bookmark-tree-node.expanded > .bookmark-folder .tree-caret,
-.bookmark-folder-root.expanded .tree-caret {
-	transform: rotate(90deg);
-	color: var(--ink);
+	stroke-width: 1.8;
 }
 
 .note-tree-special span,
@@ -274,11 +259,11 @@
 
 .note-compose {
 	display: grid;
-	grid-template-columns: minmax(150px, 200px) minmax(0, 1fr);
+	grid-template-columns: minmax(0, 1fr);
 }
 
-.note-compose:not(.previewing) {
-	grid-template-columns: minmax(0, 1fr);
+.note-compose.previewing.has-outline {
+	grid-template-columns: minmax(0, 1fr) minmax(150px, 200px);
 }
 
 .note-document {
@@ -291,7 +276,7 @@
 .note-outline {
 	min-width: 0;
 	padding: 22px 14px;
-	border-right: 1px solid var(--line);
+	border-left: 1px solid var(--line);
 	overflow: auto;
 }
 
@@ -503,6 +488,7 @@
 		align-items: center;
 		gap: 4px;
 		padding: 7px 10px;
+		border-left: 0;
 		border-right: 0;
 		border-bottom: 1px solid var(--line);
 		overflow-x: auto;

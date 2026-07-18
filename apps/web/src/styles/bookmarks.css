@@ -93,23 +93,12 @@
 	border-left: 1px solid var(--line);
 }
 
-.bookmark-tree-node .tree-caret {
-	width: 14px;
-	height: 16px;
-	display: inline-grid;
-	place-items: center;
-	font-size: 16px;
-	line-height: 1;
-	transform-origin: center;
-	transition:
-		transform 140ms ease,
-		color 140ms ease;
-}
-
-.bookmark-tree-node.expanded > .bookmark-folder .tree-caret,
-.bookmark-folder-root.expanded .tree-caret {
-	transform: rotate(90deg);
-	color: var(--ink);
+.bookmark-tree-node .tree-caret-icon,
+.bookmark-folder-root .tree-caret-icon {
+	width: 15px;
+	height: 15px;
+	color: var(--quiet);
+	stroke-width: 1.8;
 }
 
 .bookmark-tree-node .bookmark-folder::before {
