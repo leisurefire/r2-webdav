@@ -176,8 +176,8 @@ export const api = {
 			throw error;
 		}
 	},
-	bookmarkPreview(url: string): Promise<BookmarkPreview> {
-		return request(`/bookmarks/preview?url=${encodeURIComponent(url)}`);
+	bookmarkPreview(url: string, includeImage = true): Promise<BookmarkPreview> {
+		return request(`/bookmarks/preview?url=${encodeURIComponent(url)}${includeImage ? '' : '&image=0'}`);
 	},
 	createNote(title: string, content = ''): Promise<Note> {
 		return notesRequest('', {

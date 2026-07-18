@@ -252,11 +252,14 @@ async function fetchImageData(url: URL, limit: number): Promise<string | undefin
 async function getBookmarkPreview(url: URL, env: Env): Promise<Response> {
 	const target = remoteUrl(url.searchParams.get('url'));
 	if (!target) return jsonError('BAD_REQUEST', 'A public HTTP(S) bookmark URL is required');
+	const includeImage = url.searchParams.get('image') !== '0';
 	const key = await previewKey(target.href);
-	const cached = await env.bucket.get(key);
+	const cacheKey = includeImage ? key : `${key}.favicon`;
+	const cached = await env.bucket.get(cacheKey);
 	if (cached) {
 		try {
-			return jsonData(JSON.parse(await cached.text()) as BookmarkPreview);
+			const preview = JSON.parse(await cached.text()) as BookmarkPreview;
+			return jsonData(includeImage ? preview : { favicon: preview.favicon });
 		} catch {
 			// Replace corrupt cache entries below.
 		}
@@ -284,10 +287,10 @@ async function getBookmarkPreview(url: URL, env: Env): Promise<Response> {
 	assets.favicon ??= new URL('/favicon.ico', target);
 	const [favicon, image] = await Promise.all([
 		fetchImageData(assets.favicon, 96 * 1024),
-		assets.image ? fetchImageData(assets.image, 256 * 1024) : Promise.resolve(undefined),
+		includeImage && assets.image ? fetchImageData(assets.image, 256 * 1024) : Promise.resolve(undefined),
 	]);
 	const preview: BookmarkPreview = { ...(favicon ? { favicon } : {}), ...(image ? { image } : {}) };
-	await env.bucket.put(key, JSON.stringify(preview), { httpMetadata: { contentType: 'application/json' } });
+	await env.bucket.put(cacheKey, JSON.stringify(preview), { httpMetadata: { contentType: 'application/json' } });
 	return jsonData(preview);
 }
 

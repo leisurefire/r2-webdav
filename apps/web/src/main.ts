@@ -39,7 +39,6 @@ import {
 } from 'lucide';
 import type {
 	BookmarkHub,
-	BookmarkPreview,
 	CalendarEvent,
 	CalendarSummary,
 	DeviceSession,
@@ -50,7 +49,11 @@ import type {
 } from '@r2-webdav/shared-types';
 import { Lunar, Solar } from 'lunar-typescript';
 import { API_BASE, ApiError, api, hasSession } from './api/client';
+import { bindBookmarkPreviews } from './bookmarks/previews';
 import './styles.css';
+import './styles/bookmarks.css';
+import './styles/notes.css';
+import './styles/responsive.css';
 
 type Page = 'files' | 'calendar' | 'notes' | 'devices' | 'settings';
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -1022,6 +1025,7 @@ let notesArchived = false;
 let notesData: NotePage | null = null;
 let notesLoadingMore = false;
 let notesRequest = 0;
+let mobileNoteDialogOpen = false;
 let bookmarkHub: BookmarkHub | null = null;
 let bookmarkChecked = localStorage.getItem('r2_bookmarks_checked') === '1';
 
@@ -1067,123 +1071,25 @@ interface BookmarkCard {
 	dateModified: number;
 }
 
-const BOOKMARK_PREVIEW_DB = 'r2-bookmark-previews';
-const BOOKMARK_PREVIEW_STORE = 'previews';
-let bookmarkPreviewDbPromise: Promise<IDBDatabase> | null = null;
-let bookmarkPreviewObserver: IntersectionObserver | null = null;
-let bookmarkPreviewGeneration = 0;
-let bookmarkPreviewActive = 0;
-const bookmarkPreviewQueue: Array<{ card: HTMLElement; generation: number }> = [];
-
-function bookmarkPreviewDb(): Promise<IDBDatabase> {
-	bookmarkPreviewDbPromise ??= new Promise((resolve, reject) => {
-		const request = indexedDB.open(BOOKMARK_PREVIEW_DB, 1);
-		request.addEventListener('upgradeneeded', () => {
-			if (!request.result.objectStoreNames.contains(BOOKMARK_PREVIEW_STORE))
-				request.result.createObjectStore(BOOKMARK_PREVIEW_STORE);
-		});
-		request.addEventListener('success', () => resolve(request.result));
-		request.addEventListener('error', () => reject(request.error));
-	});
-	return bookmarkPreviewDbPromise;
+interface BookmarkFolder {
+	key: string;
+	name: string;
+	path: string[];
+	links: BookmarkCard[];
+	folders: BookmarkFolder[];
 }
 
-async function cachedBookmarkPreview(url: string): Promise<BookmarkPreview | null> {
-	try {
-		const database = await bookmarkPreviewDb();
-		return await new Promise((resolve, reject) => {
-			const request = database.transaction(BOOKMARK_PREVIEW_STORE).objectStore(BOOKMARK_PREVIEW_STORE).get(url);
-			request.addEventListener('success', () => resolve((request.result as BookmarkPreview | undefined) ?? null));
-			request.addEventListener('error', () => reject(request.error));
-		});
-	} catch {
-		return null;
-	}
-}
+let bookmarkFolderPath: string[] = [];
 
-async function cacheBookmarkPreview(url: string, preview: BookmarkPreview): Promise<void> {
-	try {
-		const database = await bookmarkPreviewDb();
-		await new Promise<void>((resolve, reject) => {
-			const transaction = database.transaction(BOOKMARK_PREVIEW_STORE, 'readwrite');
-			transaction.objectStore(BOOKMARK_PREVIEW_STORE).put(preview, url);
-			transaction.addEventListener('complete', () => resolve());
-			transaction.addEventListener('error', () => reject(transaction.error));
-		});
-	} catch {
-		// Preview caching is optional when private browsing disables IndexedDB.
-	}
-}
-
-function applyBookmarkPreview(card: HTMLElement, preview: BookmarkPreview): void {
-	const icon = card.querySelector<HTMLImageElement>('[data-bookmark-icon]');
-	if (icon && preview.favicon) {
-		icon.src = preview.favicon;
-		icon.hidden = false;
-	}
-	const cover = card.querySelector<HTMLElement>('[data-bookmark-cover]');
-	const coverImage = cover?.querySelector<HTMLImageElement>('img');
-	if (cover && coverImage && preview.image) {
-		coverImage.src = preview.image;
-		coverImage.hidden = false;
-		cover.classList.add('has-image');
-	}
-}
-
-async function loadBookmarkPreview(card: HTMLElement, generation: number): Promise<void> {
-	const url = card.dataset.bookmarkUrl;
-	if (!url) return;
-	let preview = await cachedBookmarkPreview(url);
-	if (!preview) {
-		try {
-			preview = await api.bookmarkPreview(url);
-			await cacheBookmarkPreview(url, preview);
-		} catch {
-			preview = {};
-		}
-	}
-	if (generation === bookmarkPreviewGeneration && card.isConnected) applyBookmarkPreview(card, preview);
-}
-
-function pumpBookmarkPreviews(): void {
-	while (bookmarkPreviewActive < 3 && bookmarkPreviewQueue.length) {
-		const item = bookmarkPreviewQueue.shift()!;
-		bookmarkPreviewActive += 1;
-		void loadBookmarkPreview(item.card, item.generation).finally(() => {
-			bookmarkPreviewActive -= 1;
-			pumpBookmarkPreviews();
-		});
-	}
-}
-
-function bindBookmarkPreviews(root: HTMLElement): void {
-	bookmarkPreviewObserver?.disconnect();
-	bookmarkPreviewQueue.length = 0;
-	const generation = ++bookmarkPreviewGeneration;
-	const grid = root.querySelector<HTMLElement>('.bookmarks-grid');
-	bookmarkPreviewObserver = new IntersectionObserver(
-		(entries, observer) => {
-			for (const entry of entries) {
-				if (!entry.isIntersecting) continue;
-				observer.unobserve(entry.target);
-				bookmarkPreviewQueue.push({ card: entry.target as HTMLElement, generation });
-			}
-			pumpBookmarkPreviews();
-		},
-		{ root: grid, rootMargin: '240px' },
-	);
-	root.querySelectorAll<HTMLElement>('[data-bookmark-url]').forEach((card) => bookmarkPreviewObserver?.observe(card));
-}
-
-function bookmarkCards(): BookmarkCard[] {
-	if (!bookmarkHub) return [];
-	const result: BookmarkCard[] = [];
-	const visit = (nodes: BookmarkHub['nodes'], path: string[]) => {
+function bookmarkFolderTree(): BookmarkFolder {
+	const build = (nodes: BookmarkHub['nodes'], path: string[]): BookmarkFolder => {
+		const links: BookmarkCard[] = [];
+		const folders: BookmarkFolder[] = [];
 		for (const node of nodes) {
 			if (typeof node.url === 'string' && /^https?:\/\//i.test(node.url)) {
 				try {
 					const parsed = new URL(node.url);
-					result.push({
+					links.push({
 						title: node.title.trim(),
 						url: node.url,
 						domain: parsed.hostname,
@@ -1191,17 +1097,31 @@ function bookmarkCards(): BookmarkCard[] {
 						dateModified: Number.isFinite(node.dateModified) ? node.dateModified : 0,
 					});
 				} catch {
-					// Ignore malformed links while preserving the rest of the backup.
+					/* Ignore malformed links. */
 				}
-			} else if (Array.isArray(node.children)) visit(node.children, [...path, node.title.trim()]);
+			} else if (Array.isArray(node.children)) {
+				const folderPath = [...path, node.title.trim() || (locale === 'zh' ? '未命名文件夹' : 'Untitled folder')];
+				folders.push({
+					...build(node.children, folderPath),
+					key: folderPath.join('\u001f'),
+					name: folderPath.at(-1)!,
+					path: folderPath,
+				});
+			}
 		}
+		return {
+			key: path.join('\u001f'),
+			name: path.at(-1) ?? (locale === 'zh' ? '全部链接' : 'All links'),
+			path,
+			links,
+			folders,
+		};
 	};
-	visit(bookmarkHub.nodes, []);
-	return result;
+	return build(bookmarkHub?.nodes ?? [], []);
 }
 
-function bookmarkCardMarkup(card: BookmarkCard): string {
-	return `<a class="bookmark-card" data-bookmark-url="${html(card.url)}" href="${html(card.url)}" target="_blank" rel="noopener noreferrer" title="${html(card.title || card.url)}">
+function bookmarkCardMarkup(card: BookmarkCard, loadPreview: boolean): string {
+	return `<a class="bookmark-card" ${loadPreview ? `data-bookmark-preview data-bookmark-url="${html(card.url)}"` : ''} href="${html(card.url)}" target="_blank" rel="noopener noreferrer" title="${html(card.title || card.url)}">
 		<div class="bookmark-card-cover" data-bookmark-cover><span>${html(card.domain.slice(0, 1).toUpperCase())}</span><img alt="" hidden></div>
 		<div class="bookmark-card-body">${card.title ? `<h3>${html(card.title)}</h3>` : ''}<div class="bookmark-link"><span class="bookmark-favicon"><span>${html(card.domain.slice(0, 1).toUpperCase())}</span><img data-bookmark-icon alt="" hidden></span><p>${html(card.url)}</p></div><div class="bookmark-card-meta"><small>${html(card.path.filter(Boolean).join(' / '))}</small><time>${card.dateModified ? new Date(card.dateModified).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en') : ''}</time></div></div>
 	</a>`;
@@ -1269,12 +1189,10 @@ function markdown(value: string): string {
 function noteEditorMarkup(selected: Note, mobile = false): string {
 	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'}">
 		<form data-note-form>
-			<div class="note-editor-head"><input data-note-title value="${html(selected.title)}" aria-label="Title"><time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
+			<div class="note-editor-head">${mobile ? `<button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>` : ''}<input data-note-title value="${html(selected.title)}" aria-label="Title"><span class="note-save-status" data-note-save-status aria-live="polite"></span><time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
 				<button type="button" class="row-action" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
 				<button type="button" class="row-action" data-note-archive title="${selected.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
 				<button type="button" class="row-action danger" data-note-delete title="${t('delete')}"><i data-lucide="trash-2"></i></button>
-				${mobile ? `<button type="button" class="row-action" data-note-close title="${locale === 'zh' ? '关闭' : 'Close'}"><i data-lucide="x"></i></button>` : ''}
-				<button class="button primary note-save" title="${t('save')}"><i data-lucide="check"></i><span>${t('save')}</span></button>
 			</div></div>
 			<div class="note-compose" data-note-compose><textarea data-note-content aria-label="${t('markdown')}">${html(selected.content)}</textarea><article class="note-render" data-note-render tabindex="0" title="${locale === 'zh' ? '点击编辑' : 'Click to edit'}">${markdown(selected.content) || '<p class="muted">Click to edit...</p>'}</article></div>
 		</form>
@@ -1303,6 +1221,55 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 	textarea.addEventListener('keydown', (event) => {
 		if (event.key === 'Escape') textarea.blur();
 	});
+	const title = root.querySelector<HTMLInputElement>('[data-note-title]')!;
+	const status = root.querySelector<HTMLElement>('[data-note-save-status]');
+	const AUTOSAVE_DELAY = 600;
+	const AUTOSAVE_MIN_INTERVAL = 1_200;
+	let saveTimer = 0;
+	let lastSavedAt = 0;
+	let saving = false;
+	let pending: Partial<Pick<Note, 'title' | 'content'>> | null = null;
+	const paintSaveStatus = (value: string) => {
+		if (status) status.textContent = value;
+	};
+	const savePending = async (): Promise<void> => {
+		window.clearTimeout(saveTimer);
+		if (saving || !pending) return;
+		const changes = pending;
+		pending = null;
+		saving = true;
+		paintSaveStatus(locale === 'zh' ? '同步中…' : 'Syncing…');
+		try {
+			const updated = await api.updateNote(selected.id, changes);
+			Object.assign(selected, updated);
+			const index = data.items.findIndex((note) => note.id === updated.id);
+			if (index >= 0) data.items[index] = updated;
+			cacheNotes(data);
+			lastSavedAt = Date.now();
+			paintSaveStatus(locale === 'zh' ? '已同步' : 'Synced');
+			const time = root.querySelector<HTMLTimeElement>('.note-editor-head > time');
+			if (time) time.textContent = new Date(updated.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en');
+		} catch (error) {
+			pending = { ...changes, ...(pending ?? {}) };
+			paintSaveStatus(locale === 'zh' ? '同步失败' : 'Sync failed');
+			toast(errorMessage(error));
+		} finally {
+			saving = false;
+			if (pending) {
+				const wait = Math.max(AUTOSAVE_DELAY, AUTOSAVE_MIN_INTERVAL - (Date.now() - lastSavedAt));
+				saveTimer = window.setTimeout(() => void savePending(), wait);
+			}
+		}
+	};
+	const queueSave = (changes: Partial<Pick<Note, 'title' | 'content'>>) => {
+		pending = { ...pending, ...changes };
+		paintSaveStatus(locale === 'zh' ? '等待同步' : 'Pending');
+		window.clearTimeout(saveTimer);
+		const wait = Math.max(AUTOSAVE_DELAY, AUTOSAVE_MIN_INTERVAL - (Date.now() - lastSavedAt));
+		saveTimer = window.setTimeout(() => void savePending(), wait);
+	};
+	title.addEventListener('input', () => queueSave({ title: title.value }));
+	textarea.addEventListener('input', () => queueSave({ content: textarea.value }));
 	const update = async (changes: Partial<Pick<Note, 'title' | 'content' | 'pinned' | 'archived'>>) => {
 		try {
 			const updated = await api.updateNote(selected.id, changes);
@@ -1321,13 +1288,9 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 			toast(errorMessage(error));
 		}
 	};
-	root.querySelector<HTMLFormElement>('[data-note-form]')?.addEventListener('submit', (event) => {
-		event.preventDefault();
-		void update({
-			title: root.querySelector<HTMLInputElement>('[data-note-title]')!.value,
-			content: textarea.value,
-		});
-	});
+	root
+		.querySelector<HTMLFormElement>('[data-note-form]')
+		?.addEventListener('submit', (event) => event.preventDefault());
 	root.querySelector('[data-note-pin]')?.addEventListener('click', () => void update({ pinned: !selected.pinned }));
 	root
 		.querySelector('[data-note-archive]')
@@ -1342,7 +1305,11 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 			toast(errorMessage(error));
 		}
 	});
-	root.querySelector('[data-note-close]')?.addEventListener('click', () => root.closest('dialog')?.close());
+	root.querySelector('[data-note-close]')?.addEventListener('click', () => {
+		void savePending();
+		if (mobileNoteDialogOpen) history.back();
+		else root.closest('dialog')?.close();
+	});
 }
 
 function notesTabsMarkup(): string {
@@ -1352,14 +1319,36 @@ function notesTabsMarkup(): string {
 function paintBookmarkView(): void {
 	const content = document.querySelector<HTMLDivElement>('#page-content');
 	if (!content) return;
-	const cards = bookmarkCards();
+	const root = bookmarkFolderTree();
+	let folder = root;
+	for (const name of bookmarkFolderPath) folder = folder.folders.find((item) => item.name === name) ?? root;
+	if (folder === root && bookmarkFolderPath.length) bookmarkFolderPath = [];
+	const cards = folder.links;
+	const folderButtons = folder.folders
+		.map(
+			(item) =>
+				`<button class="bookmark-folder" data-bookmark-folder="${html(item.key)}"><i data-lucide="folder"></i><span>${html(item.name)}</span><small>${item.links.length}</small></button>`,
+		)
+		.join('');
 	content.innerHTML = `<div class="notes-layout bookmark-layout">
 		<div class="notes-inner-toolbar">${notesTabsMarkup()}<span class="toolbar-spacer"></span><span class="bookmark-meta">${cards.length}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}" aria-label="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}"><i data-lucide="refresh-cw"></i></button></div>
-		<div class="bookmarks-grid">${cards.length ? cards.map(bookmarkCardMarkup).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div>
+		<aside class="bookmark-folders"><button class="bookmark-folder ${folder === root ? 'active' : ''}" data-bookmark-folder=""><i data-lucide="folder-open"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderButtons || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</aside>
+		<div class="bookmarks-main">${bookmarkFolderPath.length ? `<button class="bookmark-back" id="bookmark-back"><i data-lucide="chevron-left"></i><span>${locale === 'zh' ? '返回文件夹' : 'Back to folders'}</span></button>` : ''}<div class="bookmarks-grid">${cards.length ? cards.map((card) => bookmarkCardMarkup(card, true)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div></div>
 	</div>`;
 	refreshIcons();
 	bindBookmarkPreviews(content);
 	bindNotesNavigation(content);
+	content.querySelectorAll<HTMLElement>('[data-bookmark-folder]').forEach((button) =>
+		button.addEventListener('click', () => {
+			const key = button.dataset.bookmarkFolder ?? '';
+			bookmarkFolderPath = key ? key.split('\u001f') : [];
+			paintBookmarkView();
+		}),
+	);
+	content.querySelector('#bookmark-back')?.addEventListener('click', () => {
+		bookmarkFolderPath = bookmarkFolderPath.slice(0, -1);
+		paintBookmarkView();
+	});
 	content.querySelector('#notes-refresh')?.addEventListener('click', async () => {
 		await pullBookmarks(true);
 		if (bookmarkHub) paintBookmarkView();
@@ -1450,7 +1439,15 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 	const dialog = content.querySelector<HTMLDialogElement>('#note-dialog');
 	if (dialog) {
 		bindNoteEditor(dialog, data, selected, true);
-		if (openMobile && matchMedia('(max-width: 760px)').matches) dialog.showModal();
+		if (openMobile && matchMedia('(max-width: 760px)').matches) {
+			history.pushState({ noteDialog: selected.id }, '', location.href);
+			mobileNoteDialogOpen = true;
+			dialog.showModal();
+			dialog.addEventListener('cancel', (event) => {
+				event.preventDefault();
+				history.back();
+			});
+		}
 	}
 }
 
@@ -1643,5 +1640,12 @@ async function render(): Promise<void> {
 	else renderSettings();
 }
 
-window.addEventListener('popstate', () => void render());
+window.addEventListener('popstate', () => {
+	if (mobileNoteDialogOpen) {
+		mobileNoteDialogOpen = false;
+		document.querySelector<HTMLDialogElement>('#note-dialog[open]')?.close();
+		return;
+	}
+	void render();
+});
 void render();

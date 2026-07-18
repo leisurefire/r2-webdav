@@ -1,0 +1,20 @@
+.sidebar-collapsed .sidebar-footer {
+	margin-bottom: 0;
+	padding: 0;
+}
+
+.sidebar-collapsed .account-menu-wrap,
+.sidebar-collapsed .user-menu-button {
+	width: 100%;
+}
+
+@media (max-width: 760px) {
+	.sidebar-toggle {
+		display: none;
+	}
+
+	.workspace,
+	.sidebar-collapsed + .workspace {
+		height: calc(100dvh - 122px);
+	}
+}
