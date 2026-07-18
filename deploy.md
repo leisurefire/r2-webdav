@@ -1,6 +1,6 @@
 # Cloudflare 部署指南
 
-本指南使用单用户模式，不需要 KV 或 Pages Functions。设备会话与便签使用名为 `notes` 的 D1 数据库。建议先用 `workers.dev` 和 `pages.dev` 验证，再绑定自己的域名。
+本指南使用单用户模式，不需要 KV。WebDAV、CalDAV、文件和日历 API 由 Worker 提供，便签 CRUD 由 Pages Functions 提供；两者共享名为 `notes` 的 D1 数据库和会话表。建议先用 `workers.dev` 和 `pages.dev` 验证，再绑定自己的域名。
 
 当前项目已固定使用：
 
@@ -50,7 +50,7 @@ bucket_name = "my-r2-webdav"
 
 `binding = "bucket"` 不要修改，代码依赖这个绑定名。
 
-## 3. 配置登录与 JWT 密钥
+## 3. 配置登录
 
 进入 Worker 项目目录：
 
@@ -58,29 +58,20 @@ bucket_name = "my-r2-webdav"
 cd apps/dav-worker
 ```
 
-依次写入三个 Worker Secret：
+依次写入两个 Worker Secret：
 
 ```bash
 npx wrangler secret put USERNAME
 npx wrangler secret put PASSWORD
-npx wrangler secret put JWT_SECRET
 ```
 
 - `USERNAME`：WebDAV、CalDAV 和网页管理端的固定用户名。
 - `PASSWORD`：使用足够长的独立密码，不要复用 Cloudflare 密码。
-- `JWT_SECRET`：至少 32 字节的随机字符串，不是登录密码。
-
-可用 OpenSSL 生成 JWT 密钥：
-
-```bash
-openssl rand -base64 32
-```
-
-密钥只存储在 Worker Secret 中，不要写入 `.env`、`wrangler.toml` 或 Git。
+  登录后会生成随机会话令牌，其哈希保存在 D1。旧部署中的 `JWT_SECRET` 可以保留，但新会话不再依赖它。
 
 ## 4. 配置 D1 数据库
 
-项目通过 `NOTES_DB` binding 访问名为 `notes` 的 D1 数据库。确认 `apps/dav-worker/wrangler.toml` 中的 `database_id` 指向当前 Cloudflare 账号内的数据库：
+项目通过 `NOTES_DB` binding 访问名为 `notes` 的 D1 数据库。确认 `apps/dav-worker/wrangler.toml` 和 `apps/web/wrangler.toml` 中的 `database_id` 都指向同一个数据库：
 
 ```toml
 [[d1_databases]]
@@ -95,7 +86,7 @@ database_id = "0dcb94cd-c8b4-4dfa-8a32-4328ddae0aa3"
 npm run db:migrate -w @r2-webdav/dav-worker
 ```
 
-该命令会在远端建立项目专用的 `r2_webdav_sessions` 和 `r2_webdav_notes` 表。Worker 运行时也会执行幂等初始化，但正式部署仍建议先应用 migration，以便在登录前发现绑定或权限错误。
+该命令会在远端建立项目专用的 `r2_webdav_sessions` 和 `r2_webdav_notes` 表。Worker 运行时也会执行幂等初始化，但 Pages Functions 不负责建表，因此正式部署必须先应用 migration。
 
 ## 5. 首次部署 Worker
 
@@ -104,7 +95,6 @@ npm run db:migrate -w @r2-webdav/dav-worker
 ```toml
 [vars]
 CORS_ORIGIN = "https://my-r2-webdav-ui.pages.dev"
-JWT_TTL_SECONDS = "28800"
 ```
 
 部署：
@@ -135,20 +125,20 @@ curl https://my-r2-webdav-worker.<subdomain>.workers.dev/api/v1/health
 VITE_API_BASE=https://my-r2-webdav-worker.<subdomain>.workers.dev
 ```
 
-这里必须是 Worker 地址，末尾不要加 `/`。然后执行：
+这里必须是 Worker 地址，末尾不要加 `/`。便签请求不使用这个地址，而是自动调用 Pages 同源的 `/api/v1/notes`。然后执行：
 
 ```bash
 npm run build -w @r2-webdav/web
-npx wrangler pages deploy apps/web/dist --project-name my-r2-webdav-ui
+npm run deploy -w @r2-webdav/web -- --project-name my-r2-webdav-ui
 ```
 
-上面的 Pages 命令必须在仓库根目录执行。如果终端当前位于 `apps/web`，应改为：
+Pages Functions 位于 `apps/web/functions`，因此不要在仓库根目录直接执行 `wrangler pages deploy apps/web/dist`。workspace 脚本会自动以 `apps/web` 为工作目录，让 Wrangler 同时发现 `dist` 和 `functions`。如果终端已经位于 `apps/web`，也可以执行：
 
 ```bash
 npx wrangler pages deploy dist --project-name my-r2-webdav-ui
 ```
 
-不要在 `apps/web` 目录中再次传入 `apps/web/dist`，否则路径会重复为 `apps/web/apps/web/dist`。
+部署日志中应同时出现 Functions bundle；若只显示静态资源，请先检查当前目录。
 
 部署完成后打开：
 
@@ -261,13 +251,13 @@ npm run format:check
 4. 选择 **Connect to Git**，授权 Cloudflare 访问 GitHub 仓库。
 5. 选择本仓库，并填写以下配置：
 
-| 配置 | 值 |
-| --- | --- |
-| Production branch | `main` |
-| Root directory | `/` 或留空（仓库根目录） |
-| Build command | `npm run db:migrate -w @r2-webdav/dav-worker` |
-| Deploy command | `npm run deploy:worker` |
-| Non-production branch deploys | 按需开启；生产环境建议先关闭 |
+| 配置                          | 值                                            |
+| ----------------------------- | --------------------------------------------- |
+| Production branch             | `main`                                        |
+| Root directory                | `/` 或留空（仓库根目录）                      |
+| Build command                 | `npm run db:migrate -w @r2-webdav/dav-worker` |
+| Deploy command                | `npm run deploy:worker`                       |
+| Non-production branch deploys | 按需开启；生产环境建议先关闭                  |
 
 不要把 Root directory 设置为 `apps/dav-worker`。本项目使用 npm workspaces，并依赖仓库中的 `packages/shared-types`，构建必须从仓库根目录执行。
 
@@ -287,14 +277,14 @@ Pages 也需要单独连接 GitHub：
 2. 选择同一个 GitHub 仓库。
 3. 使用以下构建配置：
 
-| 配置 | 值 |
-| --- | --- |
-| Project name | `webdav-ui`，若名称已被 Direct Upload 项目占用则先使用新名称 |
-| Production branch | `main` |
-| Framework preset | `None` 或 `Vite` |
-| Root directory | `/` 或留空 |
-| Build command | `npm run build -w @r2-webdav/web` |
-| Build output directory | `apps/web/dist` |
+| 配置                   | 值                                                           |
+| ---------------------- | ------------------------------------------------------------ |
+| Project name           | `webdav-ui`，若名称已被 Direct Upload 项目占用则先使用新名称 |
+| Production branch      | `main`                                                       |
+| Framework preset       | `None` 或 `Vite`                                             |
+| Root directory         | `apps/web`                                                   |
+| Build command          | `npm run build`                                              |
+| Build output directory | `dist`                                                       |
 
 在 Pages 的 **Settings > Environment variables** 中为 Production 和 Preview 分别设置：
 
@@ -304,6 +294,8 @@ NODE_VERSION=20
 ```
 
 `VITE_API_BASE` 末尾不要加 `/`。如果使用自定义 Worker 域名，应改成该域名。
+
+在 Pages 的 **Settings > Bindings** 中确认存在 D1 binding `NOTES_DB`，且数据库与 Worker 的 `NOTES_DB` 相同。`apps/web/wrangler.toml` 已包含该配置；Dashboard 中绑定不一致时，便签接口会返回数据库不可用。
 
 > 通过 `wrangler pages deploy` 创建的 Direct Upload Pages 项目通常不能直接转换为 Git 集成。如果现有 `webdav-ui` 页面没有 **Connect to Git**，请新建 Git 集成项目。确认新项目可登录后，再迁移自定义域名；不要在验证前删除当前生产项目。
 

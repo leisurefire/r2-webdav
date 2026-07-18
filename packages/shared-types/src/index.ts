@@ -44,6 +44,16 @@ export interface CalendarEvent {
 	location?: string;
 	calendarId: string;
 	etag?: string;
+	kind?: 'event' | 'birthday';
+	calendarSystem?: 'solar' | 'lunar';
+	recurrence?: 'yearly';
+	seriesStart?: string;
+	lunarDate?: {
+		year: number;
+		month: number;
+		day: number;
+		leap: boolean;
+	};
 }
 
 export interface DeviceSession {

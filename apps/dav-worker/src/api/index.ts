@@ -1,9 +1,9 @@
-import type { CalendarEvent, CalendarSummary, FileEntry, Note, NotePage } from '@r2-webdav/shared-types';
+import type { CalendarEvent, CalendarSummary, FileEntry } from '@r2-webdav/shared-types';
+import { Lunar } from 'lunar-typescript';
 import type { Env } from '../env';
 import {
 	createSession,
 	DatabaseSetupError,
-	ensureDatabase,
 	listSessions,
 	revokeRequestSession,
 	revokeSession,
@@ -147,16 +147,69 @@ async function listEvents(url: URL, env: Env, calendarId: string): Promise<Respo
 	const from = url.searchParams.get('from');
 	const to = url.searchParams.get('to');
 	const events: CalendarEvent[] = [];
+	const fromTime = from ? Date.parse(from) : Number.NEGATIVE_INFINITY;
+	const toTime = to ? Date.parse(to) : Number.POSITIVE_INFINITY;
+	const overlaps = (event: CalendarEvent) => Date.parse(event.end) > fromTime && Date.parse(event.start) < toTime;
+	const lunarSolarDate = (year: number, event: CalendarEvent): Date | null => {
+		if (!event.lunarDate) return null;
+		const months = event.lunarDate.leap ? [-event.lunarDate.month, event.lunarDate.month] : [event.lunarDate.month];
+		for (const month of months) {
+			for (let day = event.lunarDate.day; day >= Math.max(1, event.lunarDate.day - 1); day -= 1) {
+				try {
+					const solar = Lunar.fromYmd(year, month, day).getSolar();
+					return new Date(Date.UTC(solar.getYear(), solar.getMonth() - 1, solar.getDay()));
+				} catch {
+					// A lunar month can have 29 days, and a selected leap month is absent in most years.
+				}
+			}
+		}
+		return null;
+	};
+	const recurringInstances = (event: CalendarEvent): CalendarEvent[] => {
+		if (event.recurrence !== 'yearly' || !Number.isFinite(fromTime) || !Number.isFinite(toTime)) return [event];
+		const originalStart = new Date(event.start);
+		const duration = Math.max(1, Date.parse(event.end) - originalStart.getTime());
+		const startYear = new Date(fromTime).getUTCFullYear() - 1;
+		const endYear = new Date(toTime).getUTCFullYear() + 1;
+		const instances: CalendarEvent[] = [];
+		for (let year = Math.max(startYear, originalStart.getUTCFullYear()); year <= endYear; year += 1) {
+			let occurrenceStart: Date;
+			if (event.calendarSystem === 'lunar' && event.lunarDate) {
+				const converted = lunarSolarDate(year, event);
+				if (!converted) continue;
+				occurrenceStart = new Date(
+					Date.UTC(
+						converted.getUTCFullYear(),
+						converted.getUTCMonth(),
+						converted.getUTCDate(),
+						originalStart.getUTCHours(),
+						originalStart.getUTCMinutes(),
+						originalStart.getUTCSeconds(),
+					),
+				);
+			} else {
+				occurrenceStart = new Date(originalStart);
+				occurrenceStart.setUTCFullYear(year);
+			}
+			const instance = {
+				...event,
+				start: occurrenceStart.toISOString(),
+				end: new Date(occurrenceStart.getTime() + duration).toISOString(),
+				seriesStart: event.start,
+			};
+			if (overlaps(instance)) instances.push(instance);
+		}
+		return instances;
+	};
 	for (const object of await listAll(env.bucket, `${calendarKey(calendarId)}/`)) {
 		if (!object.key.endsWith('.ics')) continue;
 		const body = await env.bucket.get(object.key);
 		if (body === null) continue;
 		try {
 			const event = parseIcs(await body.text(), calendarId);
-			if (from && Date.parse(event.end) < Date.parse(from)) continue;
-			if (to && Date.parse(event.start) >= Date.parse(to)) continue;
 			event.etag = object.httpEtag;
-			events.push(event);
+			if (event.recurrence === 'yearly') events.push(...recurringInstances(event));
+			else if (overlaps(event)) events.push(event);
 		} catch {
 			// Malformed third-party resources remain accessible through CalDAV but are omitted from JSON views.
 		}
@@ -187,11 +240,41 @@ async function putEvent(request: Request, env: Env, calendarId: string): Promise
 		title: input.title.trim(),
 		start: new Date(input.start).toISOString(),
 		end: new Date(input.end).toISOString(),
-		allDay: Boolean(input.allDay),
+		allDay: input.kind === 'birthday' ? true : Boolean(input.allDay),
 		description: input.description?.trim() || undefined,
 		location: input.location?.trim() || undefined,
 		calendarId,
+		kind: input.kind === 'birthday' ? 'birthday' : 'event',
+		calendarSystem: input.calendarSystem === 'lunar' ? 'lunar' : 'solar',
+		recurrence: input.kind === 'birthday' || input.recurrence === 'yearly' ? 'yearly' : undefined,
+		lunarDate:
+			input.calendarSystem === 'lunar' &&
+			input.lunarDate &&
+			Number.isInteger(input.lunarDate.year) &&
+			Number.isInteger(input.lunarDate.month) &&
+			Number.isInteger(input.lunarDate.day) &&
+			input.lunarDate.month >= 1 &&
+			input.lunarDate.month <= 12 &&
+			input.lunarDate.day >= 1 &&
+			input.lunarDate.day <= 30
+				? input.lunarDate
+				: undefined,
 	};
+	if (event.calendarSystem === 'lunar' && !event.lunarDate) {
+		return jsonError('BAD_REQUEST', 'A valid lunar date is required');
+	}
+	if (event.lunarDate) {
+		try {
+			Lunar.fromYmd(
+				event.lunarDate.year,
+				event.lunarDate.leap ? -event.lunarDate.month : event.lunarDate.month,
+				event.lunarDate.day,
+			);
+		} catch {
+			return jsonError('BAD_REQUEST', 'The selected lunar date does not exist');
+		}
+	}
+	if (event.kind === 'birthday') event.end = new Date(Date.parse(event.start) + 24 * 60 * 60_000).toISOString();
 	const key = calendarKey(calendarId, `${uid}.ics`);
 	const existing = await env.bucket.head(key);
 	await env.bucket.put(key, createIcs(event), { httpMetadata: { contentType: 'text/calendar; charset=utf-8' } });
@@ -205,151 +288,6 @@ async function deleteEvent(env: Env, calendarId: string, uid: string): Promise<R
 	if ((await env.bucket.head(key)) === null) return jsonError('NOT_FOUND', 'Event not found', 404);
 	await env.bucket.delete(key);
 	await bumpCalendarCtag(env.bucket, calendarId);
-	return jsonData({ deleted: true });
-}
-
-interface NoteRow {
-	id: string;
-	title: string;
-	content: string;
-	is_pinned: number;
-	is_archived: number;
-	created_at: string;
-	updated_at: string;
-	accessed_at: string;
-}
-
-function noteFromRow(row: NoteRow): Note {
-	return {
-		id: row.id,
-		title: row.title,
-		content: row.content,
-		pinned: Boolean(row.is_pinned),
-		archived: Boolean(row.is_archived),
-		createdAt: row.created_at,
-		updatedAt: row.updated_at,
-		accessedAt: row.accessed_at,
-	};
-}
-
-async function listNotes(url: URL, env: Env, session: SessionContext): Promise<Response> {
-	await ensureDatabase(env);
-	const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
-	const pageSize = Math.min(50, Math.max(1, Number.parseInt(url.searchParams.get('limit') ?? '20', 10) || 20));
-	const archived = url.searchParams.get('archived') === '1' ? 1 : 0;
-	const offset = (page - 1) * pageSize;
-	const [rows, count] = await Promise.all([
-		env.NOTES_DB.prepare(
-			`SELECT id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at
-				FROM r2_webdav_notes WHERE user_id = ? AND is_archived = ?
-				ORDER BY is_pinned DESC, updated_at DESC LIMIT ? OFFSET ?`,
-		)
-			.bind(session.userId, archived, pageSize, offset)
-			.all<NoteRow>(),
-		env.NOTES_DB.prepare('SELECT COUNT(*) AS total FROM r2_webdav_notes WHERE user_id = ? AND is_archived = ?')
-			.bind(session.userId, archived)
-			.first<{ total: number }>(),
-	]);
-	const now = new Date().toISOString();
-	if (rows.results.length) {
-		await env.NOTES_DB.batch(
-			rows.results.map((row) =>
-				env.NOTES_DB.prepare('UPDATE r2_webdav_notes SET accessed_at = ? WHERE id = ? AND user_id = ?').bind(
-					now,
-					row.id,
-					session.userId,
-				),
-			),
-		);
-	}
-	const total = Number(count?.total ?? 0);
-	const result: NotePage = {
-		items: rows.results.map((row) => noteFromRow({ ...row, accessed_at: now })),
-		page,
-		pageSize,
-		total,
-		hasMore: offset + rows.results.length < total,
-	};
-	return jsonData(result);
-}
-
-async function createNote(request: Request, env: Env, session: SessionContext): Promise<Response> {
-	await ensureDatabase(env);
-	const input = await readJson<{ title?: string; content?: string }>(request);
-	const title = input?.title?.trim();
-	if (!title) return jsonError('BAD_REQUEST', 'A note title is required');
-	if (title.length > 200) return jsonError('BAD_REQUEST', 'Note title is too long');
-	const id = crypto.randomUUID();
-	const now = new Date().toISOString();
-	await env.NOTES_DB.prepare(
-		`INSERT INTO r2_webdav_notes (id, user_id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at)
-			VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?)`,
-	)
-		.bind(id, session.userId, title, input?.content ?? '', now, now, now)
-		.run();
-	return jsonData(
-		{
-			id,
-			title,
-			content: input?.content ?? '',
-			pinned: false,
-			archived: false,
-			createdAt: now,
-			updatedAt: now,
-			accessedAt: now,
-		} satisfies Note,
-		{ status: 201 },
-	);
-}
-
-async function updateNote(request: Request, env: Env, session: SessionContext, id: string): Promise<Response> {
-	await ensureDatabase(env);
-	const input = await readJson<{ title?: string; content?: string; pinned?: boolean; archived?: boolean }>(request);
-	if (!input) return jsonError('BAD_REQUEST', 'Invalid note body');
-	if (input.title !== undefined && (!input.title.trim() || input.title.trim().length > 200))
-		return jsonError('BAD_REQUEST', 'A title between 1 and 200 characters is required');
-	const updates: string[] = [];
-	const values: unknown[] = [];
-	if (input.title !== undefined) {
-		updates.push('title = ?');
-		values.push(input.title.trim());
-	}
-	if (input.content !== undefined) {
-		updates.push('content = ?');
-		values.push(input.content);
-	}
-	if (input.pinned !== undefined) {
-		updates.push('is_pinned = ?');
-		values.push(input.pinned ? 1 : 0);
-	}
-	if (input.archived !== undefined) {
-		updates.push('is_archived = ?');
-		values.push(input.archived ? 1 : 0);
-	}
-	if (!updates.length) return jsonError('BAD_REQUEST', 'No note changes supplied');
-	const now = new Date().toISOString();
-	updates.push('updated_at = ?', 'accessed_at = ?');
-	values.push(now, now, id, session.userId);
-	const changed = await env.NOTES_DB.prepare(
-		`UPDATE r2_webdav_notes SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`,
-	)
-		.bind(...values)
-		.run();
-	if (!(changed.meta.changes ?? 0)) return jsonError('NOT_FOUND', 'Note not found', 404);
-	const row = await env.NOTES_DB.prepare(
-		'SELECT id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at FROM r2_webdav_notes WHERE id = ? AND user_id = ?',
-	)
-		.bind(id, session.userId)
-		.first<NoteRow>();
-	return jsonData(noteFromRow(row!));
-}
-
-async function deleteNote(env: Env, session: SessionContext, id: string): Promise<Response> {
-	await ensureDatabase(env);
-	const result = await env.NOTES_DB.prepare('DELETE FROM r2_webdav_notes WHERE id = ? AND user_id = ?')
-		.bind(id, session.userId)
-		.run();
-	if (!(result.meta.changes ?? 0)) return jsonError('NOT_FOUND', 'Note not found', 404);
 	return jsonData({ deleted: true });
 }
 
@@ -405,11 +343,6 @@ export async function handleApi(request: Request, env: Env, session: SessionCont
 				: undefined,
 		);
 	}
-	if (path === '/notes' && request.method === 'GET' && session) return listNotes(url, env, session);
-	if (path === '/notes' && request.method === 'POST' && session) return createNote(request, env, session);
-	const noteMatch = path.match(/^\/notes\/([0-9a-f-]{36})$/i);
-	if (noteMatch && request.method === 'PATCH' && session) return updateNote(request, env, session, noteMatch[1]);
-	if (noteMatch && request.method === 'DELETE' && session) return deleteNote(env, session, noteMatch[1]);
 	if (path === '/fs' && request.method === 'GET') return listFiles(url, env);
 	if (path === '/fs' && request.method === 'DELETE') {
 		const filePath = normalizePath(url.searchParams.get('path'));

@@ -17,11 +17,11 @@ Rclone/DAVx⁵ ───►│ │ WebDAV │ │ CalDAV │ │
 │ R2 Bucket (+ 可选 KV) │
 └──────────────────────────────────────┘
 组件 职责 不负责
-Worker WebDAV + CalDAV + /api/v1 JSON、鉴权、R2 拼 HTML 管理页
+Worker WebDAV + CalDAV + 文件/日历/会话 JSON、鉴权、R2；Pages Functions 提供 Notes JSON
 Pages SPA 静态资源、预览环境 不实现 PROPFIND/REPORT
 R2 文件与 .ics 唯一数据源 —
 KV（可选） 用户表、会话、分享 token 大文件内容
-原则：协议与管理 API 合在一个 Worker；UI 只走 JSON；日历/文件客户端直连 Worker 域名 。
+原则：DAV 协议及文件/日历 API 保留在 Worker；Notes 走同源 Pages Functions；UI 只走 JSON；日历/文件客户端直连 Worker 域名。
 
 仓库结构（Monorepo）
 text
@@ -38,6 +38,7 @@ r2-webdav-x/
 │ │ ├── wrangler.toml
 │ │ └── package.json
 │ └── web/ # Pages SPA
+│ ├── functions/ # Notes 同源 Pages Functions
 │ ├── src/
 │ │ ├── pages/ # 文件 / 日历 / 登录 / 设置
 │ │ ├── api/client.ts # 调 Worker /api/v1
@@ -54,7 +55,8 @@ Fork 起点：把现有 src/index.ts 整文件迁入 apps/dav-worker/src/webdav/
 域名与路由
 域名 / 路径 目标 说明
 dav.example.com/_ Worker 全部 DAV 方法 + CalDAV
-dav.example.com/api/v1/_ Worker 管理 JSON API
+dav.example.com/api/v1/_ Worker 文件、日历与会话 JSON API
+app.example.com/api/v1/notes/_ Pages Functions 便签 CRUD
 app.example.com/\* Pages SPA
 可选：app → dav 反代 /api Pages \_redirects 或 Worker 路由 同源免 CORS（见下）
 推荐双域名（职责最清晰）：
@@ -217,7 +219,7 @@ Pages 的界面模仿OpenAI/ChatGPT风格
 上传 fetch PUT + 进度条；大文件后续再上 multipart
 日历 UI 月/周视图 + 调 /api/v1/calendars/...；不在浏览器拼 CalDAV XML
 配置 VITE_API_BASE=https://dav.example.com 或同源 /api
-Pages 项目 不要 放 functions/ 实现 DAV；若需要 BFF，最多做登录代理，协议仍在 Worker。
+Pages Functions 只实现 Notes 等同源应用功能；不要在 Functions 中实现 WebDAV 或 CalDAV，协议和文件/日历 API 继续由 Worker 提供。
 
 wrangler / 部署
 Worker

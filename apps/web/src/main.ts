@@ -18,8 +18,9 @@ import {
 	Languages,
 	Laptop,
 	LogOut,
-	MoreHorizontal,
 	Music,
+	PanelLeftClose,
+	PanelLeftOpen,
 	Pencil,
 	Pin,
 	PinOff,
@@ -42,7 +43,7 @@ import type {
 	Note,
 	NotePage,
 } from '@r2-webdav/shared-types';
-import { Solar } from 'lunar-typescript';
+import { Lunar, Solar } from 'lunar-typescript';
 import { API_BASE, ApiError, api, hasSession } from './api/client';
 import './styles.css';
 
@@ -202,8 +203,9 @@ function refreshIcons(): void {
 			Languages,
 			Laptop,
 			LogOut,
-			MoreHorizontal,
 			Music,
+			PanelLeftClose,
+			PanelLeftOpen,
 			Pencil,
 			Pin,
 			PinOff,
@@ -250,8 +252,8 @@ function shell(page: Page, _title: string, content = '<div class="empty-state"><
 	app.innerHTML = `<div class="app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}">
 		<aside class="sidebar">
 			<div class="sidebar-head">
-				<div class="brand" aria-label="TrueSpace"><span class="brand-full">TrueSpace</span><span class="brand-compact">T</span></div>
-				<button class="sidebar-toggle" id="sidebar-toggle" title="${sidebarCollapsed ? (locale === 'zh' ? '展开侧栏' : 'Expand sidebar') : locale === 'zh' ? '折叠侧栏' : 'Collapse sidebar'}" aria-label="${sidebarCollapsed ? (locale === 'zh' ? '展开侧栏' : 'Expand sidebar') : locale === 'zh' ? '折叠侧栏' : 'Collapse sidebar'}"><i data-lucide="more-horizontal"></i></button>
+				<div class="brand" aria-label="TrueSpace"><span class="brand-full">TrueSpace</span></div>
+				<button class="sidebar-toggle" id="sidebar-toggle" title="${sidebarCollapsed ? (locale === 'zh' ? '展开侧栏' : 'Expand sidebar') : locale === 'zh' ? '折叠侧栏' : 'Collapse sidebar'}" aria-label="${sidebarCollapsed ? (locale === 'zh' ? '展开侧栏' : 'Expand sidebar') : locale === 'zh' ? '折叠侧栏' : 'Collapse sidebar'}"><i data-lucide="${sidebarCollapsed ? 'panel-left-open' : 'panel-left-close'}"></i></button>
 			</div>
 			<nav class="nav" aria-label="Primary navigation">
 				<button class="nav-button ${page === 'files' ? 'active' : ''}" data-route="/files" title="${t('files')}"><i data-lucide="folder"></i><span>${t('files')}</span></button>
@@ -297,6 +299,20 @@ function shell(page: Page, _title: string, content = '<div class="empty-state"><
 		sidebarCollapsed = !sidebarCollapsed;
 		localStorage.setItem('r2_sidebar_collapsed', sidebarCollapsed ? '1' : '0');
 		document.querySelector('.app-shell')?.classList.toggle('sidebar-collapsed', sidebarCollapsed);
+		const toggle = document.querySelector<HTMLButtonElement>('#sidebar-toggle');
+		const label = sidebarCollapsed
+			? locale === 'zh'
+				? '展开侧栏'
+				: 'Expand sidebar'
+			: locale === 'zh'
+				? '折叠侧栏'
+				: 'Collapse sidebar';
+		if (toggle) {
+			toggle.title = label;
+			toggle.setAttribute('aria-label', label);
+			toggle.innerHTML = `<i data-lucide="${sidebarCollapsed ? 'panel-left-open' : 'panel-left-close'}"></i>`;
+			refreshIcons();
+		}
 	});
 	document.querySelector('#language-toggle')?.addEventListener('click', () => {
 		locale = locale === 'en' ? 'zh' : 'en';
@@ -408,8 +424,8 @@ function paintFiles(listing: FileListing): void {
 	const content = document.querySelector<HTMLDivElement>('#page-content');
 	if (!content || pageFromPath() !== 'files' || listing.path !== currentPath) return;
 	const rows = listing.entries
-			.map(
-				(entry) => `<tr>
+		.map(
+			(entry) => `<tr>
 			<td class="file-name"><button class="name-button" data-open="${html(entry.path)}" data-type="${entry.type}"><i data-lucide="${fileIcon(entry)}"></i><span>${html(entry.name)}</span></button></td>
 			<td class="file-size">${entry.type === 'file' ? formatBytes(entry.size) : '—'}</td>
 			<td class="file-date">${new Date(entry.modifiedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</td>
@@ -418,8 +434,8 @@ function paintFiles(listing: FileListing): void {
 				<button class="row-action" data-rename="${html(entry.path)}" title="Rename" aria-label="Rename"><i data-lucide="pencil"></i></button>
 				<button class="row-action danger" data-delete="${html(entry.path)}" title="Delete" aria-label="Delete"><i data-lucide="trash-2"></i></button>
 			</div></td></tr>`,
-			)
-			.join('');
+		)
+		.join('');
 	content.innerHTML = `<div class="toolbar"><div class="breadcrumbs">${breadcrumbMarkup(listing.path)}</div><span class="toolbar-spacer"></span>
 			<button class="button icon-button" id="files-refresh" title="${locale === 'zh' ? '刷新文件' : 'Refresh files'}" aria-label="${locale === 'zh' ? '刷新文件' : 'Refresh files'}"><i data-lucide="refresh-cw"></i></button>
 			<button class="button" id="mkdir"><i data-lucide="folder-plus"></i><span>${locale === 'zh' ? '新建文件夹' : 'New folder'}</span></button>
@@ -429,88 +445,88 @@ function paintFiles(listing: FileListing): void {
 		${rows ? `<table class="file-table"><thead><tr><th class="file-name">${locale === 'zh' ? '名称' : 'Name'}</th><th>${locale === 'zh' ? '大小' : 'Size'}</th><th>${locale === 'zh' ? '修改时间' : 'Modified'}</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="empty-state"><div><i data-lucide="folder-open"></i><div>${locale === 'zh' ? '此文件夹为空' : 'This folder is empty'}</div></div></div>`}`;
 	refreshIcons();
 	content.querySelectorAll<HTMLElement>('[data-path]').forEach((item) =>
-			item.addEventListener('click', () => {
-				currentPath = item.dataset.path!;
-				void renderFiles();
-			}),
-		);
+		item.addEventListener('click', () => {
+			currentPath = item.dataset.path!;
+			void renderFiles();
+		}),
+	);
 	content.querySelectorAll<HTMLElement>('[data-open]').forEach((item) =>
-			item.addEventListener('click', async () => {
-				if (item.dataset.type === 'directory') {
-					currentPath = item.dataset.open!;
-					await renderFiles();
-				} else await api.download(item.dataset.open!);
-			}),
-		);
+		item.addEventListener('click', async () => {
+			if (item.dataset.type === 'directory') {
+				currentPath = item.dataset.open!;
+				await renderFiles();
+			} else await api.download(item.dataset.open!);
+		}),
+	);
 	content
-			.querySelectorAll<HTMLElement>('[data-download]')
-			.forEach((item) =>
-				item.addEventListener('click', () =>
-					api.download(item.dataset.download!).catch((error) => toast(errorMessage(error))),
-				),
-			);
+		.querySelectorAll<HTMLElement>('[data-download]')
+		.forEach((item) =>
+			item.addEventListener('click', () =>
+				api.download(item.dataset.download!).catch((error) => toast(errorMessage(error))),
+			),
+		);
 	content.querySelectorAll<HTMLElement>('[data-rename]').forEach((item) =>
-			item.addEventListener('click', async () => {
-				const source = item.dataset.rename!;
-				const name = await openTextDialog('Rename', 'Name', source.split('/').at(-1));
-				if (!name || name.includes('/')) return;
-				const parent = source.split('/').slice(0, -1).join('/');
-				try {
-					await api.move(source, parent ? `${parent}/${name}` : name);
-					toast('Renamed');
-					await renderFiles(true);
-				} catch (error) {
-					toast(errorMessage(error));
-				}
-			}),
-		);
-	content.querySelectorAll<HTMLElement>('[data-delete]').forEach((item) =>
-			item.addEventListener('click', async () => {
-				const path = item.dataset.delete!;
-				if (!(await confirmAction('Delete item?', `${path.split('/').at(-1)} will be permanently deleted.`))) return;
-				try {
-					await api.deleteFile(path);
-					toast('Deleted');
-					await renderFiles(true);
-				} catch (error) {
-					toast(errorMessage(error));
-				}
-			}),
-		);
-	content.querySelector('#mkdir')?.addEventListener('click', async () => {
-			const name = await openTextDialog(
-				locale === 'zh' ? '新建文件夹' : 'New folder',
-				locale === 'zh' ? '文件夹名称' : 'Folder name',
-			);
+		item.addEventListener('click', async () => {
+			const source = item.dataset.rename!;
+			const name = await openTextDialog('Rename', 'Name', source.split('/').at(-1));
 			if (!name || name.includes('/')) return;
+			const parent = source.split('/').slice(0, -1).join('/');
 			try {
-				await api.mkdir(currentPath ? `${currentPath}/${name}` : name);
+				await api.move(source, parent ? `${parent}/${name}` : name);
+				toast('Renamed');
 				await renderFiles(true);
 			} catch (error) {
 				toast(errorMessage(error));
 			}
-		});
-	content
-			.querySelector('#upload')
-			?.addEventListener('click', () => content.querySelector<HTMLInputElement>('#file-input')?.click());
-	content.querySelector<HTMLInputElement>('#file-input')?.addEventListener('change', async (event) => {
-			const files = [...((event.target as HTMLInputElement).files ?? [])];
-			const status = content.querySelector<HTMLDivElement>('#upload-status')!;
-			for (let index = 0; index < files.length; index += 1) {
-				const file = files[index];
-				const path = currentPath ? `${currentPath}/${file.name}` : file.name;
-				try {
-					await api.upload(path, file, (progress) => {
-						status.innerHTML = `<div class="muted">Uploading ${html(file.name)} (${index + 1}/${files.length})</div><div class="progress-wrap"><div class="progress-bar" style="width:${Math.round(progress * 100)}%"></div></div>`;
-					});
-				} catch (error) {
-					toast(errorMessage(error));
-					break;
-				}
+		}),
+	);
+	content.querySelectorAll<HTMLElement>('[data-delete]').forEach((item) =>
+		item.addEventListener('click', async () => {
+			const path = item.dataset.delete!;
+			if (!(await confirmAction('Delete item?', `${path.split('/').at(-1)} will be permanently deleted.`))) return;
+			try {
+				await api.deleteFile(path);
+				toast('Deleted');
+				await renderFiles(true);
+			} catch (error) {
+				toast(errorMessage(error));
 			}
-			status.innerHTML = '';
+		}),
+	);
+	content.querySelector('#mkdir')?.addEventListener('click', async () => {
+		const name = await openTextDialog(
+			locale === 'zh' ? '新建文件夹' : 'New folder',
+			locale === 'zh' ? '文件夹名称' : 'Folder name',
+		);
+		if (!name || name.includes('/')) return;
+		try {
+			await api.mkdir(currentPath ? `${currentPath}/${name}` : name);
 			await renderFiles(true);
-		});
+		} catch (error) {
+			toast(errorMessage(error));
+		}
+	});
+	content
+		.querySelector('#upload')
+		?.addEventListener('click', () => content.querySelector<HTMLInputElement>('#file-input')?.click());
+	content.querySelector<HTMLInputElement>('#file-input')?.addEventListener('change', async (event) => {
+		const files = [...((event.target as HTMLInputElement).files ?? [])];
+		const status = content.querySelector<HTMLDivElement>('#upload-status')!;
+		for (let index = 0; index < files.length; index += 1) {
+			const file = files[index];
+			const path = currentPath ? `${currentPath}/${file.name}` : file.name;
+			try {
+				await api.upload(path, file, (progress) => {
+					status.innerHTML = `<div class="muted">Uploading ${html(file.name)} (${index + 1}/${files.length})</div><div class="progress-wrap"><div class="progress-bar" style="width:${Math.round(progress * 100)}%"></div></div>`;
+				});
+			} catch (error) {
+				toast(errorMessage(error));
+				break;
+			}
+		}
+		status.innerHTML = '';
+		await renderFiles(true);
+	});
 	content.querySelector('#files-refresh')?.addEventListener('click', () => void renderFiles(true));
 }
 
@@ -540,6 +556,10 @@ function inputDate(value: string): string {
 	const date = new Date(value);
 	const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
 	return local.toISOString().slice(0, 16);
+}
+
+function eventCacheKey(event: CalendarEvent): string {
+	return `${event.uid}@${event.start}`;
 }
 
 function lunarDate(date: Date): { short: string; full: string } {
@@ -604,7 +624,8 @@ function hydrateCalendarCache(): void {
 		} | null;
 		if (!cached) return;
 		if (Array.isArray(cached.calendars)) calendarCache.calendars = cached.calendars;
-		if (Array.isArray(cached.events)) cached.events.forEach((event) => calendarCache.events.set(event.uid, event));
+		if (Array.isArray(cached.events))
+			cached.events.forEach((event) => calendarCache.events.set(eventCacheKey(event), event));
 		if (Array.isArray(cached.loadedRanges)) calendarCache.loadedRanges = cached.loadedRanges;
 	} catch {
 		localStorage.removeItem('r2_calendar_cache');
@@ -623,20 +644,166 @@ async function eventDialog(
 	defaultDate?: Date,
 ): Promise<'saved' | 'deleted' | null> {
 	return new Promise((resolve) => {
-		const start = existing ? new Date(existing.start) : new Date(defaultDate ?? new Date());
+		const start = existing ? new Date(existing.seriesStart ?? existing.start) : new Date(defaultDate ?? new Date());
 		if (!existing) start.setHours(9, 0, 0, 0);
-		const end = existing ? new Date(existing.end) : new Date(start.getTime() + 60 * 60_000);
+		const duration = existing ? Math.max(1, Date.parse(existing.end) - Date.parse(existing.start)) : 60 * 60_000;
+		const end = new Date(start.getTime() + duration);
+		let kind: 'event' | 'birthday' = existing?.kind === 'birthday' ? 'birthday' : 'event';
+		let calendarSystem: 'solar' | 'lunar' = existing?.calendarSystem === 'lunar' ? 'lunar' : 'solar';
+		const initialLunar =
+			existing?.lunarDate ??
+			(() => {
+				const lunar = Solar.fromYmd(start.getFullYear(), start.getMonth() + 1, start.getDate()).getLunar();
+				return {
+					year: lunar.getYear(),
+					month: Math.abs(lunar.getMonth()),
+					day: lunar.getDay(),
+					leap: lunar.getMonth() < 0,
+				};
+			})();
+		const copy =
+			locale === 'zh'
+				? {
+						newEvent: '新建日程',
+						editEvent: '编辑日程',
+						event: '日程',
+						birthday: '生日',
+						title: '标题',
+						solar: '公历',
+						lunar: '农历',
+						calendar: '日期类型',
+						type: '类型',
+						starts: '开始',
+						ends: '结束',
+						allDay: '全天',
+						location: '地点',
+						description: '备注',
+						year: '年',
+						month: '月',
+						day: '日',
+						leap: '闰月',
+						repeat: '重复',
+						yearly: '每年',
+						delete: '删除',
+						cancel: '取消',
+						save: '保存',
+						invalidLunar: '所选农历日期不存在',
+					}
+				: {
+						newEvent: 'New event',
+						editEvent: 'Edit event',
+						event: 'Event',
+						birthday: 'Birthday',
+						title: 'Title',
+						solar: 'Gregorian',
+						lunar: 'Lunar',
+						calendar: 'Calendar',
+						type: 'Type',
+						starts: 'Starts',
+						ends: 'Ends',
+						allDay: 'All day',
+						location: 'Location',
+						description: 'Notes',
+						year: 'Year',
+						month: 'Month',
+						day: 'Day',
+						leap: 'Leap month',
+						repeat: 'Repeat',
+						yearly: 'Every year',
+						delete: 'Delete',
+						cancel: 'Cancel',
+						save: 'Save',
+						invalidLunar: 'The selected lunar date does not exist',
+					};
+		const monthNames =
+			locale === 'zh'
+				? ['正月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '冬月', '腊月']
+				: Array.from({ length: 12 }, (_, index) => `Month ${index + 1}`);
+		const dayNames =
+			locale === 'zh'
+				? [
+						'初一',
+						'初二',
+						'初三',
+						'初四',
+						'初五',
+						'初六',
+						'初七',
+						'初八',
+						'初九',
+						'初十',
+						'十一',
+						'十二',
+						'十三',
+						'十四',
+						'十五',
+						'十六',
+						'十七',
+						'十八',
+						'十九',
+						'二十',
+						'廿一',
+						'廿二',
+						'廿三',
+						'廿四',
+						'廿五',
+						'廿六',
+						'廿七',
+						'廿八',
+						'廿九',
+						'三十',
+					]
+				: Array.from({ length: 30 }, (_, index) => `Day ${index + 1}`);
+		const timeValue = (date: Date) =>
+			`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 		const dialog = document.createElement('dialog');
-		dialog.innerHTML = `<form class="dialog-body" id="event-form"><h2>${existing ? 'Edit event' : 'New event'}</h2>
-			<div class="field"><label for="event-title">Title</label><input class="input" id="event-title" value="${html(existing?.title ?? '')}" required></div>
-			<div class="field"><label for="event-start">Starts</label><input class="input" type="datetime-local" id="event-start" value="${inputDate(start.toISOString())}" required></div>
-			<div class="field"><label for="event-end">Ends</label><input class="input" type="datetime-local" id="event-end" value="${inputDate(end.toISOString())}" required></div>
-			<div class="field"><label><input type="checkbox" id="event-all-day" ${existing?.allDay ? 'checked' : ''}> All day</label></div>
-			<div class="field"><label for="event-location">Location</label><input class="input" id="event-location" value="${html(existing?.location ?? '')}"></div>
-			<div class="field"><label for="event-description">Description</label><textarea class="input" id="event-description">${html(existing?.description ?? '')}</textarea></div>
-			<div class="dialog-actions">${existing ? '<button type="button" class="button danger danger-zone" id="event-delete">Delete</button>' : ''}<button type="button" class="button" id="event-cancel">Cancel</button><button class="button primary">Save</button></div>
+		dialog.className = 'event-dialog';
+		dialog.innerHTML = `<form class="dialog-body" id="event-form"><h2>${existing ? copy.editEvent : copy.newEvent}</h2>
+			<div class="event-dialog-options">
+				<div class="field"><label>${copy.type}</label><div class="segment-control compact"><button type="button" data-event-kind="event">${copy.event}</button><button type="button" data-event-kind="birthday">${copy.birthday}</button></div></div>
+				<div class="field"><label>${copy.calendar}</label><div class="segment-control compact"><button type="button" data-calendar-system="solar">${copy.solar}</button><button type="button" data-calendar-system="lunar">${copy.lunar}</button></div></div>
+			</div>
+			<div class="field"><label for="event-title">${copy.title}</label><input class="input" id="event-title" value="${html(existing?.title ?? '')}" required></div>
+			<div id="event-solar-fields"><div class="event-time-grid"><div class="field"><label for="event-start">${copy.starts}</label><input class="input" type="datetime-local" id="event-start" value="${inputDate(start.toISOString())}" required></div><div class="field event-end-field"><label for="event-end">${copy.ends}</label><input class="input" type="datetime-local" id="event-end" value="${inputDate(end.toISOString())}" required></div></div></div>
+			<div id="event-lunar-fields" hidden><div class="lunar-date-grid"><div class="field"><label for="event-lunar-year">${copy.year}</label><input class="input" type="number" min="1900" max="2100" id="event-lunar-year" value="${initialLunar.year}" required></div><div class="field"><label for="event-lunar-month">${copy.month}</label><select class="input" id="event-lunar-month">${monthNames.map((name, index) => `<option value="${index + 1}" ${initialLunar.month === index + 1 ? 'selected' : ''}>${name}</option>`).join('')}</select></div><div class="field"><label for="event-lunar-day">${copy.day}</label><select class="input" id="event-lunar-day">${dayNames.map((name, index) => `<option value="${index + 1}" ${initialLunar.day === index + 1 ? 'selected' : ''}>${name}</option>`).join('')}</select></div></div><label class="checkbox-row"><input type="checkbox" id="event-lunar-leap" ${initialLunar.leap ? 'checked' : ''}> ${copy.leap}</label><div class="event-time-grid lunar-time-fields"><div class="field"><label for="event-start-time">${copy.starts}</label><input class="input" type="time" id="event-start-time" value="${timeValue(start)}" required></div><div class="field event-end-field"><label for="event-end-time">${copy.ends}</label><input class="input" type="time" id="event-end-time" value="${timeValue(end)}" required></div></div></div>
+			<div class="field event-all-day-field"><label class="checkbox-row"><input type="checkbox" id="event-all-day" ${existing?.allDay ? 'checked' : ''}> ${copy.allDay}</label></div>
+			<div class="birthday-repeat" id="birthday-repeat" hidden><span>${copy.repeat}</span><strong>${copy.yearly}</strong></div>
+			<div class="field"><label for="event-location">${copy.location}</label><input class="input" id="event-location" value="${html(existing?.location ?? '')}"></div>
+			<div class="field"><label for="event-description">${copy.description}</label><textarea class="input" id="event-description">${html(existing?.description ?? '')}</textarea></div>
+			<div class="dialog-actions">${existing ? `<button type="button" class="button danger danger-zone" id="event-delete">${copy.delete}</button>` : ''}<button type="button" class="button" id="event-cancel">${copy.cancel}</button><button class="button primary">${copy.save}</button></div>
 		</form>`;
 		document.body.append(dialog);
+		const setState = () => {
+			dialog
+				.querySelectorAll<HTMLElement>('[data-event-kind]')
+				.forEach((button) => button.classList.toggle('active', button.dataset.eventKind === kind));
+			dialog
+				.querySelectorAll<HTMLElement>('[data-calendar-system]')
+				.forEach((button) => button.classList.toggle('active', button.dataset.calendarSystem === calendarSystem));
+			const solarFields = dialog.querySelector<HTMLElement>('#event-solar-fields')!;
+			const lunarFields = dialog.querySelector<HTMLElement>('#event-lunar-fields')!;
+			solarFields.hidden = calendarSystem !== 'solar';
+			lunarFields.hidden = calendarSystem !== 'lunar';
+			dialog.querySelectorAll<HTMLElement>('.event-end-field').forEach((field) => (field.hidden = kind === 'birthday'));
+			dialog.querySelector<HTMLElement>('.event-all-day-field')!.hidden = kind === 'birthday';
+			dialog.querySelector<HTMLElement>('#birthday-repeat')!.hidden = kind !== 'birthday';
+			dialog.querySelector<HTMLElement>('.lunar-time-fields')!.hidden = kind === 'birthday';
+			const allDay = dialog.querySelector<HTMLInputElement>('#event-all-day')!;
+			if (kind === 'birthday') allDay.checked = true;
+		};
+		dialog.querySelectorAll<HTMLElement>('[data-event-kind]').forEach((button) =>
+			button.addEventListener('click', () => {
+				kind = button.dataset.eventKind as 'event' | 'birthday';
+				setState();
+			}),
+		);
+		dialog.querySelectorAll<HTMLElement>('[data-calendar-system]').forEach((button) =>
+			button.addEventListener('click', () => {
+				calendarSystem = button.dataset.calendarSystem as 'solar' | 'lunar';
+				setState();
+			}),
+		);
+		setState();
 		const finish = (result: 'saved' | 'deleted' | null) => {
 			dialog.close();
 			dialog.remove();
@@ -644,7 +811,7 @@ async function eventDialog(
 		};
 		dialog.querySelector('#event-cancel')?.addEventListener('click', () => finish(null));
 		dialog.querySelector('#event-delete')?.addEventListener('click', async () => {
-			if (!existing || !(await confirmAction('Delete event?', existing.title))) return;
+			if (!existing || !(await confirmAction(`${copy.delete}?`, existing.title))) return;
 			try {
 				await api.deleteEvent(calendar.id, existing.uid);
 				finish('deleted');
@@ -656,14 +823,53 @@ async function eventDialog(
 			event.preventDefault();
 			const value = (id: string) => dialog.querySelector<HTMLInputElement>(id)!.value;
 			try {
+				const allDay = kind === 'birthday' || dialog.querySelector<HTMLInputElement>('#event-all-day')!.checked;
+				let eventStart: Date;
+				let eventEnd: Date;
+				let lunarDate: CalendarEvent['lunarDate'];
+				if (calendarSystem === 'lunar') {
+					const year = Number(value('#event-lunar-year'));
+					const month = Number(value('#event-lunar-month'));
+					const day = Number(value('#event-lunar-day'));
+					const leap = dialog.querySelector<HTMLInputElement>('#event-lunar-leap')!.checked;
+					let solar;
+					try {
+						solar = Lunar.fromYmd(year, leap ? -month : month, day).getSolar();
+					} catch {
+						toast(copy.invalidLunar);
+						return;
+					}
+					const [startHour, startMinute] = (kind === 'birthday' ? '00:00' : value('#event-start-time'))
+						.split(':')
+						.map(Number);
+					const [endHour, endMinute] = (kind === 'birthday' ? '00:00' : value('#event-end-time'))
+						.split(':')
+						.map(Number);
+					eventStart = new Date(solar.getYear(), solar.getMonth() - 1, solar.getDay(), startHour, startMinute);
+					eventEnd = new Date(solar.getYear(), solar.getMonth() - 1, solar.getDay(), endHour, endMinute);
+					if (allDay || eventEnd <= eventStart) eventEnd.setDate(eventEnd.getDate() + 1);
+					lunarDate = { year, month, day, leap };
+				} else {
+					eventStart = new Date(value('#event-start'));
+					eventEnd = kind === 'birthday' ? new Date(eventStart) : new Date(value('#event-end'));
+					if (allDay) {
+						eventStart.setHours(0, 0, 0, 0);
+						eventEnd = new Date(eventStart);
+						eventEnd.setDate(eventEnd.getDate() + 1);
+					}
+				}
 				await api.putEvent(calendar.id, {
 					uid: existing?.uid,
 					title: value('#event-title'),
-					start: new Date(value('#event-start')).toISOString(),
-					end: new Date(value('#event-end')).toISOString(),
-					allDay: dialog.querySelector<HTMLInputElement>('#event-all-day')!.checked,
+					start: eventStart.toISOString(),
+					end: eventEnd.toISOString(),
+					allDay,
 					location: value('#event-location'),
 					description: dialog.querySelector<HTMLTextAreaElement>('#event-description')!.value,
+					kind,
+					calendarSystem,
+					recurrence: kind === 'birthday' ? 'yearly' : undefined,
+					lunarDate,
 				});
 				finish('saved');
 			} catch (error) {
@@ -689,7 +895,7 @@ function paintCalendarGrid(calendar: CalendarSummary, gridStart: Date): void {
 		const lunar = lunarDate(date);
 		const dayEvents = events.filter((item) => localDateKey(new Date(item.start)) === key);
 		cells.push(
-			`<div class="day-cell ${date.getMonth() !== calendarCursor.getMonth() ? 'outside' : ''} ${key === today ? 'today' : ''}" data-day="${key}"><div class="day-meta" title="${html(lunar.full)}"><span class="day-number">${date.getDate()}</span><span class="lunar-day">${html(lunar.short)}</span></div>${dayEvents.map((item) => `<button class="event-chip" data-event="${html(item.uid)}" title="${html(item.title)}">${item.allDay ? '' : `${new Date(item.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} `}${html(item.title)}</button>`).join('')}</div>`,
+			`<div class="day-cell ${date.getMonth() !== calendarCursor.getMonth() ? 'outside' : ''} ${key === today ? 'today' : ''}" data-day="${key}"><div class="day-meta" title="${html(lunar.full)}"><span class="day-number">${date.getDate()}</span><span class="lunar-day">${html(lunar.short)}</span></div>${dayEvents.map((item) => `<button class="event-chip ${item.kind === 'birthday' ? 'birthday' : ''}" data-event="${html(eventCacheKey(item))}" title="${html(item.title)}">${item.allDay ? '' : `${new Date(item.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} `}${html(item.title)}</button>`).join('')}</div>`,
 		);
 	}
 	grid.innerHTML = cells.join('');
@@ -783,7 +989,7 @@ async function renderCalendar(forceSync = false): Promise<void> {
 					calendarCache.events.delete(uid);
 			}
 		}
-		responses.flat().forEach((event) => calendarCache.events.set(event.uid, event));
+		responses.flat().forEach((event) => calendarCache.events.set(eventCacheKey(event), event));
 		ranges.forEach(mergeLoadedRange);
 		persistCalendarCache();
 		if (requestId !== calendarRequest || pageFromPath() !== 'calendar') return;
@@ -909,10 +1115,8 @@ function paintNotes(data: NotePage, selectedId?: string): void {
 		}),
 	);
 	content.querySelector('#new-note')?.addEventListener('click', async () => {
-		const title = await openTextDialog(t('newNote'), locale === 'zh' ? '标题' : 'Title');
-		if (!title) return;
 		try {
-			const note = await api.createNote(title, '');
+			const note = await api.createNote(locale === 'zh' ? '无标题便签' : 'Untitled note', '');
 			notesArchived = false;
 			notesPage = 1;
 			validatedNotePages.delete(noteCacheKey());

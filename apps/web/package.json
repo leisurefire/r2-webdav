@@ -5,8 +5,8 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
-		"build": "tsc --noEmit && vite build",
-		"typecheck": "tsc --noEmit",
+		"build": "tsc --noEmit && tsc -p functions/tsconfig.json && vite build",
+		"typecheck": "tsc --noEmit && tsc -p functions/tsconfig.json",
 		"deploy": "wrangler pages deploy dist --project-name webdav-ui"
 	},
 	"dependencies": {
@@ -15,6 +15,7 @@
 		"lunar-typescript": "^1.8.6"
 	},
 	"devDependencies": {
+		"@cloudflare/workers-types": "^5.20260717.1",
 		"vite": "^6.0.0",
 		"wrangler": "^4.112.0"
 	}

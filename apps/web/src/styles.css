@@ -965,6 +965,10 @@ dialog::backdrop {
 	background: rgba(0, 0, 0, 0.48);
 }
 
+[hidden] {
+	display: none !important;
+}
+
 .dialog-body {
 	padding: 24px;
 }
@@ -985,6 +989,67 @@ dialog::backdrop {
 
 .danger-zone {
 	margin-right: auto;
+}
+
+.event-dialog {
+	width: min(620px, calc(100vw - 32px));
+	max-height: calc(100dvh - 24px);
+	overflow: auto;
+}
+
+.event-dialog-options,
+.event-time-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 12px;
+}
+
+.event-dialog-options .segment-control {
+	width: 100%;
+}
+
+.segment-control.compact button {
+	min-width: 0;
+	flex: 1;
+	padding-inline: 10px;
+}
+
+.lunar-date-grid {
+	display: grid;
+	grid-template-columns: minmax(96px, 0.8fr) minmax(120px, 1.2fr) minmax(110px, 1fr);
+	gap: 10px;
+}
+
+.checkbox-row {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 28px;
+	font-size: 13px;
+}
+
+.lunar-time-fields {
+	margin-top: 10px;
+}
+
+.birthday-repeat {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	min-height: 42px;
+	margin: 0 0 16px;
+	padding: 0 12px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	font-size: 13px;
+}
+
+.birthday-repeat span {
+	color: var(--muted);
+}
+
+.event-chip.birthday {
+	font-weight: 600;
 }
 
 /* Dashboard refresh: restrained monochrome surfaces, generous spacing, and pill controls. */
@@ -1480,6 +1545,16 @@ dialog::backdrop {
 }
 
 @media (max-width: 760px) {
+	.event-dialog-options,
+	.event-time-grid {
+		grid-template-columns: 1fr;
+		gap: 0;
+	}
+
+	.lunar-date-grid {
+		grid-template-columns: minmax(82px, 0.7fr) minmax(100px, 1.15fr) minmax(90px, 1fr);
+	}
+
 	.app-shell {
 		display: block;
 		padding: 64px 0 68px;
@@ -1985,7 +2060,7 @@ body:has(.app-shell) {
 	min-height: 0;
 	grid-template-columns: 232px minmax(0, 1fr);
 	grid-template-rows: minmax(0, 1fr);
-	transition: grid-template-columns 180ms ease;
+	transition: grid-template-columns 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .app-shell.sidebar-collapsed {
@@ -2006,6 +2081,7 @@ body:has(.app-shell) {
 	border-right: 1px solid var(--line);
 	background: var(--sidebar-bg);
 	overflow: visible;
+	transition: padding 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .sidebar-head {
@@ -2018,13 +2094,21 @@ body:has(.app-shell) {
 }
 
 .sidebar-head .brand {
+	max-width: 150px;
 	min-width: 0;
 	font-size: 17px;
 	font-weight: 700;
+	overflow: hidden;
+	transition:
+		opacity 140ms ease,
+		transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+		max-width 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.brand-compact {
-	display: none;
+.brand-full {
+	display: block;
+	max-width: 140px;
+	overflow: hidden;
 }
 
 .sidebar-toggle {
@@ -2038,6 +2122,10 @@ body:has(.app-shell) {
 	border-radius: 6px;
 	background: transparent;
 	color: var(--muted);
+	transition:
+		background-color 140ms ease,
+		color 140ms ease,
+		transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .sidebar-toggle:hover {
@@ -2059,6 +2147,26 @@ body:has(.app-shell) {
 	min-height: 40px;
 	border-radius: 6px;
 	padding: 0 10px;
+	overflow: hidden;
+	transition:
+		background-color 140ms ease,
+		color 140ms ease,
+		gap 220ms cubic-bezier(0.22, 1, 0.36, 1),
+		padding 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.nav-button span,
+.user-copy,
+.user-chevron {
+	max-width: 150px;
+	opacity: 1;
+	overflow: hidden;
+	white-space: nowrap;
+	transform: translateX(0);
+	transition:
+		opacity 120ms ease,
+		transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+		max-width 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .nav-button:hover,
@@ -2079,6 +2187,10 @@ body:has(.app-shell) {
 	border: 1px solid var(--line);
 	border-radius: 8px;
 	background: var(--panel-bg);
+	transition:
+		background-color 140ms ease,
+		padding 220ms cubic-bezier(0.22, 1, 0.36, 1),
+		grid-template-columns 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .user-menu-button:hover,
@@ -2109,23 +2221,28 @@ body:has(.app-shell) {
 }
 
 .sidebar-collapsed .sidebar-head {
-	gap: 2px;
-	padding-inline: 3px 0;
+	justify-content: center;
+	gap: 0;
+	padding-inline: 0;
 }
 
-.sidebar-collapsed .brand-full,
+.sidebar-collapsed .sidebar-head .brand {
+	max-width: 0;
+	opacity: 0;
+	transform: translateX(-8px);
+}
+
 .sidebar-collapsed .nav-button span,
 .sidebar-collapsed .user-copy,
 .sidebar-collapsed .user-chevron {
-	display: none;
-}
-
-.sidebar-collapsed .brand-compact {
-	display: inline;
+	max-width: 0;
+	opacity: 0;
+	transform: translateX(-6px);
 }
 
 .sidebar-collapsed .nav-button {
 	justify-content: center;
+	gap: 0;
 	padding: 0;
 }
 
@@ -2359,12 +2476,10 @@ body:has(.app-shell) {
 		padding: 0 2px 0 4px;
 	}
 
-	.sidebar-collapsed .brand-full {
-		display: inline;
-	}
-
-	.sidebar-collapsed .brand-compact {
-		display: none;
+	.sidebar-collapsed .sidebar-head .brand {
+		max-width: 0;
+		opacity: 0;
+		transform: translateX(-8px);
 	}
 
 	.sidebar .nav {

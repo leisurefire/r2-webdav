@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env, SELF } from 'cloudflare:test';
+import { Lunar } from 'lunar-typescript';
+import { onRequest as handleNotes } from '../../web/functions/api/v1/notes/[[id]]';
 
 const basic = `Basic ${btoa('test-user:test-password')}`;
 
@@ -33,6 +35,18 @@ async function login(): Promise<string> {
 	return payload.data.token;
 }
 
+async function pagesNotes(token: string, path = '', init: RequestInit = {}): Promise<Response> {
+	const id = path.split('?')[0].replace(/^\//, '');
+	return handleNotes({
+		request: new Request(`https://app.example.com/api/v1/notes${path}`, {
+			...init,
+			headers: { Authorization: `Bearer ${token}`, ...init.headers },
+		}),
+		env: { NOTES_DB: env.NOTES_DB },
+		params: id ? { id } : {},
+	} as Parameters<typeof handleNotes>[0]);
+}
+
 beforeEach(clearState);
 
 describe('authentication and file API', () => {
@@ -56,14 +70,14 @@ describe('authentication and file API', () => {
 		}
 	});
 
-	it('issues a JWT and rejects invalid credentials', async () => {
+	it('issues a random session token and rejects invalid credentials', async () => {
 		const bad = await SELF.fetch('https://dav.example.com/api/v1/auth/login', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ username: 'test-user', password: 'wrong' }),
 		});
 		expect(bad.status).toBe(401);
-		expect(await login()).toMatch(/^eyJ/);
+		expect(await login()).toMatch(/^[0-9a-f-]{36}\.[A-Za-z0-9_-]+$/);
 	});
 
 	it('creates, uploads, lists, moves and deletes through shared DAV behavior', async () => {
@@ -126,48 +140,43 @@ describe('authentication and file API', () => {
 		);
 	});
 
-	it('paginates notes with pinned items first and supports archive and delete', async () => {
+	it('leaves Notes CRUD to Pages Functions', async () => {
 		const token = await login();
-		const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-		const ids: string[] = [];
-		for (let index = 1; index <= 22; index += 1) {
-			const response = await SELF.fetch('https://dav.example.com/api/v1/notes', {
-				method: 'POST',
-				headers,
-				body: JSON.stringify({ title: `Note ${index}`, content: `# Body ${index}\n\n**bold**` }),
-			});
-			const created = await response.json<{ ok: true; data: { id: string } }>();
-			ids.push(created.data.id);
-		}
-		await SELF.fetch(`https://dav.example.com/api/v1/notes/${ids[0]}`, {
-			method: 'PATCH',
-			headers,
-			body: JSON.stringify({ pinned: true }),
+		const response = await SELF.fetch('https://dav.example.com/api/v1/notes', {
+			headers: { Authorization: `Bearer ${token}` },
 		});
-		const firstPage = await SELF.fetch('https://dav.example.com/api/v1/notes?page=1&limit=20', { headers });
-		const page = await firstPage.json<{
-			ok: true;
-			data: { items: Array<{ id: string; pinned: boolean }>; total: number; hasMore: boolean };
-		}>();
-		expect(page.data.items).toHaveLength(20);
-		expect(page.data.items[0]).toEqual(expect.objectContaining({ id: ids[0], pinned: true }));
-		expect(page.data.total).toBe(22);
-		expect(page.data.hasMore).toBe(true);
+		expect(response.status).toBe(404);
+	});
 
-		await SELF.fetch(`https://dav.example.com/api/v1/notes/${ids[0]}`, {
+	it('shares Worker sessions with the Pages Notes function', async () => {
+		const token = await login();
+		const createdResponse = await pagesNotes(token, '', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ title: '', content: '' }),
+		});
+		expect(createdResponse.status).toBe(201);
+		const created = await createdResponse.json<{ ok: true; data: { id: string; title: string } }>();
+		expect(created.data.title).toBe('Untitled note');
+
+		const page = await pagesNotes(token).then((response) =>
+			response.json<{ ok: true; data: { items: Array<{ id: string }>; total: number } }>(),
+		);
+		expect(page.data.total).toBe(1);
+		expect(page.data.items[0].id).toBe(created.data.id);
+
+		const archived = await pagesNotes(token, `/${created.data.id}`, {
 			method: 'PATCH',
-			headers,
+			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ archived: true }),
 		});
-		const archived = await SELF.fetch('https://dav.example.com/api/v1/notes?archived=1', { headers });
-		const archivedBody = await archived.json<{ ok: true; data: { items: Array<{ id: string }> } }>();
-		expect(archivedBody.data.items.map((note) => note.id)).toEqual([ids[0]]);
+		expect(archived.status).toBe(200);
+		const archivedPage = await pagesNotes(token, '?archived=1').then((response) =>
+			response.json<{ ok: true; data: { items: Array<{ id: string }> } }>(),
+		);
+		expect(archivedPage.data.items.map((note) => note.id)).toEqual([created.data.id]);
 
-		expect(
-			await SELF.fetch(`https://dav.example.com/api/v1/notes/${ids[0]}`, { method: 'DELETE', headers }).then(
-				(response) => response.status,
-			),
-		).toBe(200);
+		expect((await pagesNotes(token, `/${created.data.id}`, { method: 'DELETE' })).status).toBe(200);
 	});
 });
 
@@ -227,5 +236,62 @@ describe('DAV protocols', () => {
 		);
 		const body = await events.json<{ ok: true; data: Array<{ uid: string; title: string }> }>();
 		expect(body.data).toEqual([expect.objectContaining({ uid: 'event-1', title: 'Protocol test' })]);
+	});
+
+	it('repeats Gregorian and lunar birthdays on their correct annual dates', async () => {
+		const token = await login();
+		const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+		const create = (body: object) =>
+			SELF.fetch('https://dav.example.com/api/v1/calendars/default/events', {
+				method: 'POST',
+				headers,
+				body: JSON.stringify(body),
+			});
+		await create({
+			uid: 'solar-birthday',
+			title: 'Solar birthday',
+			start: '2000-07-18T00:00:00.000Z',
+			end: '2000-07-19T00:00:00.000Z',
+			allDay: true,
+			kind: 'birthday',
+			calendarSystem: 'solar',
+		});
+		const originalLunar = Lunar.fromYmd(2026, 6, 5).getSolar();
+		await create({
+			uid: 'lunar-birthday',
+			title: 'Lunar birthday',
+			start: `${originalLunar.toYmd()}T00:00:00.000Z`,
+			end: `${originalLunar.nextDay(1).toYmd()}T00:00:00.000Z`,
+			allDay: true,
+			kind: 'birthday',
+			calendarSystem: 'lunar',
+			lunarDate: { year: 2026, month: 6, day: 5, leap: false },
+		});
+
+		const response = await SELF.fetch(
+			'https://dav.example.com/api/v1/calendars/default/events?from=2027-01-01T00:00:00.000Z&to=2028-01-01T00:00:00.000Z',
+			{ headers },
+		);
+		const payload = await response.json<{
+			ok: true;
+			data: Array<{ uid: string; start: string; recurrence?: string; seriesStart?: string }>;
+		}>();
+		const nextLunar = Lunar.fromYmd(2027, 6, 5).getSolar().toYmd();
+		expect(payload.data).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ uid: 'solar-birthday', start: '2027-07-18T00:00:00.000Z', recurrence: 'yearly' }),
+				expect.objectContaining({ uid: 'lunar-birthday', start: `${nextLunar}T00:00:00.000Z`, recurrence: 'yearly' }),
+			]),
+		);
+		expect(payload.data.find((event) => event.uid === 'solar-birthday')?.seriesStart).toBe('2000-07-18T00:00:00.000Z');
+		const solarIcs = await env.bucket
+			.get('caldav/default/calendars/default/solar-birthday.ics')
+			.then((item) => item?.text());
+		const lunarIcs = await env.bucket
+			.get('caldav/default/calendars/default/lunar-birthday.ics')
+			.then((item) => item?.text());
+		expect(solarIcs).toContain('RRULE:FREQ=YEARLY');
+		expect(lunarIcs).toContain('X-TRUESPACE-CALENDAR-SYSTEM:LUNAR');
+		expect(lunarIcs).toContain('RDATE;VALUE=DATE:');
 	});
 });

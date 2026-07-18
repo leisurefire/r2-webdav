@@ -14,6 +14,7 @@ const isLocalDevelopment = location.hostname === 'localhost' || location.hostnam
 const configuredBasePointsToPages = !isLocalDevelopment && configuredApiBase === location.origin;
 export const API_BASE =
 	configuredApiBase && !configuredBasePointsToPages ? configuredApiBase : isLocalDevelopment ? '' : productionApiBase;
+const notesApiBase = ((import.meta.env.VITE_NOTES_API_BASE as string | undefined) ?? '').replace(/\/$/, '');
 const TOKEN_KEY = 'r2_session_token';
 
 export class ApiError extends Error {
@@ -33,8 +34,8 @@ function authHeaders(headers?: HeadersInit): Headers {
 	return result;
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-	const response = await fetch(`${API_BASE}/api/v1${path}`, {
+async function requestFrom<T>(base: string, path: string, init: RequestInit = {}): Promise<T> {
+	const response = await fetch(`${base}/api/v1${path}`, {
 		...init,
 		headers: authHeaders(init.headers),
 		credentials: 'include',
@@ -56,6 +57,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 		throw new ApiError(error?.message ?? 'Request failed', response.status, error?.code);
 	}
 	return payload.data;
+}
+
+function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+	return requestFrom(API_BASE, path, init);
+}
+
+function notesRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+	return requestFrom(notesApiBase, `/notes${path}`, init);
 }
 
 export const api = {
@@ -155,24 +164,24 @@ export const api = {
 		return request(`/auth/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
 	},
 	notes(page = 1, archived = false): Promise<NotePage> {
-		return request(`/notes?page=${page}&limit=20&archived=${archived ? '1' : '0'}`);
+		return notesRequest(`?page=${page}&limit=20&archived=${archived ? '1' : '0'}`);
 	},
 	createNote(title: string, content = ''): Promise<Note> {
-		return request('/notes', {
+		return notesRequest('', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ title, content }),
 		});
 	},
 	updateNote(id: string, changes: Partial<Pick<Note, 'title' | 'content' | 'pinned' | 'archived'>>): Promise<Note> {
-		return request(`/notes/${encodeURIComponent(id)}`, {
+		return notesRequest(`/${encodeURIComponent(id)}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(changes),
 		});
 	},
 	deleteNote(id: string): Promise<{ deleted: boolean }> {
-		return request(`/notes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+		return notesRequest(`/${encodeURIComponent(id)}`, { method: 'DELETE' });
 	},
 };
 

@@ -143,7 +143,11 @@ async function handleReport(
 		if (range) {
 			try {
 				const event = parseIcs(source, target.calendarId);
-				if (Date.parse(event.end) < parseRange(range[1]) || Date.parse(event.start) >= parseRange(range[2])) continue;
+				if (
+					event.recurrence !== 'yearly' &&
+					(Date.parse(event.end) < parseRange(range[1]) || Date.parse(event.start) >= parseRange(range[2]))
+				)
+					continue;
 			} catch {
 				continue;
 			}
