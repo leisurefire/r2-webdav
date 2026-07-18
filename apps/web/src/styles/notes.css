@@ -12,10 +12,10 @@
 	flex: 1;
 	grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
 	grid-template-rows: auto minmax(0, 1fr);
-	gap: 14px;
-	border: 0;
-	border-radius: 0;
-	background: transparent;
+	gap: 0;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--panel-bg);
 	overflow: visible;
 }
 
@@ -29,9 +29,9 @@
 	min-width: 0;
 	min-height: 0;
 	border: 0;
-	border-radius: 8px;
+	border-radius: 0;
 	background: var(--panel-bg);
-	box-shadow: 0 5px 18px rgb(0 0 0 / 0.05);
+	box-shadow: none;
 }
 
 .notes-folders {
@@ -41,6 +41,7 @@
 	display: flex;
 	flex-direction: column;
 	padding: 10px;
+	border-right: 1px solid var(--line);
 	overflow: hidden;
 }
 
@@ -68,10 +69,10 @@
 .note-folder-card {
 	position: relative;
 	min-width: 0;
-	margin-bottom: 3px;
-	border-radius: 6px;
-	background: var(--surface);
-	transition: background 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+	margin-bottom: 0;
+	border-radius: 0;
+	background: transparent;
+	transition: background 140ms ease, color 140ms ease;
 }
 
 .note-tree-special > button,
@@ -98,7 +99,6 @@
 .note-folder-card.active,
 .note-folder-card.drag-over {
 	background: var(--hover-bg);
-	box-shadow: 0 3px 10px rgb(0 0 0 / 0.07);
 }
 
 .note-tree-special > button:hover,
@@ -112,6 +112,26 @@
 .note-folder-card > button:first-child svg {
 	width: 15px;
 	height: 15px;
+}
+
+.tree-caret {
+	width: 14px;
+	height: 16px;
+	display: inline-grid;
+	place-items: center;
+	color: var(--quiet);
+	font-size: 16px;
+	line-height: 1;
+	transform-origin: center;
+	transition: transform 140ms ease, color 140ms ease;
+}
+
+.note-folder-card.expanded > button .tree-caret,
+.note-tree-special.expanded > button .tree-caret,
+.bookmark-tree-node.expanded > .bookmark-folder .tree-caret,
+.bookmark-folder-root.expanded .tree-caret {
+	transform: rotate(90deg);
+	color: var(--ink);
 }
 
 .note-tree-special span,
@@ -153,33 +173,44 @@
 
 .notes-tree-children {
 	display: grid;
-	gap: 3px;
-	padding: 3px 0 5px 18px;
+	gap: 0;
+	margin-left: 16px;
+	padding: 1px 0 3px 12px;
+	border-left: 1px solid var(--line);
 }
 
 .note-card {
-	border-radius: 6px;
+	position: relative;
+	border-radius: 0;
 	background: transparent;
 	box-shadow: none;
-	transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+	transition: background 140ms ease;
 }
 
 .notes-tree-children .note-card:hover,
 .notes-tree-children .note-card.active {
-	transform: none;
-	background: var(--panel-bg);
-	box-shadow: 0 3px 10px rgb(0 0 0 / 0.06);
+	background: var(--hover-bg);
 }
 
 .notes-tree-children .note-card-open {
 	width: 100%;
 	min-width: 0;
-	padding: 8px 9px;
+	min-height: 34px;
+	padding: 7px 66px 7px 10px;
+}
+
+.notes-tree-children .note-card::before {
+	content: '';
+	position: absolute;
+	left: -12px;
+	top: 17px;
+	width: 12px;
+	border-top: 1px solid var(--line);
 }
 
 .notes-tree-children .note-card-title {
 	min-width: 0;
-	padding-right: 44px;
+	padding-right: 0;
 }
 
 .notes-tree-children .note-card-title strong,
@@ -192,12 +223,27 @@
 }
 
 .notes-tree-children .note-card p {
-	margin: 3px 0;
-	min-height: 17px;
+	display: none;
 }
 
 .notes-tree-children .note-card time {
 	display: none;
+}
+
+.notes-tree-children .note-card-actions {
+	top: 0;
+	right: 0;
+	bottom: 0;
+	align-items: center;
+	gap: 2px;
+	padding: 0 4px 0 24px;
+	background: linear-gradient(90deg, transparent, var(--hover-bg) 32%);
+}
+
+.notes-tree-children .note-card-actions .row-action {
+	width: 27px;
+	height: 27px;
+	background: transparent;
 }
 
 .notes-tree-children .note-card-title svg,
@@ -225,6 +271,10 @@
 .note-compose {
 	display: grid;
 	grid-template-columns: minmax(150px, 200px) minmax(0, 1fr);
+}
+
+.note-compose:not(.previewing) {
+	grid-template-columns: minmax(0, 1fr);
 }
 
 .note-document {
@@ -292,6 +342,55 @@
 
 .note-source {
 	caret-color: var(--ink);
+}
+
+.note-editor-head {
+	gap: 10px;
+}
+
+.note-heading {
+	min-width: 0;
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.note-location {
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	color: var(--quiet);
+	font-size: 10px;
+	line-height: 1.2;
+	white-space: nowrap;
+	overflow: hidden;
+}
+
+.note-location span {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.note-location span[aria-hidden='true'] {
+	flex: none;
+	overflow: visible;
+	color: var(--line);
+}
+
+.note-heading > input {
+	width: 100%;
+	min-width: 0;
+	padding: 0;
+	border: 0;
+	outline: 0;
+	background: transparent;
+	color: var(--ink);
+	font-size: 20px;
+	font-weight: 650;
+	letter-spacing: 0;
 }
 
 .note-render pre,
@@ -414,6 +513,10 @@
 
 	.note-folder-select {
 		width: 92px;
+	}
+
+	.note-heading > input {
+		font-size: 18px;
 	}
 
 	.note-mobile-back {
