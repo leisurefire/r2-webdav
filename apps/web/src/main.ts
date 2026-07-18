@@ -17,6 +17,7 @@ import {
 	Image,
 	Languages,
 	Laptop,
+	LoaderCircle,
 	LogOut,
 	Music,
 	PanelLeftClose,
@@ -32,6 +33,7 @@ import {
 	Trash2,
 	Upload,
 	User,
+	X,
 	createIcons,
 } from 'lucide';
 import type {
@@ -202,6 +204,7 @@ function refreshIcons(): void {
 			Image,
 			Languages,
 			Laptop,
+			LoaderCircle,
 			LogOut,
 			Music,
 			PanelLeftClose,
@@ -217,6 +220,7 @@ function refreshIcons(): void {
 			Trash2,
 			Upload,
 			User,
+			X,
 		},
 	});
 }
@@ -1007,14 +1011,16 @@ async function renderCalendar(forceSync = false): Promise<void> {
 }
 
 let notesArchived = false;
-let notesPage = 1;
+let notesData: NotePage | null = null;
+let notesLoadingMore = false;
+let notesRequest = 0;
 
-function noteCacheKey(): string {
-	return `r2_notes_${notesArchived ? 'archived' : 'active'}_${notesPage}`;
+function noteCacheKey(archived = notesArchived): string {
+	return `r2_notes_v2_${archived ? 'archived' : 'active'}`;
 }
 
-function cacheNotes(data: NotePage): void {
-	localStorage.setItem(noteCacheKey(), JSON.stringify(data));
+function cacheNotes(data: NotePage, archived = notesArchived): void {
+	localStorage.setItem(noteCacheKey(archived), JSON.stringify(data));
 }
 
 function cachedNotes(): NotePage | null {
@@ -1068,76 +1074,25 @@ function markdown(value: string): string {
 	return output.join('');
 }
 
-function paintNotes(data: NotePage, selectedId?: string): void {
-	const content = document.querySelector<HTMLDivElement>('#page-content');
-	if (!content) return;
-	const selected = data.items.find((note) => note.id === selectedId) ?? data.items[0];
-	const cards = data.items
-		.map(
-			(note) => `<button class="note-card ${note.id === selected?.id ? 'active' : ''}" data-note="${note.id}">
-				<div class="note-card-title">${note.pinned ? '<i data-lucide="pin"></i>' : ''}<strong>${html(note.title)}</strong></div>
-				<p>${html(note.content.replace(/[#*_`>\[\]]/g, '').slice(0, 110) || '—')}</p>
-				<time>${new Date(note.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>
-			</button>`,
-		)
-		.join('');
-	content.innerHTML = `<div class="notes-toolbar">
-		<div class="segment-control"><button class="${!notesArchived ? 'active' : ''}" data-note-view="active">${t('active')}</button><button class="${notesArchived ? 'active' : ''}" data-note-view="archived">${t('archived')}</button></div>
-		<span class="toolbar-spacer"></span><span class="note-count">${data.total}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}" aria-label="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}"><i data-lucide="refresh-cw"></i></button><button class="button primary" id="new-note"><i data-lucide="plus"></i><span>${t('newNote')}</span></button>
-	</div>
-	<div class="notes-layout">
-		<aside class="notes-list">${cards || `<div class="notes-empty"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div>`}
-			<div class="pagination"><button class="button" id="notes-prev" ${data.page <= 1 ? 'disabled' : ''}>${t('previous')}</button><span>${t('page')} ${data.page}</span><button class="button" id="notes-next" ${!data.hasMore ? 'disabled' : ''}>${t('next')}</button></div>
-		</aside>
-		<section class="note-editor">${
-			selected
-				? `<form id="note-form">
-			<div class="note-editor-head"><input id="note-title" value="${html(selected.title)}" aria-label="Title"><div class="note-actions">
-				<button type="button" class="row-action" id="note-pin" title="${selected.pinned ? t('unpin') : t('pin')}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
-				<button type="button" class="row-action" id="note-archive" title="${selected.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
-				<button type="button" class="row-action danger" id="note-delete" title="${t('delete')}"><i data-lucide="trash-2"></i></button>
+function noteEditorMarkup(selected: Note, mobile = false): string {
+	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'}">
+		<form data-note-form>
+			<div class="note-editor-head"><input data-note-title value="${html(selected.title)}" aria-label="Title"><div class="note-actions">
+				<button type="button" class="row-action" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
+				<button type="button" class="row-action" data-note-archive title="${selected.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
+				<button type="button" class="row-action danger" data-note-delete title="${t('delete')}"><i data-lucide="trash-2"></i></button>
+				${mobile ? `<button type="button" class="row-action" data-note-close title="${locale === 'zh' ? '关闭' : 'Close'}"><i data-lucide="x"></i></button>` : ''}
 			</div></div>
-			<div class="note-compose" id="note-compose"><textarea id="note-content" aria-label="${t('markdown')}">${html(selected.content)}</textarea><article class="note-render" id="note-render" tabindex="0" title="${locale === 'zh' ? '点击编辑' : 'Click to edit'}">${markdown(selected.content) || '<p class="muted">Click to edit...</p>'}</article></div>
+			<div class="note-compose" data-note-compose><textarea data-note-content aria-label="${t('markdown')}">${html(selected.content)}</textarea><article class="note-render" data-note-render tabindex="0" title="${locale === 'zh' ? '点击编辑' : 'Click to edit'}">${markdown(selected.content) || '<p class="muted">Click to edit...</p>'}</article></div>
 			<div class="note-savebar"><span>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</span><button class="button primary"><i data-lucide="check"></i>${t('save')}</button></div>
-		</form>`
-				: `<div class="notes-empty large"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div>`
-		}</section>
-	</div>`;
-	refreshIcons();
-	content
-		.querySelectorAll<HTMLElement>('[data-note]')
-		.forEach((node) => node.addEventListener('click', () => paintNotes(data, node.dataset.note)));
-	content.querySelectorAll<HTMLElement>('[data-note-view]').forEach((node) =>
-		node.addEventListener('click', () => {
-			notesArchived = node.dataset.noteView === 'archived';
-			notesPage = 1;
-			void renderNotes();
-		}),
-	);
-	content.querySelector('#new-note')?.addEventListener('click', async () => {
-		try {
-			const note = await api.createNote(locale === 'zh' ? '无标题便签' : 'Untitled note', '');
-			notesArchived = false;
-			notesPage = 1;
-			validatedNotePages.delete(noteCacheKey());
-			await renderNotes(note.id, true);
-		} catch (error) {
-			toast(errorMessage(error));
-		}
-	});
-	content.querySelector('#notes-prev')?.addEventListener('click', () => {
-		notesPage = Math.max(1, notesPage - 1);
-		void renderNotes();
-	});
-	content.querySelector('#notes-next')?.addEventListener('click', () => {
-		notesPage += 1;
-		void renderNotes();
-	});
-	content.querySelector('#notes-refresh')?.addEventListener('click', () => void renderNotes(selected?.id, true));
-	if (!selected) return;
-	const compose = content.querySelector<HTMLDivElement>('#note-compose')!;
-	const textarea = content.querySelector<HTMLTextAreaElement>('#note-content')!;
-	const noteRender = content.querySelector<HTMLElement>('#note-render')!;
+		</form>
+	</section>`;
+}
+
+function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobile: boolean): void {
+	const compose = root.querySelector<HTMLDivElement>('[data-note-compose]')!;
+	const textarea = root.querySelector<HTMLTextAreaElement>('[data-note-content]')!;
+	const noteRender = root.querySelector<HTMLElement>('[data-note-render]')!;
 	const startEditing = () => {
 		compose.classList.add('editing');
 		textarea.focus();
@@ -1165,23 +1120,27 @@ function paintNotes(data: NotePage, selectedId?: string): void {
 				data.total = Math.max(0, data.total - 1);
 			} else if (index >= 0) data.items[index] = updated;
 			cacheNotes(data);
-			paintNotes(data, updated.archived === notesArchived ? updated.id : undefined);
+			paintNotes(
+				data,
+				updated.archived === notesArchived ? updated.id : undefined,
+				mobile && updated.archived === notesArchived,
+			);
 		} catch (error) {
 			toast(errorMessage(error));
 		}
 	};
-	content.querySelector<HTMLFormElement>('#note-form')?.addEventListener('submit', (event) => {
+	root.querySelector<HTMLFormElement>('[data-note-form]')?.addEventListener('submit', (event) => {
 		event.preventDefault();
 		void update({
-			title: content.querySelector<HTMLInputElement>('#note-title')!.value,
-			content: content.querySelector<HTMLTextAreaElement>('#note-content')!.value,
+			title: root.querySelector<HTMLInputElement>('[data-note-title]')!.value,
+			content: textarea.value,
 		});
 	});
-	content.querySelector('#note-pin')?.addEventListener('click', () => void update({ pinned: !selected.pinned }));
-	content
-		.querySelector('#note-archive')
+	root.querySelector('[data-note-pin]')?.addEventListener('click', () => void update({ pinned: !selected.pinned }));
+	root
+		.querySelector('[data-note-archive]')
 		?.addEventListener('click', () => void update({ archived: !selected.archived }));
-	content.querySelector('#note-delete')?.addEventListener('click', async () => {
+	root.querySelector('[data-note-delete]')?.addEventListener('click', async () => {
 		if (!(await confirmAction(`${t('delete')}?`, selected.title, t('delete')))) return;
 		try {
 			await api.deleteNote(selected.id);
@@ -1191,23 +1150,130 @@ function paintNotes(data: NotePage, selectedId?: string): void {
 			toast(errorMessage(error));
 		}
 	});
+	root.querySelector('[data-note-close]')?.addEventListener('click', () => root.closest('dialog')?.close());
 }
 
-async function renderNotes(selectedId?: string, forceSync = false): Promise<void> {
-	shell('notes', t('notes'));
-	const cached = cachedNotes();
-	if (cached) paintNotes(cached, selectedId);
-	const cacheKey = noteCacheKey();
-	const requestedPage = notesPage;
-	const requestedArchived = notesArchived;
-	if (!forceSync && validatedNotePages.has(cacheKey)) return;
-	validatedNotePages.add(cacheKey);
+function paintNotes(data: NotePage, selectedId?: string, openMobile = false): void {
+	const content = document.querySelector<HTMLDivElement>('#page-content');
+	if (!content) return;
+	const selected = data.items.find((note) => note.id === selectedId) ?? data.items[0];
+	const cards = data.items
+		.map(
+			(note) => `<button class="note-card ${note.id === selected?.id ? 'active' : ''}" data-note="${note.id}">
+				<div class="note-card-title">${note.pinned ? '<i data-lucide="pin"></i>' : ''}<strong>${html(note.title)}</strong></div>
+				<p>${html(note.content.replace(/[#*_`>\[\]]/g, '').slice(0, 110) || '—')}</p>
+				<time>${new Date(note.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>
+			</button>`,
+		)
+		.join('');
+	content.innerHTML = `<div class="notes-toolbar">
+		<div class="segment-control"><button class="${!notesArchived ? 'active' : ''}" data-note-view="active">${t('active')}</button><button class="${notesArchived ? 'active' : ''}" data-note-view="archived">${t('archived')}</button></div>
+		<span class="toolbar-spacer"></span><span class="note-count">${data.total}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}" aria-label="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}"><i data-lucide="refresh-cw"></i></button><button class="button primary" id="new-note"><i data-lucide="plus"></i><span>${t('newNote')}</span></button>
+	</div>
+	<div class="notes-layout">
+		<aside class="notes-list">${cards || `<div class="notes-empty"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div>`}
+			<div class="notes-load-status" aria-live="polite">${notesLoadingMore ? '<i data-lucide="loader-circle"></i>' : ''}</div>
+		</aside>
+		${selected ? noteEditorMarkup(selected) : `<section class="note-editor note-editor-desktop"><div class="notes-empty large"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div></section>`}
+	</div>
+	${selected ? `<dialog class="note-dialog" id="note-dialog">${noteEditorMarkup(selected, true)}</dialog>` : ''}`;
+	refreshIcons();
+	content
+		.querySelectorAll<HTMLElement>('[data-note]')
+		.forEach((node) => node.addEventListener('click', () => paintNotes(data, node.dataset.note, true)));
+	content.querySelectorAll<HTMLElement>('[data-note-view]').forEach((node) =>
+		node.addEventListener('click', () => {
+			notesArchived = node.dataset.noteView === 'archived';
+			notesData = null;
+			void renderNotes();
+		}),
+	);
+	content.querySelector('#new-note')?.addEventListener('click', async () => {
+		try {
+			const note = await api.createNote(locale === 'zh' ? '无标题便签' : 'Untitled note', '');
+			notesArchived = false;
+			notesData = null;
+			validatedNotePages.delete(noteCacheKey());
+			await renderNotes(note.id, true, true);
+		} catch (error) {
+			toast(errorMessage(error));
+		}
+	});
+	content.querySelector('#notes-refresh')?.addEventListener('click', () => void renderNotes(selected?.id, true));
+	const list = content.querySelector<HTMLElement>('.notes-list')!;
+	list.addEventListener(
+		'scroll',
+		(event) => {
+			if (!event.isTrusted || list.scrollHeight - list.scrollTop - list.clientHeight > 120) return;
+			void loadMoreNotes(selected?.id, list.scrollTop);
+		},
+		{ passive: true },
+	);
+	if (!selected) return;
+	const desktopEditor = content.querySelector<HTMLElement>('.note-editor-desktop');
+	if (desktopEditor) bindNoteEditor(desktopEditor, data, selected, false);
+	const dialog = content.querySelector<HTMLDialogElement>('#note-dialog');
+	if (dialog) {
+		bindNoteEditor(dialog, data, selected, true);
+		if (openMobile && matchMedia('(max-width: 760px)').matches) dialog.showModal();
+	}
+}
+
+async function loadMoreNotes(selectedId?: string, scrollTop = 0): Promise<void> {
+	const current = notesData;
+	if (!current?.hasMore || notesLoadingMore) return;
+	notesLoadingMore = true;
+	const status = document.querySelector<HTMLElement>('.notes-load-status');
+	if (status) {
+		status.innerHTML = '<i data-lucide="loader-circle"></i>';
+		refreshIcons();
+	}
+	const archived = notesArchived;
 	try {
-		const data = await api.notes(requestedPage, requestedArchived);
-		if (requestedPage !== notesPage || requestedArchived !== notesArchived) return;
-		cacheNotes(data);
-		if (pageFromPath() === 'notes') paintNotes(data, selectedId);
+		const next = await api.notes(current.page + 1, archived);
+		if (notesData !== current || archived !== notesArchived || pageFromPath() !== 'notes') return;
+		const knownIds = new Set(current.items.map((note) => note.id));
+		current.items.push(...next.items.filter((note) => !knownIds.has(note.id)));
+		current.page = next.page;
+		current.pageSize = next.pageSize;
+		current.total = next.total;
+		current.hasMore = next.hasMore;
+		cacheNotes(current, archived);
+		paintNotes(current, selectedId);
+		const list = document.querySelector<HTMLElement>('.notes-list');
+		if (list) list.scrollTop = scrollTop;
 	} catch (error) {
+		toast(errorMessage(error));
+	} finally {
+		notesLoadingMore = false;
+		const currentStatus = document.querySelector<HTMLElement>('.notes-load-status');
+		if (currentStatus) currentStatus.replaceChildren();
+	}
+}
+
+async function renderNotes(selectedId?: string, forceSync = false, openMobile = false): Promise<void> {
+	shell('notes', t('notes'));
+	const cached = forceSync ? null : cachedNotes();
+	if (cached) {
+		notesData = cached;
+		paintNotes(cached, selectedId);
+	}
+	const cacheKey = noteCacheKey();
+	const requestedArchived = notesArchived;
+	if (!forceSync && validatedNotePages.has(cacheKey) && cached) {
+		notesData = cached;
+		return;
+	}
+	validatedNotePages.add(cacheKey);
+	const request = ++notesRequest;
+	try {
+		const data = await api.notes(1, requestedArchived);
+		if (request !== notesRequest || requestedArchived !== notesArchived) return;
+		notesData = data;
+		cacheNotes(data, requestedArchived);
+		if (pageFromPath() === 'notes') paintNotes(data, selectedId, openMobile);
+	} catch (error) {
+		validatedNotePages.delete(cacheKey);
 		if (!cached)
 			document.querySelector('#page-content')!.innerHTML =
 				`<div class="error-banner">${html(errorMessage(error))}</div>`;

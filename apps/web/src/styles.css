@@ -1240,26 +1240,34 @@ dialog::backdrop {
 	font-size: 10px;
 }
 
-.pagination {
+.notes-load-status {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	gap: 5px;
-	margin-top: auto;
-	padding-top: 12px;
+	justify-content: center;
+	min-height: 28px;
+	margin-top: 4px;
 	color: var(--muted);
-	font-size: 11px;
 }
 
-.pagination .button {
-	min-height: 32px;
-	padding: 0 10px;
-	font-size: 11px;
+.notes-load-status svg {
+	width: 16px;
+	height: 16px;
+	animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
 }
 
 .note-editor {
 	min-width: 0;
 	background: #ffffff;
+}
+
+.note-dialog {
+	display: none;
 }
 
 .note-editor form {
@@ -2586,14 +2594,51 @@ body:has(.app-shell) {
 	}
 
 	.notes-layout {
-		grid-template-columns: 1fr;
-		grid-template-rows: minmax(120px, 30%) minmax(0, 1fr);
+		display: block;
 	}
 
 	.notes-list {
+		height: 100%;
 		max-height: none;
 		border-right: 0;
-		border-bottom: 1px solid var(--line);
+		border-bottom: 0;
+	}
+
+	.note-card.active {
+		box-shadow: none;
+	}
+
+	.note-editor-desktop {
+		display: none;
+	}
+
+	.note-dialog[open] {
+		display: block;
+		width: calc(100vw - 16px);
+		max-width: none;
+		height: calc(100dvh - 16px);
+		max-height: none;
+		border-radius: 8px;
+		overflow: hidden;
+	}
+
+	.note-editor-mobile,
+	.note-editor-mobile form {
+		height: 100%;
+		min-height: 0;
+	}
+
+	.note-editor-mobile .note-editor-head {
+		padding: 10px 12px;
+		gap: 8px;
+	}
+
+	.note-editor-mobile .note-editor-head > input {
+		font-size: 18px;
+	}
+
+	.note-editor-mobile .note-actions {
+		gap: 1px;
 	}
 
 	.note-compose textarea,

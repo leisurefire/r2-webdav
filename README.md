@@ -25,7 +25,7 @@ WebDAV clients still see `/`; the internal `fs/default` prefix is never exposed 
 
 ## Local development
 
-Requirements: Node.js 20 or newer and an R2 bucket for production deployment.
+Requirements: Node.js 22 and an R2 bucket for production deployment. The pinned Wrangler version requires Node.js 22 or newer; use the repository's `.node-version` locally and set `NODE_VERSION=22` in Cloudflare Builds.
 
 ```bash
 npm install
