@@ -306,7 +306,11 @@ function parsePropfindRequest(body: string): PropfindRequest | null {
 		return { mode: 'allprop' };
 	}
 	let document = parseXmlDocument(body);
-	if (document === null || document.documentElement === null || getLocalName(document.documentElement).toLowerCase() !== 'propfind') {
+	if (
+		document === null ||
+		document.documentElement === null ||
+		getLocalName(document.documentElement).toLowerCase() !== 'propfind'
+	) {
 		return null;
 	}
 	let propfindChildren = getChildElements(document.documentElement);

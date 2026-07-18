@@ -1,9 +1,12 @@
 import {
+	Archive,
 	CalendarDays,
+	Check,
 	ChevronLeft,
 	ChevronRight,
 	Cloud,
 	Copy,
+	Database,
 	Download,
 	File,
 	Film,
@@ -11,24 +14,138 @@ import {
 	FolderOpen,
 	FolderPlus,
 	Image,
+	Languages,
+	Laptop,
 	LogOut,
 	Music,
 	Pencil,
+	Pin,
+	PinOff,
 	Plus,
+	RefreshCw,
 	Settings,
+	Smartphone,
+	StickyNote,
 	Trash2,
 	Upload,
 	createIcons,
 } from 'lucide';
-import type { CalendarEvent, CalendarSummary, FileEntry } from '@r2-webdav/shared-types';
+import type { CalendarEvent, CalendarSummary, DeviceSession, FileEntry, Note, NotePage } from '@r2-webdav/shared-types';
+import { Solar } from 'lunar-typescript';
 import { API_BASE, ApiError, api, hasSession } from './api/client';
 import './styles.css';
 
-type Page = 'files' | 'calendar' | 'settings';
+type Page = 'files' | 'calendar' | 'notes' | 'devices' | 'settings';
 const app = document.querySelector<HTMLDivElement>('#app')!;
+type Locale = 'en' | 'zh';
+let locale: Locale =
+	(localStorage.getItem('r2_locale') as Locale | null) ??
+	(navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en');
+const messages = {
+	en: {
+		workspace: 'Workspace',
+		files: 'Files',
+		calendar: 'Calendar',
+		notes: 'Notes',
+		devices: 'Devices',
+		settings: 'Settings',
+		filesDesc: 'Browse and manage everything stored in your R2 bucket.',
+		calendarDesc: 'Plan your schedule and keep CalDAV clients in sync.',
+		notesDesc: 'Capture ideas in Markdown and keep the important ones close.',
+		devicesDesc: 'Review and revoke every device signed in to this account.',
+		settingsDesc: 'Connection details for this workspace and its services.',
+		connected: 'Storage connected',
+		logout: 'Log out',
+		loading: 'Loading…',
+		language: '中文',
+		newNote: 'New note',
+		active: 'Active',
+		archived: 'Archived',
+		noNotes: 'No notes here yet',
+		save: 'Save changes',
+		pin: 'Pin',
+		unpin: 'Unpin',
+		archive: 'Archive',
+		restore: 'Restore',
+		delete: 'Delete',
+		preview: 'Preview',
+		markdown: 'Markdown',
+		previous: 'Previous',
+		next: 'Next',
+		page: 'Page',
+		currentDevice: 'Current device',
+		lastActive: 'Last active',
+		expires: 'Expires',
+		revoke: 'Revoke',
+		welcome: 'Welcome back',
+		signIn: 'Sign in to continue to your workspace.',
+		username: 'Username',
+		password: 'Password',
+		continue: 'Continue',
+		signingIn: 'Signing in…',
+		secureAccess: 'Secure access',
+		hero: 'Your files, notes, and time—together.',
+		heroCopy: 'A focused home for R2 storage, WebDAV, calendars, and Markdown notes.',
+	},
+	zh: {
+		workspace: '工作区',
+		files: '文件',
+		calendar: '日历',
+		notes: '便签',
+		devices: '设备',
+		settings: '设置',
+		filesDesc: '浏览和管理 R2 存储桶中的所有内容。',
+		calendarDesc: '规划日程，并与 CalDAV 客户端保持同步。',
+		notesDesc: '使用 Markdown 记录想法，并将重要内容置顶。',
+		devicesDesc: '查看并撤销此账户已登录的所有设备。',
+		settingsDesc: '查看工作区及服务的连接信息。',
+		connected: '存储已连接',
+		logout: '退出登录',
+		loading: '加载中…',
+		language: 'English',
+		newNote: '新建便签',
+		active: '当前便签',
+		archived: '已归档',
+		noNotes: '这里还没有便签',
+		save: '保存更改',
+		pin: '置顶',
+		unpin: '取消置顶',
+		archive: '归档',
+		restore: '恢复',
+		delete: '删除',
+		preview: '预览',
+		markdown: 'Markdown',
+		previous: '上一页',
+		next: '下一页',
+		page: '第',
+		currentDevice: '当前设备',
+		lastActive: '最近访问',
+		expires: '到期时间',
+		revoke: '移除',
+		welcome: '欢迎回来',
+		signIn: '登录后继续访问你的工作区。',
+		username: '用户名',
+		password: '密码',
+		continue: '继续',
+		signingIn: '登录中…',
+		secureAccess: '安全访问',
+		hero: '文件、便签与日程，尽在一处。',
+		heroCopy: '专注管理 R2 存储、WebDAV、日历与 Markdown 便签。',
+	},
+} as const;
+type MessageKey = keyof (typeof messages)['en'];
+const t = (key: MessageKey): string => messages[locale][key];
+document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
 let currentPath = '';
 let calendarCursor = new Date();
 calendarCursor.setDate(1);
+type DateRange = { from: number; to: number };
+const calendarCache: {
+	calendars: CalendarSummary[] | null;
+	events: Map<string, CalendarEvent>;
+	loadedRanges: DateRange[];
+} = { calendars: null, events: new Map(), loadedRanges: [] };
+let calendarRequest = 0;
 
 const html = (value: unknown): string =>
 	String(value ?? '').replace(
@@ -46,11 +163,14 @@ const html = (value: unknown): string =>
 function refreshIcons(): void {
 	createIcons({
 		icons: {
+			Archive,
 			CalendarDays,
+			Check,
 			ChevronLeft,
 			ChevronRight,
 			Cloud,
 			Copy,
+			Database,
 			Download,
 			File,
 			Film,
@@ -58,11 +178,18 @@ function refreshIcons(): void {
 			FolderOpen,
 			FolderPlus,
 			Image,
+			Languages,
+			Laptop,
 			LogOut,
 			Music,
 			Pencil,
+			Pin,
+			PinOff,
 			Plus,
+			RefreshCw,
 			Settings,
+			Smartphone,
+			StickyNote,
 			Trash2,
 			Upload,
 		},
@@ -80,7 +207,7 @@ function toast(message: string): void {
 
 function errorMessage(error: unknown): string {
 	if (error instanceof ApiError && error.status === 401) {
-		sessionStorage.clear();
+		localStorage.removeItem('r2_session_token');
 		navigate('/login');
 	}
 	return error instanceof Error ? error.message : 'Something went wrong';
@@ -88,7 +215,7 @@ function errorMessage(error: unknown): string {
 
 function pageFromPath(): Page {
 	const page = location.pathname.slice(1) as Page;
-	return ['files', 'calendar', 'settings'].includes(page) ? page : 'files';
+	return ['files', 'calendar', 'notes', 'devices', 'settings'].includes(page) ? page : 'files';
 }
 
 function navigate(path: string): void {
@@ -97,24 +224,43 @@ function navigate(path: string): void {
 }
 
 function shell(page: Page, title: string, content = '<div class="empty-state"><div>Loading…</div></div>'): void {
+	const descriptions: Record<Page, string> = {
+		files: t('filesDesc'),
+		calendar: t('calendarDesc'),
+		notes: t('notesDesc'),
+		devices: t('devicesDesc'),
+		settings: t('settingsDesc'),
+	};
 	app.innerHTML = `<div class="app-shell">
+		<header class="global-header">
+			<div class="brand"><span class="brand-wordmark">R2</span><span>Dashboard</span></div>
+			<div class="header-actions"><span class="workspace-status"><span class="status-dot"></span>default</span><button class="language-button" id="language-toggle"><i data-lucide="languages"></i><span>${t('language')}</span></button><button class="header-action" id="header-logout" title="${t('logout')}" aria-label="${t('logout')}"><i data-lucide="log-out"></i></button></div>
+		</header>
 		<aside class="sidebar">
-			<div class="brand"><span class="brand-mark"><i data-lucide="cloud"></i></span><span>R2 Workspace</span></div>
+			<div class="nav-label">${t('workspace')}</div>
 			<nav class="nav" aria-label="Primary navigation">
-				<button class="nav-button ${page === 'files' ? 'active' : ''}" data-route="/files"><i data-lucide="folder"></i><span>Files</span></button>
-				<button class="nav-button ${page === 'calendar' ? 'active' : ''}" data-route="/calendar"><i data-lucide="calendar-days"></i><span>Calendar</span></button>
-				<button class="nav-button ${page === 'settings' ? 'active' : ''}" data-route="/settings"><i data-lucide="settings"></i><span>Settings</span></button>
+				<button class="nav-button ${page === 'files' ? 'active' : ''}" data-route="/files"><i data-lucide="folder"></i><span>${t('files')}</span></button>
+				<button class="nav-button ${page === 'calendar' ? 'active' : ''}" data-route="/calendar"><i data-lucide="calendar-days"></i><span>${t('calendar')}</span></button>
+				<button class="nav-button ${page === 'notes' ? 'active' : ''}" data-route="/notes"><i data-lucide="sticky-note"></i><span>${t('notes')}</span></button>
+				<button class="nav-button ${page === 'devices' ? 'active' : ''}" data-route="/devices"><i data-lucide="laptop"></i><span>${t('devices')}</span></button>
+				<button class="nav-button ${page === 'settings' ? 'active' : ''}" data-route="/settings"><i data-lucide="settings"></i><span>${t('settings')}</span></button>
 			</nav>
-			<div class="sidebar-footer"><button class="logout-button" id="logout"><i data-lucide="log-out"></i><span>Log out</span></button></div>
+			<div class="sidebar-footer"><div class="service-status"><i data-lucide="database"></i><div><strong>Cloudflare R2 + D1</strong><span>${t('connected')}</span></div></div></div>
 		</aside>
-		<main class="workspace"><header class="topbar"><h1>${html(title)}</h1><span class="muted">default</span></header><div class="content" id="page-content">${content}</div></main>
+		<main class="workspace"><header class="topbar"><div><div class="page-kicker">${t('workspace')}</div><h1>${html(title)}</h1><p>${html(descriptions[page])}</p></div></header><div class="content" id="page-content">${content}</div></main>
 	</div>`;
 	document
 		.querySelectorAll<HTMLElement>('[data-route]')
 		.forEach((item) => item.addEventListener('click', () => navigate(item.dataset.route!)));
-	document.querySelector('#logout')?.addEventListener('click', async () => {
+	document.querySelector('#header-logout')?.addEventListener('click', async () => {
 		await api.logout();
 		navigate('/login');
+	});
+	document.querySelector('#language-toggle')?.addEventListener('click', () => {
+		locale = locale === 'en' ? 'zh' : 'en';
+		localStorage.setItem('r2_locale', locale);
+		document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
+		void render();
 	});
 	refreshIcons();
 }
@@ -142,7 +288,9 @@ function fileIcon(entry: FileEntry): string {
 function breadcrumbMarkup(path: string): string {
 	const parts = path ? path.split('/') : [];
 	let built = '';
-	const crumbs = [`<button class="crumb ${parts.length === 0 ? 'current' : ''}" data-path="">My files</button>`];
+	const crumbs = [
+		`<button class="crumb ${parts.length === 0 ? 'current' : ''}" data-path="">${locale === 'zh' ? '我的文件' : 'My files'}</button>`,
+	];
 	parts.forEach((part, index) => {
 		built = built ? `${built}/${part}` : part;
 		crumbs.push('<span class="crumb-separator">/</span>');
@@ -184,7 +332,7 @@ function confirmAction(title: string, message: string, confirmLabel = 'Delete'):
 }
 
 async function renderFiles(): Promise<void> {
-	shell('files', 'Files');
+	shell('files', t('files'));
 	const content = document.querySelector<HTMLDivElement>('#page-content')!;
 	try {
 		const listing = await api.listFiles(currentPath);
@@ -203,11 +351,11 @@ async function renderFiles(): Promise<void> {
 			)
 			.join('');
 		content.innerHTML = `<div class="toolbar"><div class="breadcrumbs">${breadcrumbMarkup(listing.path)}</div><span class="toolbar-spacer"></span>
-			<button class="button" id="mkdir"><i data-lucide="folder-plus"></i><span>New folder</span></button>
-			<button class="button primary" id="upload"><i data-lucide="upload"></i><span>Upload</span></button>
+			<button class="button" id="mkdir"><i data-lucide="folder-plus"></i><span>${locale === 'zh' ? '新建文件夹' : 'New folder'}</span></button>
+			<button class="button primary" id="upload"><i data-lucide="upload"></i><span>${locale === 'zh' ? '上传' : 'Upload'}</span></button>
 			<input type="file" id="file-input" hidden multiple>
 		</div><div id="upload-status"></div>
-		${rows ? `<table class="file-table"><thead><tr><th class="file-name">Name</th><th>Size</th><th>Modified</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty-state"><div><i data-lucide="folder-open"></i><div>This folder is empty</div></div></div>'}`;
+		${rows ? `<table class="file-table"><thead><tr><th class="file-name">${locale === 'zh' ? '名称' : 'Name'}</th><th>${locale === 'zh' ? '大小' : 'Size'}</th><th>${locale === 'zh' ? '修改时间' : 'Modified'}</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="empty-state"><div><i data-lucide="folder-open"></i><div>${locale === 'zh' ? '此文件夹为空' : 'This folder is empty'}</div></div></div>`}`;
 		refreshIcons();
 		content.querySelectorAll<HTMLElement>('[data-path]').forEach((item) =>
 			item.addEventListener('click', () => {
@@ -259,7 +407,10 @@ async function renderFiles(): Promise<void> {
 			}),
 		);
 		content.querySelector('#mkdir')?.addEventListener('click', async () => {
-			const name = await openTextDialog('New folder', 'Folder name');
+			const name = await openTextDialog(
+				locale === 'zh' ? '新建文件夹' : 'New folder',
+				locale === 'zh' ? '文件夹名称' : 'Folder name',
+			);
 			if (!name || name.includes('/')) return;
 			try {
 				await api.mkdir(currentPath ? `${currentPath}/${name}` : name);
@@ -302,6 +453,46 @@ function inputDate(value: string): string {
 	const date = new Date(value);
 	const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
 	return local.toISOString().slice(0, 16);
+}
+
+function lunarDate(date: Date): { short: string; full: string } {
+	const solar = Solar.fromYmd(date.getFullYear(), date.getMonth() + 1, date.getDate());
+	const lunar = solar.getLunar();
+	const festival = [...solar.getFestivals(), ...lunar.getFestivals()][0];
+	const jieQi = lunar.getJieQi();
+	const day = lunar.getDayInChinese();
+	const month = `${lunar.getMonthInChinese()}月`;
+	return {
+		short: festival || jieQi || (lunar.getDay() === 1 ? month : day),
+		full: `农历${month}${day}${festival ? ` · ${festival}` : jieQi ? ` · ${jieQi}` : ''}`,
+	};
+}
+
+function mergeLoadedRange(range: DateRange): void {
+	const ranges = [...calendarCache.loadedRanges, range].sort((a, b) => a.from - b.from);
+	calendarCache.loadedRanges = ranges.reduce<DateRange[]>((merged, current) => {
+		const last = merged.at(-1);
+		if (!last || current.from > last.to) merged.push({ ...current });
+		else last.to = Math.max(last.to, current.to);
+		return merged;
+	}, []);
+}
+
+function missingCalendarRanges(range: DateRange): DateRange[] {
+	const missing: DateRange[] = [];
+	let cursor = range.from;
+	for (const loaded of calendarCache.loadedRanges) {
+		if (loaded.to <= cursor || loaded.from >= range.to) continue;
+		if (loaded.from > cursor) missing.push({ from: cursor, to: Math.min(loaded.from, range.to) });
+		cursor = Math.max(cursor, loaded.to);
+		if (cursor >= range.to) break;
+	}
+	if (cursor < range.to) missing.push({ from: cursor, to: range.to });
+	return missing;
+}
+
+function invalidateCalendarCache(): void {
+	calendarCache.loadedRanges = [];
 }
 
 async function eventDialog(
@@ -363,63 +554,338 @@ async function eventDialog(
 	});
 }
 
-async function renderCalendar(): Promise<void> {
-	shell('calendar', 'Calendar');
+function paintCalendarGrid(calendar: CalendarSummary, gridStart: Date): void {
+	const grid = document.querySelector<HTMLDivElement>('#month-grid');
+	if (!grid) return;
+	const today = localDateKey(new Date());
+	const events = [...calendarCache.events.values()];
+	const cells: string[] = [];
+	for (let offset = 0; offset < 42; offset += 1) {
+		const date = new Date(gridStart);
+		date.setDate(gridStart.getDate() + offset);
+		const key = localDateKey(date);
+		const lunar = lunarDate(date);
+		const dayEvents = events.filter((item) => localDateKey(new Date(item.start)) === key);
+		cells.push(
+			`<div class="day-cell ${date.getMonth() !== calendarCursor.getMonth() ? 'outside' : ''} ${key === today ? 'today' : ''}" data-day="${key}"><div class="day-meta" title="${html(lunar.full)}"><span class="day-number">${date.getDate()}</span><span class="lunar-day">${html(lunar.short)}</span></div>${dayEvents.map((item) => `<button class="event-chip" data-event="${html(item.uid)}" title="${html(item.title)}">${item.allDay ? '' : `${new Date(item.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} `}${html(item.title)}</button>`).join('')}</div>`,
+		);
+	}
+	grid.innerHTML = cells.join('');
+	grid.querySelectorAll<HTMLElement>('[data-day]').forEach((cell) =>
+		cell.addEventListener('dblclick', async (event) => {
+			if ((event.target as HTMLElement).closest('[data-event]')) return;
+			if (await eventDialog(calendar, undefined, new Date(`${cell.dataset.day}T00:00:00`))) {
+				invalidateCalendarCache();
+				await renderCalendar(true);
+			}
+		}),
+	);
+	grid.querySelectorAll<HTMLElement>('[data-event]').forEach((item) =>
+		item.addEventListener('click', async () => {
+			const event = calendarCache.events.get(item.dataset.event!);
+			if (event && (await eventDialog(calendar, event))) {
+				invalidateCalendarCache();
+				await renderCalendar(true);
+			}
+		}),
+	);
+}
+
+async function renderCalendar(forceSync = false): Promise<void> {
+	if (!document.querySelector('#calendar-view')) shell('calendar', t('calendar'));
 	const content = document.querySelector<HTMLDivElement>('#page-content')!;
 	try {
-		const calendars = await api.calendars();
-		if (calendars.length === 0) {
-			content.innerHTML = '<div class="empty-state"><div>No calendars</div></div>';
+		calendarCache.calendars ??= await api.calendars();
+		if (calendarCache.calendars.length === 0) {
+			content.innerHTML = `<div class="empty-state"><div>${locale === 'zh' ? '没有日历' : 'No calendars'}</div></div>`;
 			return;
 		}
-		const calendar = calendars[0];
+		const calendar = calendarCache.calendars[0];
+		if (!content.querySelector('#calendar-view')) {
+			content.innerHTML = `<div class="calendar-toolbar"><button class="button icon-button" id="cal-prev"><i data-lucide="chevron-left"></i></button><button class="button" id="cal-today">${locale === 'zh' ? '今天' : 'Today'}</button><button class="button icon-button" id="cal-next"><i data-lucide="chevron-right"></i></button><h2 id="calendar-title"></h2><span class="sync-status" id="calendar-sync"><span class="status-dot"></span>${locale === 'zh' ? '已缓存' : 'Cached'}</span><span class="toolbar-spacer"></span><button class="button icon-button" id="cal-refresh"><i data-lucide="refresh-cw"></i></button><button class="button primary" id="new-event"><i data-lucide="plus"></i><span>${locale === 'zh' ? '新建日程' : 'New event'}</span></button></div><div class="calendar" id="calendar-view"><div class="weekday-row">${(locale === 'zh' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).map((day) => `<div class="weekday">${day}</div>`).join('')}</div><div class="month-grid" id="month-grid"></div></div>`;
+			content.querySelector('#cal-prev')?.addEventListener('click', () => {
+				calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
+				void renderCalendar();
+			});
+			content.querySelector('#cal-next')?.addEventListener('click', () => {
+				calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 1);
+				void renderCalendar();
+			});
+			content.querySelector('#cal-today')?.addEventListener('click', () => {
+				const today = new Date();
+				calendarCursor = new Date(today.getFullYear(), today.getMonth(), 1);
+				void renderCalendar();
+			});
+			content.querySelector('#cal-refresh')?.addEventListener('click', () => {
+				invalidateCalendarCache();
+				void renderCalendar(true);
+			});
+			content.querySelector('#new-event')?.addEventListener('click', async () => {
+				if (await eventDialog(calendar)) {
+					invalidateCalendarCache();
+					await renderCalendar(true);
+				}
+			});
+			refreshIcons();
+		}
+
 		const first = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), 1);
 		const gridStart = new Date(first);
 		gridStart.setDate(1 - first.getDay());
 		const gridEnd = new Date(gridStart);
 		gridEnd.setDate(gridEnd.getDate() + 42);
-		const events = await api.events(calendar.id, gridStart.toISOString(), gridEnd.toISOString());
-		if (pageFromPath() !== 'calendar') return;
-		const today = localDateKey(new Date());
-		const cells: string[] = [];
-		for (let offset = 0; offset < 42; offset += 1) {
-			const date = new Date(gridStart);
-			date.setDate(gridStart.getDate() + offset);
-			const key = localDateKey(date);
-			const dayEvents = events.filter((item) => localDateKey(new Date(item.start)) === key);
-			cells.push(
-				`<div class="day-cell ${date.getMonth() !== calendarCursor.getMonth() ? 'outside' : ''} ${key === today ? 'today' : ''}" data-day="${key}"><span class="day-number">${date.getDate()}</span>${dayEvents.map((item) => `<button class="event-chip" data-event="${html(item.uid)}" style="--event-color:${html(calendar.color)}" title="${html(item.title)}">${item.allDay ? '' : `${new Date(item.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} `}${html(item.title)}</button>`).join('')}</div>`,
-			);
+		const visibleRange = { from: gridStart.getTime(), to: gridEnd.getTime() };
+		document.querySelector('#calendar-title')!.textContent = calendarCursor.toLocaleDateString([], {
+			month: 'long',
+			year: 'numeric',
+		});
+		paintCalendarGrid(calendar, gridStart);
+
+		const ranges = forceSync ? [visibleRange] : missingCalendarRanges(visibleRange);
+		const syncStatus = document.querySelector<HTMLSpanElement>('#calendar-sync')!;
+		if (ranges.length === 0) {
+			syncStatus.innerHTML = '<span class="status-dot"></span>Cached';
+			return;
 		}
-		content.innerHTML = `<div class="calendar-toolbar"><button class="button icon-button" id="cal-prev" title="Previous month" aria-label="Previous month"><i data-lucide="chevron-left"></i></button><button class="button" id="cal-today">Today</button><button class="button icon-button" id="cal-next" title="Next month" aria-label="Next month"><i data-lucide="chevron-right"></i></button><h2>${calendarCursor.toLocaleDateString([], { month: 'long', year: 'numeric' })}</h2><span class="toolbar-spacer"></span><button class="button primary" id="new-event"><i data-lucide="plus"></i><span>New event</span></button></div>
-			<div class="calendar"><div class="weekday-row">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<div class="weekday">${day}</div>`).join('')}</div><div class="month-grid">${cells.join('')}</div></div>`;
-		refreshIcons();
-		content.querySelector('#cal-prev')?.addEventListener('click', () => {
-			calendarCursor.setMonth(calendarCursor.getMonth() - 1);
-			void renderCalendar();
-		});
-		content.querySelector('#cal-next')?.addEventListener('click', () => {
-			calendarCursor.setMonth(calendarCursor.getMonth() + 1);
-			void renderCalendar();
-		});
-		content.querySelector('#cal-today')?.addEventListener('click', () => {
-			calendarCursor = new Date();
-			calendarCursor.setDate(1);
-			void renderCalendar();
-		});
-		content.querySelector('#new-event')?.addEventListener('click', async () => {
-			if (await eventDialog(calendar)) await renderCalendar();
-		});
-		content.querySelectorAll<HTMLElement>('[data-day]').forEach((cell) =>
-			cell.addEventListener('dblclick', async (event) => {
-				if ((event.target as HTMLElement).closest('[data-event]')) return;
-				if (await eventDialog(calendar, undefined, new Date(`${cell.dataset.day}T00:00:00`))) await renderCalendar();
-			}),
+		const requestId = ++calendarRequest;
+		syncStatus.classList.add('syncing');
+		syncStatus.innerHTML = '<span class="status-dot"></span>Syncing';
+		const responses = await Promise.all(
+			ranges.map((range) =>
+				api.events(calendar.id, new Date(range.from).toISOString(), new Date(range.to).toISOString()),
+			),
 		);
-		content.querySelectorAll<HTMLElement>('[data-event]').forEach((item) =>
-			item.addEventListener('click', async () => {
-				const event = events.find((candidate) => candidate.uid === item.dataset.event);
-				if (event && (await eventDialog(calendar, event))) await renderCalendar();
+		if (forceSync) {
+			for (const [uid, event] of calendarCache.events) {
+				if (Date.parse(event.end) > visibleRange.from && Date.parse(event.start) < visibleRange.to)
+					calendarCache.events.delete(uid);
+			}
+		}
+		responses.flat().forEach((event) => calendarCache.events.set(event.uid, event));
+		ranges.forEach(mergeLoadedRange);
+		if (requestId !== calendarRequest || pageFromPath() !== 'calendar') return;
+		paintCalendarGrid(calendar, gridStart);
+		syncStatus.classList.remove('syncing');
+		syncStatus.innerHTML = '<span class="status-dot"></span>Up to date';
+	} catch (error) {
+		const syncStatus = document.querySelector<HTMLSpanElement>('#calendar-sync');
+		if (syncStatus) {
+			syncStatus.classList.remove('syncing');
+			syncStatus.textContent = 'Sync failed';
+			toast(errorMessage(error));
+		} else content.innerHTML = `<div class="error-banner">${html(errorMessage(error))}</div>`;
+	}
+}
+
+let notesArchived = false;
+let notesPage = 1;
+
+function noteCacheKey(): string {
+	return `r2_notes_${notesArchived ? 'archived' : 'active'}_${notesPage}`;
+}
+
+function cacheNotes(data: NotePage): void {
+	localStorage.setItem(noteCacheKey(), JSON.stringify(data));
+}
+
+function cachedNotes(): NotePage | null {
+	try {
+		return JSON.parse(localStorage.getItem(noteCacheKey()) ?? 'null') as NotePage | null;
+	} catch {
+		return null;
+	}
+}
+
+function inlineMarkdown(value: string): string {
+	return html(value)
+		.replace(/`([^`]+)`/g, '<code>$1</code>')
+		.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+		.replace(/__([^_]+)__/g, '<strong>$1</strong>')
+		.replace(/\*([^*]+)\*/g, '<em>$1</em>')
+		.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+}
+
+function markdown(value: string): string {
+	const output: string[] = [];
+	let list: 'ul' | 'ol' | null = null;
+	const closeList = () => {
+		if (list) output.push(`</${list}>`);
+		list = null;
+	};
+	for (const raw of value.replaceAll('\r', '').split('\n')) {
+		const heading = raw.match(/^(#{1,4})\s+(.+)$/);
+		const bullet = raw.match(/^[-*]\s+(.+)$/);
+		const numbered = raw.match(/^\d+\.\s+(.+)$/);
+		if (heading) {
+			closeList();
+			const level = heading[1].length + 1;
+			output.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+		} else if (bullet || numbered) {
+			const next = bullet ? 'ul' : 'ol';
+			if (list !== next) {
+				closeList();
+				list = next;
+				output.push(`<${list}>`);
+			}
+			output.push(`<li>${inlineMarkdown((bullet ?? numbered)![1])}</li>`);
+		} else {
+			closeList();
+			if (!raw.trim()) output.push('<div class="markdown-space"></div>');
+			else if (raw.startsWith('> ')) output.push(`<blockquote>${inlineMarkdown(raw.slice(2))}</blockquote>`);
+			else output.push(`<p>${inlineMarkdown(raw)}</p>`);
+		}
+	}
+	closeList();
+	return output.join('');
+}
+
+function paintNotes(data: NotePage, selectedId?: string): void {
+	const content = document.querySelector<HTMLDivElement>('#page-content');
+	if (!content) return;
+	const selected = data.items.find((note) => note.id === selectedId) ?? data.items[0];
+	const cards = data.items
+		.map(
+			(note) => `<button class="note-card ${note.id === selected?.id ? 'active' : ''}" data-note="${note.id}">
+				<div class="note-card-title">${note.pinned ? '<i data-lucide="pin"></i>' : ''}<strong>${html(note.title)}</strong></div>
+				<p>${html(note.content.replace(/[#*_`>\[\]]/g, '').slice(0, 110) || '—')}</p>
+				<time>${new Date(note.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>
+			</button>`,
+		)
+		.join('');
+	content.innerHTML = `<div class="notes-toolbar">
+		<div class="segment-control"><button class="${!notesArchived ? 'active' : ''}" data-note-view="active">${t('active')}</button><button class="${notesArchived ? 'active' : ''}" data-note-view="archived">${t('archived')}</button></div>
+		<span class="toolbar-spacer"></span><span class="note-count">${data.total}</span><button class="button primary" id="new-note"><i data-lucide="plus"></i><span>${t('newNote')}</span></button>
+	</div>
+	<div class="notes-layout">
+		<aside class="notes-list">${cards || `<div class="notes-empty"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div>`}
+			<div class="pagination"><button class="button" id="notes-prev" ${data.page <= 1 ? 'disabled' : ''}>${t('previous')}</button><span>${t('page')} ${data.page}</span><button class="button" id="notes-next" ${!data.hasMore ? 'disabled' : ''}>${t('next')}</button></div>
+		</aside>
+		<section class="note-editor">${
+			selected
+				? `<form id="note-form">
+			<div class="note-editor-head"><input id="note-title" value="${html(selected.title)}" aria-label="Title"><div class="note-actions">
+				<button type="button" class="row-action" id="note-pin" title="${selected.pinned ? t('unpin') : t('pin')}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
+				<button type="button" class="row-action" id="note-archive" title="${selected.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
+				<button type="button" class="row-action danger" id="note-delete" title="${t('delete')}"><i data-lucide="trash-2"></i></button>
+			</div></div>
+			<div class="note-split"><label class="note-pane"><span>${t('markdown')}</span><textarea id="note-content">${html(selected.content)}</textarea></label><div class="note-pane note-preview"><span>${t('preview')}</span><article><h1>${html(selected.title)}</h1>${markdown(selected.content)}</article></div></div>
+			<div class="note-savebar"><span>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</span><button class="button primary"><i data-lucide="check"></i>${t('save')}</button></div>
+		</form>`
+				: `<div class="notes-empty large"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div>`
+		}</section>
+	</div>`;
+	refreshIcons();
+	content
+		.querySelectorAll<HTMLElement>('[data-note]')
+		.forEach((node) => node.addEventListener('click', () => paintNotes(data, node.dataset.note)));
+	content.querySelectorAll<HTMLElement>('[data-note-view]').forEach((node) =>
+		node.addEventListener('click', () => {
+			notesArchived = node.dataset.noteView === 'archived';
+			notesPage = 1;
+			void renderNotes();
+		}),
+	);
+	content.querySelector('#new-note')?.addEventListener('click', async () => {
+		const title = await openTextDialog(t('newNote'), locale === 'zh' ? '标题' : 'Title');
+		if (!title) return;
+		try {
+			const note = await api.createNote(title, '');
+			notesArchived = false;
+			notesPage = 1;
+			await renderNotes(note.id);
+		} catch (error) {
+			toast(errorMessage(error));
+		}
+	});
+	content.querySelector('#notes-prev')?.addEventListener('click', () => {
+		notesPage = Math.max(1, notesPage - 1);
+		void renderNotes();
+	});
+	content.querySelector('#notes-next')?.addEventListener('click', () => {
+		notesPage += 1;
+		void renderNotes();
+	});
+	if (!selected) return;
+	const update = async (changes: Partial<Pick<Note, 'title' | 'content' | 'pinned' | 'archived'>>) => {
+		try {
+			const updated = await api.updateNote(selected.id, changes);
+			const index = data.items.findIndex((note) => note.id === updated.id);
+			if (index >= 0) data.items[index] = updated;
+			cacheNotes(data);
+			await renderNotes(updated.archived === notesArchived ? updated.id : undefined);
+		} catch (error) {
+			toast(errorMessage(error));
+		}
+	};
+	content.querySelector<HTMLFormElement>('#note-form')?.addEventListener('submit', (event) => {
+		event.preventDefault();
+		void update({
+			title: content.querySelector<HTMLInputElement>('#note-title')!.value,
+			content: content.querySelector<HTMLTextAreaElement>('#note-content')!.value,
+		});
+	});
+	content.querySelector('#note-pin')?.addEventListener('click', () => void update({ pinned: !selected.pinned }));
+	content
+		.querySelector('#note-archive')
+		?.addEventListener('click', () => void update({ archived: !selected.archived }));
+	content.querySelector('#note-delete')?.addEventListener('click', async () => {
+		if (!(await confirmAction(`${t('delete')}?`, selected.title, t('delete')))) return;
+		try {
+			await api.deleteNote(selected.id);
+			await renderNotes();
+		} catch (error) {
+			toast(errorMessage(error));
+		}
+	});
+}
+
+async function renderNotes(selectedId?: string): Promise<void> {
+	shell('notes', t('notes'));
+	const cached = cachedNotes();
+	if (cached) paintNotes(cached, selectedId);
+	try {
+		const data = await api.notes(notesPage, notesArchived);
+		cacheNotes(data);
+		if (pageFromPath() === 'notes') paintNotes(data, selectedId);
+	} catch (error) {
+		if (!cached)
+			document.querySelector('#page-content')!.innerHTML =
+				`<div class="error-banner">${html(errorMessage(error))}</div>`;
+		else toast(errorMessage(error));
+	}
+}
+
+async function renderDevices(): Promise<void> {
+	shell('devices', t('devices'));
+	const content = document.querySelector<HTMLDivElement>('#page-content')!;
+	try {
+		const devices = await api.devices();
+		content.innerHTML = `<div class="device-list">${devices
+			.map(
+				(device) =>
+					`<article class="device-card"><div class="device-icon"><i data-lucide="${device.type === 'mobile' ? 'smartphone' : 'laptop'}"></i></div><div class="device-info"><div><h2>${html(device.name)}</h2>${device.current ? `<span class="current-badge"><span class="status-dot"></span>${t('currentDevice')}</span>` : ''}</div><p>${html(device.browser)} · ${html(device.platform)}${device.ip ? ` · ${html(device.ip)}` : ''}</p><dl><div><dt>${t('lastActive')}</dt><dd>${new Date(device.lastSeenAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</dd></div><div><dt>${t('expires')}</dt><dd>${new Date(device.expiresAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</dd></div></dl></div><button class="button ${device.current ? 'danger' : ''}" data-revoke="${device.id}">${t('revoke')}</button></article>`,
+			)
+			.join('')}</div>`;
+		refreshIcons();
+		content.querySelectorAll<HTMLElement>('[data-revoke]').forEach((button) =>
+			button.addEventListener('click', async () => {
+				if (
+					!(await confirmAction(
+						`${t('revoke')}?`,
+						devices.find((item) => item.id === button.dataset.revoke)?.name ?? '',
+						t('revoke'),
+					))
+				)
+					return;
+				try {
+					const result = await api.deleteDevice(button.dataset.revoke!);
+					if (result.current) {
+						localStorage.removeItem('r2_session_token');
+						navigate('/login');
+					} else await renderDevices();
+				} catch (error) {
+					toast(errorMessage(error));
+				}
 			}),
 		);
 	} catch (error) {
@@ -431,14 +897,14 @@ function renderSettings(): void {
 	const davOrigin = API_BASE || location.origin;
 	shell(
 		'settings',
-		'Settings',
+		t('settings'),
 		`<div class="settings">
 		<section class="settings-section"><h2>Connection</h2>
 			<div class="field"><label>WebDAV URL</label><div class="input-row"><input class="input" readonly value="${html(davOrigin)}/"><button class="button icon-button" data-copy="${html(davOrigin)}/" title="Copy WebDAV URL" aria-label="Copy WebDAV URL"><i data-lucide="copy"></i></button></div></div>
 			<div class="field"><label>CalDAV URL</label><div class="input-row"><input class="input" readonly value="${html(davOrigin)}/caldav/"><button class="button icon-button" data-copy="${html(davOrigin)}/caldav/" title="Copy CalDAV URL" aria-label="Copy CalDAV URL"><i data-lucide="copy"></i></button></div></div>
 		</section>
 		<section class="settings-section"><h2>API</h2><div class="field"><label>Base URL</label><input class="input" readonly value="${html(API_BASE || location.origin)}"></div></section>
-		<section class="settings-section"><h2>Session</h2><button class="button danger" id="settings-logout"><i data-lucide="log-out"></i><span>Log out</span></button></section>
+		<section class="settings-section"><h2>${locale === 'zh' ? '会话' : 'Session'}</h2><button class="button danger" id="settings-logout"><i data-lucide="log-out"></i><span>${t('logout')}</span></button></section>
 	</div>`,
 	);
 	document.querySelectorAll<HTMLElement>('[data-copy]').forEach((button) =>
@@ -455,18 +921,25 @@ function renderSettings(): void {
 }
 
 function renderLogin(): void {
-	app.innerHTML = `<main class="login-page"><section class="login-panel">
-		<div class="login-brand"><span class="brand-mark"><i data-lucide="cloud"></i></span><span>R2 Workspace</span></div>
-		<h1>Welcome back</h1><p>Sign in to continue to your workspace.</p>
-		<form class="login-form" id="login-form"><div class="field"><label for="username">Username</label><input class="input" id="username" autocomplete="username" required></div><div class="field"><label for="password">Password</label><input class="input" id="password" type="password" autocomplete="current-password" required></div><div id="login-error"></div><button class="button primary" id="login-submit">Continue</button></form>
-	</section><aside class="login-visual" aria-hidden="true"><div class="storage-figure"><div class="storage-line"><i data-lucide="folder"></i><span>Documents</span></div><div class="storage-line"><i data-lucide="calendar-days"></i><span>Calendar</span></div><div class="storage-line"><i data-lucide="cloud"></i><span>R2 storage</span></div></div></aside></main>`;
+	app.innerHTML = `<main class="login-page">
+		<button class="login-language language-button" id="language-toggle"><i data-lucide="languages"></i><span>${t('language')}</span></button>
+		<section class="login-intro" aria-hidden="true"><div class="intro-brand"><span class="brand-wordmark inverse">R2</span><span>Dashboard</span></div><div class="intro-copy"><span class="intro-index">01 / 04</span><h1>${t('hero')}</h1><p>${t('heroCopy')}</p></div><div class="storage-signal"><span>R2</span><i data-lucide="cloud"></i></div></section>
+		<section class="login-panel"><div class="login-box"><div class="login-brand"><span class="brand-wordmark">R2</span><span>Dashboard</span></div><div class="login-heading"><span class="page-kicker">${t('secureAccess')}</span><h2>${t('welcome')}</h2><p>${t('signIn')}</p></div>
+		<form class="login-form" id="login-form"><div class="field"><label for="username">${t('username')}</label><input class="input" id="username" autocomplete="username" required></div><div class="field"><label for="password">${t('password')}</label><input class="input" id="password" type="password" autocomplete="current-password" required></div><div id="login-error"></div><button class="button primary" id="login-submit">${t('continue')}</button></form><p class="login-footnote">Protected by your private Worker credentials.</p></div></section>
+	</main>`;
 	refreshIcons();
+	document.querySelector('#language-toggle')?.addEventListener('click', () => {
+		locale = locale === 'en' ? 'zh' : 'en';
+		localStorage.setItem('r2_locale', locale);
+		document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
+		renderLogin();
+	});
 	document.querySelector<HTMLFormElement>('#login-form')?.addEventListener('submit', async (event) => {
 		event.preventDefault();
 		const submit = document.querySelector<HTMLButtonElement>('#login-submit')!;
 		const error = document.querySelector<HTMLDivElement>('#login-error')!;
 		submit.disabled = true;
-		submit.textContent = 'Signing in…';
+		submit.textContent = t('signingIn');
 		error.innerHTML = '';
 		try {
 			await api.login(
@@ -478,7 +951,7 @@ function renderLogin(): void {
 		} catch (reason) {
 			error.innerHTML = `<div class="error-banner">${html(errorMessage(reason))}</div>`;
 			submit.disabled = false;
-			submit.textContent = 'Continue';
+			submit.textContent = t('continue');
 		}
 	});
 }
@@ -490,10 +963,15 @@ async function render(): Promise<void> {
 		return;
 	}
 	const page = pageFromPath();
-	if (location.pathname === '/' || !['/files', '/calendar', '/settings'].includes(location.pathname))
+	if (
+		location.pathname === '/' ||
+		!['/files', '/calendar', '/notes', '/devices', '/settings'].includes(location.pathname)
+	)
 		history.replaceState({}, '', `/${page}`);
 	if (page === 'files') await renderFiles();
 	else if (page === 'calendar') await renderCalendar();
+	else if (page === 'notes') await renderNotes();
+	else if (page === 'devices') await renderDevices();
 	else renderSettings();
 }
 

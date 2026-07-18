@@ -1,6 +1,15 @@
-import type { CalendarEvent, CalendarSummary, FileEntry } from '@r2-webdav/shared-types';
+import type { CalendarEvent, CalendarSummary, FileEntry, Note, NotePage } from '@r2-webdav/shared-types';
 import type { Env } from '../env';
-import { createToken, verifyCredentials } from '../auth';
+import {
+	createSession,
+	ensureDatabase,
+	listSessions,
+	revokeRequestSession,
+	revokeSession,
+	sessionCookie,
+	type SessionContext,
+	verifyCredentials,
+} from '../auth';
 import { handleWebDav } from '../webdav';
 import { createIcs, parseIcs } from '../shared/ical';
 import { errorFromStatus, jsonData, jsonError } from '../shared/http';
@@ -60,7 +69,6 @@ async function listFiles(url: URL, env: Env): Promise<Response> {
 			prefix,
 			delimiter: '/',
 			cursor,
-			// @ts-expect-error R2 supports metadata inclusion although some Workers type snapshots omit it.
 			include: ['httpMetadata', 'customMetadata'],
 		});
 		for (const object of page.objects) {
@@ -199,7 +207,154 @@ async function deleteEvent(env: Env, calendarId: string, uid: string): Promise<R
 	return jsonData({ deleted: true });
 }
 
-export async function handleApi(request: Request, env: Env): Promise<Response> {
+interface NoteRow {
+	id: string;
+	title: string;
+	content: string;
+	is_pinned: number;
+	is_archived: number;
+	created_at: string;
+	updated_at: string;
+	accessed_at: string;
+}
+
+function noteFromRow(row: NoteRow): Note {
+	return {
+		id: row.id,
+		title: row.title,
+		content: row.content,
+		pinned: Boolean(row.is_pinned),
+		archived: Boolean(row.is_archived),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+		accessedAt: row.accessed_at,
+	};
+}
+
+async function listNotes(url: URL, env: Env, session: SessionContext): Promise<Response> {
+	await ensureDatabase(env);
+	const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
+	const pageSize = Math.min(50, Math.max(1, Number.parseInt(url.searchParams.get('limit') ?? '20', 10) || 20));
+	const archived = url.searchParams.get('archived') === '1' ? 1 : 0;
+	const offset = (page - 1) * pageSize;
+	const [rows, count] = await Promise.all([
+		env.notes
+			.prepare(
+				`SELECT id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at
+				FROM user_notes WHERE user_id = ? AND is_archived = ?
+				ORDER BY is_pinned DESC, updated_at DESC LIMIT ? OFFSET ?`,
+			)
+			.bind(session.userId, archived, pageSize, offset)
+			.all<NoteRow>(),
+		env.notes
+			.prepare('SELECT COUNT(*) AS total FROM user_notes WHERE user_id = ? AND is_archived = ?')
+			.bind(session.userId, archived)
+			.first<{ total: number }>(),
+	]);
+	const now = new Date().toISOString();
+	if (rows.results.length) {
+		await env.notes.batch(
+			rows.results.map((row) =>
+				env.notes
+					.prepare('UPDATE user_notes SET accessed_at = ? WHERE id = ? AND user_id = ?')
+					.bind(now, row.id, session.userId),
+			),
+		);
+	}
+	const total = Number(count?.total ?? 0);
+	const result: NotePage = {
+		items: rows.results.map((row) => noteFromRow({ ...row, accessed_at: now })),
+		page,
+		pageSize,
+		total,
+		hasMore: offset + rows.results.length < total,
+	};
+	return jsonData(result);
+}
+
+async function createNote(request: Request, env: Env, session: SessionContext): Promise<Response> {
+	await ensureDatabase(env);
+	const input = await readJson<{ title?: string; content?: string }>(request);
+	const title = input?.title?.trim();
+	if (!title) return jsonError('BAD_REQUEST', 'A note title is required');
+	if (title.length > 200) return jsonError('BAD_REQUEST', 'Note title is too long');
+	const id = crypto.randomUUID();
+	const now = new Date().toISOString();
+	await env.notes
+		.prepare(
+			`INSERT INTO user_notes (id, user_id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at)
+			VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?)`,
+		)
+		.bind(id, session.userId, title, input?.content ?? '', now, now, now)
+		.run();
+	return jsonData(
+		{
+			id,
+			title,
+			content: input?.content ?? '',
+			pinned: false,
+			archived: false,
+			createdAt: now,
+			updatedAt: now,
+			accessedAt: now,
+		} satisfies Note,
+		{ status: 201 },
+	);
+}
+
+async function updateNote(request: Request, env: Env, session: SessionContext, id: string): Promise<Response> {
+	await ensureDatabase(env);
+	const input = await readJson<{ title?: string; content?: string; pinned?: boolean; archived?: boolean }>(request);
+	if (!input) return jsonError('BAD_REQUEST', 'Invalid note body');
+	if (input.title !== undefined && (!input.title.trim() || input.title.trim().length > 200))
+		return jsonError('BAD_REQUEST', 'A title between 1 and 200 characters is required');
+	const updates: string[] = [];
+	const values: unknown[] = [];
+	if (input.title !== undefined) {
+		updates.push('title = ?');
+		values.push(input.title.trim());
+	}
+	if (input.content !== undefined) {
+		updates.push('content = ?');
+		values.push(input.content);
+	}
+	if (input.pinned !== undefined) {
+		updates.push('is_pinned = ?');
+		values.push(input.pinned ? 1 : 0);
+	}
+	if (input.archived !== undefined) {
+		updates.push('is_archived = ?');
+		values.push(input.archived ? 1 : 0);
+	}
+	if (!updates.length) return jsonError('BAD_REQUEST', 'No note changes supplied');
+	const now = new Date().toISOString();
+	updates.push('updated_at = ?', 'accessed_at = ?');
+	values.push(now, now, id, session.userId);
+	const changed = await env.notes
+		.prepare(`UPDATE user_notes SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`)
+		.bind(...values)
+		.run();
+	if (!(changed.meta.changes ?? 0)) return jsonError('NOT_FOUND', 'Note not found', 404);
+	const row = await env.notes
+		.prepare(
+			'SELECT id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at FROM user_notes WHERE id = ? AND user_id = ?',
+		)
+		.bind(id, session.userId)
+		.first<NoteRow>();
+	return jsonData(noteFromRow(row!));
+}
+
+async function deleteNote(env: Env, session: SessionContext, id: string): Promise<Response> {
+	await ensureDatabase(env);
+	const result = await env.notes
+		.prepare('DELETE FROM user_notes WHERE id = ? AND user_id = ?')
+		.bind(id, session.userId)
+		.run();
+	if (!(result.meta.changes ?? 0)) return jsonError('NOT_FOUND', 'Note not found', 404);
+	return jsonData({ deleted: true });
+}
+
+export async function handleApi(request: Request, env: Env, session: SessionContext | null = null): Promise<Response> {
 	const url = new URL(request.url);
 	const path = url.pathname.slice('/api/v1'.length);
 	if (path === '/health' && request.method === 'GET') return jsonData({ status: 'ok' });
@@ -209,23 +364,46 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
 			return jsonError('UNAUTHORIZED', 'Invalid username or password', 401);
 		}
 		try {
-			const session = await createToken(env);
-			const maxAge = Math.max(0, Math.floor((Date.parse(session.expiresAt) - Date.now()) / 1000));
-			return jsonData(session, {
-				headers: {
-					'Set-Cookie': `r2_session=${encodeURIComponent(session.token)}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`,
+			const created = await createSession(request, env);
+			return jsonData(
+				{ token: created.token, expiresAt: created.expiresAt },
+				{
+					headers: {
+						'Set-Cookie': sessionCookie(created.token),
+					},
 				},
-			});
+			);
 		} catch {
-			return jsonError('INTERNAL_ERROR', 'JWT_SECRET is not configured', 500);
+			return jsonError('INTERNAL_ERROR', 'Unable to create a session', 500);
 		}
 	}
 	if (path === '/auth/logout' && request.method === 'POST') {
+		await revokeRequestSession(request, env);
 		return jsonData(
 			{ loggedOut: true },
 			{ headers: { 'Set-Cookie': 'r2_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax' } },
 		);
 	}
+	if (path === '/auth/devices' && request.method === 'GET' && session) {
+		return jsonData(await listSessions(env, session.id, session.userId));
+	}
+	const deviceMatch = path.match(/^\/auth\/devices\/([0-9a-f-]{36})$/i);
+	if (deviceMatch && request.method === 'DELETE' && session) {
+		const deleted = await revokeSession(env, deviceMatch[1], session.userId);
+		if (!deleted) return jsonError('NOT_FOUND', 'Device session not found', 404);
+		const current = deviceMatch[1] === session.id;
+		return jsonData(
+			{ deleted: true, current },
+			current
+				? { headers: { 'Set-Cookie': 'r2_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax' } }
+				: undefined,
+		);
+	}
+	if (path === '/notes' && request.method === 'GET' && session) return listNotes(url, env, session);
+	if (path === '/notes' && request.method === 'POST' && session) return createNote(request, env, session);
+	const noteMatch = path.match(/^\/notes\/([0-9a-f-]{36})$/i);
+	if (noteMatch && request.method === 'PATCH' && session) return updateNote(request, env, session, noteMatch[1]);
+	if (noteMatch && request.method === 'DELETE' && session) return deleteNote(env, session, noteMatch[1]);
 	if (path === '/fs' && request.method === 'GET') return listFiles(url, env);
 	if (path === '/fs' && request.method === 'DELETE') {
 		const filePath = normalizePath(url.searchParams.get('path'));

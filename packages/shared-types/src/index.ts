@@ -45,3 +45,35 @@ export interface CalendarEvent {
 	calendarId: string;
 	etag?: string;
 }
+
+export interface DeviceSession {
+	id: string;
+	name: string;
+	browser: string;
+	platform: string;
+	type: 'desktop' | 'mobile' | 'tablet' | 'unknown';
+	ip?: string;
+	createdAt: string;
+	lastSeenAt: string;
+	expiresAt: string;
+	current: boolean;
+}
+
+export interface Note {
+	id: string;
+	title: string;
+	content: string;
+	pinned: boolean;
+	archived: boolean;
+	createdAt: string;
+	updatedAt: string;
+	accessedAt: string;
+}
+
+export interface NotePage {
+	items: Note[];
+	page: number;
+	pageSize: number;
+	total: number;
+	hasMore: boolean;
+}

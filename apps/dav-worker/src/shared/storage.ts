@@ -83,7 +83,6 @@ export async function listAll(bucket: R2Bucket, prefix: string): Promise<R2Objec
 		const page = await bucket.list({
 			prefix,
 			cursor,
-			// @ts-expect-error R2 supports metadata inclusion although some Workers type snapshots omit it.
 			include: ['httpMetadata', 'customMetadata'],
 		});
 		result.push(...page.objects);

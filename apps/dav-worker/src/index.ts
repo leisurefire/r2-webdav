@@ -1,6 +1,6 @@
 import type { Env } from './env';
 import { handleApi } from './api';
-import { isApiAuthorized, isDavAuthorized } from './auth';
+import { authorizeSession, isDavAuthorized, sessionCookie, type SessionContext } from './auth';
 import { handleCalDav } from './caldav';
 import { jsonError } from './shared/http';
 import { ensureStorage } from './shared/storage';
@@ -71,11 +71,23 @@ export default {
 		}
 
 		if (isApi) {
-			if (!isLogin && !isHealth && url.pathname !== '/api/v1/auth/logout' && !(await isApiAuthorized(request, env))) {
+			let session: SessionContext | null = null;
+			if (!isLogin && !isHealth) session = await authorizeSession(request, env);
+			if (!isLogin && !isHealth && url.pathname !== '/api/v1/auth/logout' && !session) {
 				return applyCors(request, unauthorized(true), env);
 			}
 			if (!isLogin && !isHealth) await ensureStorage(env.bucket);
-			return applyCors(request, await handleApi(request, env), env);
+			const response = await handleApi(request, env, session);
+			if (session && !response.headers.has('Set-Cookie')) {
+				const headers = new Headers(response.headers);
+				headers.set('Set-Cookie', sessionCookie(session.token));
+				return applyCors(
+					request,
+					new Response(response.body, { status: response.status, statusText: response.statusText, headers }),
+					env,
+				);
+			}
+			return applyCors(request, response, env);
 		}
 
 		if (!(await isDavAuthorized(request, env))) return applyCors(request, unauthorized(false), env);

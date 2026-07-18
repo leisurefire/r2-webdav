@@ -7,9 +7,14 @@ compatibility_flags = ["nodejs_compat"]
 binding = "bucket"
 bucket_name = "true-bucket"
 
+[[d1_databases]]
+binding = "notes"
+database_name = "notes"
+database_id = "0dcb94cd-c8b4-4dfa-8a32-4328ddae0aa3"
+
 [vars]
-CORS_ORIGIN = "http://localhost:5173"
-JWT_TTL_SECONDS = "28800"
+CORS_ORIGIN = "https://webdav-ui.127631.xyz"
+JWT_TTL_SECONDS = "2592000"
 
 [observability]
 enabled = true

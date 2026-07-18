@@ -12,6 +12,11 @@ async function clearBucket(): Promise<void> {
 	} while (cursor);
 }
 
+async function clearState(): Promise<void> {
+	await clearBucket();
+	await env.notes.exec('DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS user_notes;');
+}
+
 async function login(): Promise<string> {
 	const response = await SELF.fetch('https://dav.example.com/api/v1/auth/login', {
 		method: 'POST',
@@ -24,7 +29,7 @@ async function login(): Promise<string> {
 	return payload.data.token;
 }
 
-beforeEach(clearBucket);
+beforeEach(clearState);
 
 describe('authentication and file API', () => {
 	it('issues a JWT and rejects invalid credentials', async () => {
@@ -72,6 +77,73 @@ describe('authentication and file API', () => {
 		});
 		expect(removed.status).toBe(200);
 		expect(await env.bucket.head('fs/default/docs/renamed.txt')).toBeNull();
+	});
+
+	it('tracks devices and revokes the selected access token', async () => {
+		const token = await login();
+		const headers = { Authorization: `Bearer ${token}` };
+		const devices = await SELF.fetch('https://dav.example.com/api/v1/auth/devices', { headers });
+		const body = await devices.json<{
+			ok: true;
+			data: Array<{ id: string; current: boolean; expiresAt: string }>;
+		}>();
+		expect(body.data).toHaveLength(1);
+		expect(body.data[0].current).toBe(true);
+		expect(Date.parse(body.data[0].expiresAt)).toBeGreaterThan(Date.now() + 29 * 24 * 60 * 60 * 1000);
+
+		const revoked = await SELF.fetch(`https://dav.example.com/api/v1/auth/devices/${body.data[0].id}`, {
+			method: 'DELETE',
+			headers,
+		});
+		expect(revoked.status).toBe(200);
+		expect(revoked.headers.get('Set-Cookie')).toContain('Max-Age=0');
+		expect(await SELF.fetch('https://dav.example.com/api/v1/fs', { headers }).then((response) => response.status)).toBe(
+			401,
+		);
+	});
+
+	it('paginates notes with pinned items first and supports archive and delete', async () => {
+		const token = await login();
+		const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+		const ids: string[] = [];
+		for (let index = 1; index <= 22; index += 1) {
+			const response = await SELF.fetch('https://dav.example.com/api/v1/notes', {
+				method: 'POST',
+				headers,
+				body: JSON.stringify({ title: `Note ${index}`, content: `# Body ${index}\n\n**bold**` }),
+			});
+			const created = await response.json<{ ok: true; data: { id: string } }>();
+			ids.push(created.data.id);
+		}
+		await SELF.fetch(`https://dav.example.com/api/v1/notes/${ids[0]}`, {
+			method: 'PATCH',
+			headers,
+			body: JSON.stringify({ pinned: true }),
+		});
+		const firstPage = await SELF.fetch('https://dav.example.com/api/v1/notes?page=1&limit=20', { headers });
+		const page = await firstPage.json<{
+			ok: true;
+			data: { items: Array<{ id: string; pinned: boolean }>; total: number; hasMore: boolean };
+		}>();
+		expect(page.data.items).toHaveLength(20);
+		expect(page.data.items[0]).toEqual(expect.objectContaining({ id: ids[0], pinned: true }));
+		expect(page.data.total).toBe(22);
+		expect(page.data.hasMore).toBe(true);
+
+		await SELF.fetch(`https://dav.example.com/api/v1/notes/${ids[0]}`, {
+			method: 'PATCH',
+			headers,
+			body: JSON.stringify({ archived: true }),
+		});
+		const archived = await SELF.fetch('https://dav.example.com/api/v1/notes?archived=1', { headers });
+		const archivedBody = await archived.json<{ ok: true; data: { items: Array<{ id: string }> } }>();
+		expect(archivedBody.data.items.map((note) => note.id)).toEqual([ids[0]]);
+
+		expect(
+			await SELF.fetch(`https://dav.example.com/api/v1/notes/${ids[0]}`, { method: 'DELETE', headers }).then(
+				(response) => response.status,
+			),
+		).toBe(200);
 	});
 });
 

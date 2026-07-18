@@ -1,4 +1,12 @@
-import type { ApiResponse, CalendarEvent, CalendarSummary, FileListing } from '@r2-webdav/shared-types';
+import type {
+	ApiResponse,
+	CalendarEvent,
+	CalendarSummary,
+	DeviceSession,
+	FileListing,
+	Note,
+	NotePage,
+} from '@r2-webdav/shared-types';
 
 export const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') ?? '';
 const TOKEN_KEY = 'r2_session_token';
@@ -15,7 +23,7 @@ export class ApiError extends Error {
 
 function authHeaders(headers?: HeadersInit): Headers {
 	const result = new Headers(headers);
-	const token = sessionStorage.getItem(TOKEN_KEY);
+	const token = localStorage.getItem(TOKEN_KEY);
 	if (token) result.set('Authorization', `Bearer ${token}`);
 	return result;
 }
@@ -34,6 +42,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 	}
 	if (!response.ok || !payload.ok) {
 		const error = payload.ok ? null : payload.error;
+		if (response.status === 401) localStorage.removeItem(TOKEN_KEY);
 		throw new ApiError(error?.message ?? 'Request failed', response.status, error?.code);
 	}
 	return payload.data;
@@ -41,18 +50,18 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
 	async login(username: string, password: string): Promise<void> {
-		const result = await request<{ token: string }>('/auth/login', {
+		const result = await request<{ token: string; expiresAt: string }>('/auth/login', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ username, password }),
 		});
-		sessionStorage.setItem(TOKEN_KEY, result.token);
+		localStorage.setItem(TOKEN_KEY, result.token);
 	},
 	async logout(): Promise<void> {
 		try {
 			await request('/auth/logout', { method: 'POST' });
 		} finally {
-			sessionStorage.removeItem(TOKEN_KEY);
+			localStorage.removeItem(TOKEN_KEY);
 		}
 	},
 	listFiles(path: string): Promise<FileListing> {
@@ -80,7 +89,7 @@ export const api = {
 			xhr.open('PUT', `${API_BASE}/api/v1/fs/content?path=${encodeURIComponent(path)}`);
 			xhr.withCredentials = true;
 			xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-			const token = sessionStorage.getItem(TOKEN_KEY);
+			const token = localStorage.getItem(TOKEN_KEY);
 			if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 			xhr.upload.addEventListener('progress', (event) =>
 				onProgress(event.lengthComputable ? event.loaded / event.total : 0),
@@ -129,8 +138,34 @@ export const api = {
 			method: 'DELETE',
 		});
 	},
+	devices(): Promise<DeviceSession[]> {
+		return request('/auth/devices');
+	},
+	deleteDevice(id: string): Promise<{ deleted: boolean; current: boolean }> {
+		return request(`/auth/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
+	},
+	notes(page = 1, archived = false): Promise<NotePage> {
+		return request(`/notes?page=${page}&limit=20&archived=${archived ? '1' : '0'}`);
+	},
+	createNote(title: string, content = ''): Promise<Note> {
+		return request('/notes', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ title, content }),
+		});
+	},
+	updateNote(id: string, changes: Partial<Pick<Note, 'title' | 'content' | 'pinned' | 'archived'>>): Promise<Note> {
+		return request(`/notes/${encodeURIComponent(id)}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(changes),
+		});
+	},
+	deleteNote(id: string): Promise<{ deleted: boolean }> {
+		return request(`/notes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+	},
 };
 
 export function hasSession(): boolean {
-	return sessionStorage.getItem(TOKEN_KEY) !== null;
+	return localStorage.getItem(TOKEN_KEY) !== null;
 }
