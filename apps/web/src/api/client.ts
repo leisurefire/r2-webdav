@@ -8,7 +8,12 @@ import type {
 	NotePage,
 } from '@r2-webdav/shared-types';
 
-export const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') ?? '';
+const configuredApiBase = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '');
+const productionApiBase = 'https://r2-webdav-x.9694151.workers.dev';
+const isLocalDevelopment = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+const configuredBasePointsToPages = !isLocalDevelopment && configuredApiBase === location.origin;
+export const API_BASE =
+	configuredApiBase && !configuredBasePointsToPages ? configuredApiBase : isLocalDevelopment ? '' : productionApiBase;
 const TOKEN_KEY = 'r2_session_token';
 
 export class ApiError extends Error {

@@ -4,6 +4,7 @@ import {
 	Check,
 	ChevronLeft,
 	ChevronRight,
+	ChevronUp,
 	Cloud,
 	Copy,
 	Database,
@@ -28,6 +29,7 @@ import {
 	StickyNote,
 	Trash2,
 	Upload,
+	User,
 	createIcons,
 } from 'lucide';
 import type { CalendarEvent, CalendarSummary, DeviceSession, FileEntry, Note, NotePage } from '@r2-webdav/shared-types';
@@ -56,6 +58,8 @@ const messages = {
 		settingsDesc: 'Connection details for this workspace and its services.',
 		connected: 'Storage connected',
 		logout: 'Log out',
+		account: 'Account',
+		logoutConfirm: 'Are you sure you want to log out?',
 		loading: 'Loading…',
 		language: '中文',
 		newNote: 'New note',
@@ -101,6 +105,8 @@ const messages = {
 		settingsDesc: '查看工作区及服务的连接信息。',
 		connected: '存储已连接',
 		logout: '退出登录',
+		account: '账户',
+		logoutConfirm: '确定要退出当前账户吗？',
 		loading: '加载中…',
 		language: 'English',
 		newNote: '新建便签',
@@ -168,6 +174,7 @@ function refreshIcons(): void {
 			Check,
 			ChevronLeft,
 			ChevronRight,
+			ChevronUp,
 			Cloud,
 			Copy,
 			Database,
@@ -192,6 +199,7 @@ function refreshIcons(): void {
 			StickyNote,
 			Trash2,
 			Upload,
+			User,
 		},
 	});
 }
@@ -234,7 +242,7 @@ function shell(page: Page, title: string, content = '<div class="empty-state"><d
 	app.innerHTML = `<div class="app-shell">
 		<header class="global-header">
 			<div class="brand"><span class="brand-wordmark">R2</span><span>Dashboard</span></div>
-			<div class="header-actions"><span class="workspace-status"><span class="status-dot"></span>default</span><button class="language-button" id="language-toggle"><i data-lucide="languages"></i><span>${t('language')}</span></button><button class="header-action" id="header-logout" title="${t('logout')}" aria-label="${t('logout')}"><i data-lucide="log-out"></i></button></div>
+			<div class="header-actions"><button class="language-button" id="language-toggle"><i data-lucide="languages"></i><span>${t('language')}</span></button></div>
 		</header>
 		<aside class="sidebar">
 			<div class="nav-label">${t('workspace')}</div>
@@ -242,20 +250,41 @@ function shell(page: Page, title: string, content = '<div class="empty-state"><d
 				<button class="nav-button ${page === 'files' ? 'active' : ''}" data-route="/files"><i data-lucide="folder"></i><span>${t('files')}</span></button>
 				<button class="nav-button ${page === 'calendar' ? 'active' : ''}" data-route="/calendar"><i data-lucide="calendar-days"></i><span>${t('calendar')}</span></button>
 				<button class="nav-button ${page === 'notes' ? 'active' : ''}" data-route="/notes"><i data-lucide="sticky-note"></i><span>${t('notes')}</span></button>
-				<button class="nav-button ${page === 'devices' ? 'active' : ''}" data-route="/devices"><i data-lucide="laptop"></i><span>${t('devices')}</span></button>
-				<button class="nav-button ${page === 'settings' ? 'active' : ''}" data-route="/settings"><i data-lucide="settings"></i><span>${t('settings')}</span></button>
 			</nav>
-			<div class="sidebar-footer"><div class="service-status"><i data-lucide="database"></i><div><strong>Cloudflare R2 + D1</strong><span>${t('connected')}</span></div></div></div>
+			<div class="sidebar-footer"><div class="account-menu-wrap">
+				<div class="account-popover" id="account-popover" hidden>
+					<button data-route="/settings"><i data-lucide="settings"></i><span>${t('settings')}</span></button>
+					<button data-route="/devices"><i data-lucide="laptop"></i><span>${t('devices')}</span></button>
+					<div class="account-menu-separator"></div>
+					<button class="account-logout" id="account-logout"><i data-lucide="log-out"></i><span>${t('logout')}</span></button>
+				</div>
+				<button class="user-menu-button" id="user-menu-toggle" aria-expanded="false" aria-haspopup="menu">
+					<span class="user-avatar"><i data-lucide="user"></i></span><span class="user-copy"><strong>default</strong><small>${t('account')}</small></span><i class="user-chevron" data-lucide="chevron-up"></i>
+				</button>
+			</div></div>
 		</aside>
 		<main class="workspace"><header class="topbar"><div><div class="page-kicker">${t('workspace')}</div><h1>${html(title)}</h1><p>${html(descriptions[page])}</p></div></header><div class="content" id="page-content">${content}</div></main>
 	</div>`;
 	document
 		.querySelectorAll<HTMLElement>('[data-route]')
 		.forEach((item) => item.addEventListener('click', () => navigate(item.dataset.route!)));
-	document.querySelector('#header-logout')?.addEventListener('click', async () => {
-		await api.logout();
-		navigate('/login');
+	const accountPopover = document.querySelector<HTMLElement>('#account-popover');
+	const accountToggle = document.querySelector<HTMLButtonElement>('#user-menu-toggle');
+	const accountWrap = document.querySelector<HTMLElement>('.account-menu-wrap');
+	const closeAccountMenu = () => {
+		if (accountPopover) accountPopover.hidden = true;
+		accountToggle?.setAttribute('aria-expanded', 'false');
+		accountWrap?.classList.remove('open');
+	};
+	accountToggle?.addEventListener('click', (event) => {
+		event.stopPropagation();
+		const opening = accountPopover?.hidden ?? false;
+		if (accountPopover) accountPopover.hidden = !opening;
+		accountToggle.setAttribute('aria-expanded', String(opening));
+		accountWrap?.classList.toggle('open', opening);
+		if (opening) window.setTimeout(() => document.addEventListener('click', closeAccountMenu, { once: true }), 0);
 	});
+	document.querySelector('#account-logout')?.addEventListener('click', () => void confirmLogout());
 	document.querySelector('#language-toggle')?.addEventListener('click', () => {
 		locale = locale === 'en' ? 'zh' : 'en';
 		localStorage.setItem('r2_locale', locale);
@@ -320,7 +349,7 @@ function openTextDialog(title: string, label: string, initial = ''): Promise<str
 function confirmAction(title: string, message: string, confirmLabel = 'Delete'): Promise<boolean> {
 	return new Promise((resolve) => {
 		const dialog = document.createElement('dialog');
-		dialog.innerHTML = `<form method="dialog" class="dialog-body"><h2>${html(title)}</h2><p class="muted">${html(message)}</p><div class="dialog-actions"><button class="button" value="cancel">Cancel</button><button class="button danger" value="confirm">${html(confirmLabel)}</button></div></form>`;
+		dialog.innerHTML = `<form method="dialog" class="dialog-body"><h2>${html(title)}</h2><p class="muted">${html(message)}</p><div class="dialog-actions"><button class="button" value="cancel">${locale === 'zh' ? '取消' : 'Cancel'}</button><button class="button danger" value="confirm">${html(confirmLabel)}</button></div></form>`;
 		document.body.append(dialog);
 		dialog.addEventListener('close', () => {
 			const confirmed = dialog.returnValue === 'confirm';
@@ -329,6 +358,17 @@ function confirmAction(title: string, message: string, confirmLabel = 'Delete'):
 		});
 		dialog.showModal();
 	});
+}
+
+async function confirmLogout(): Promise<void> {
+	if (!(await confirmAction(t('logout'), t('logoutConfirm'), t('logout')))) return;
+	try {
+		await api.logout();
+	} catch {
+		// The local token is cleared by api.logout even when the server cannot be reached.
+	} finally {
+		location.replace('/login');
+	}
 }
 
 async function renderFiles(): Promise<void> {
@@ -904,7 +944,6 @@ function renderSettings(): void {
 			<div class="field"><label>CalDAV URL</label><div class="input-row"><input class="input" readonly value="${html(davOrigin)}/caldav/"><button class="button icon-button" data-copy="${html(davOrigin)}/caldav/" title="Copy CalDAV URL" aria-label="Copy CalDAV URL"><i data-lucide="copy"></i></button></div></div>
 		</section>
 		<section class="settings-section"><h2>API</h2><div class="field"><label>Base URL</label><input class="input" readonly value="${html(API_BASE || location.origin)}"></div></section>
-		<section class="settings-section"><h2>${locale === 'zh' ? '会话' : 'Session'}</h2><button class="button danger" id="settings-logout"><i data-lucide="log-out"></i><span>${t('logout')}</span></button></section>
 	</div>`,
 	);
 	document.querySelectorAll<HTMLElement>('[data-copy]').forEach((button) =>
@@ -913,10 +952,6 @@ function renderSettings(): void {
 			toast('Copied');
 		}),
 	);
-	document.querySelector('#settings-logout')?.addEventListener('click', async () => {
-		await api.logout();
-		navigate('/login');
-	});
 	refreshIcons();
 }
 

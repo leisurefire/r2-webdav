@@ -225,8 +225,133 @@ select:focus-visible {
 
 .sidebar-footer {
 	margin-top: auto;
-	padding-top: 18px;
+	padding-top: 12px;
 	border-top: 1px solid var(--line);
+}
+
+.account-menu-wrap {
+	position: relative;
+}
+
+.account-popover {
+	position: absolute;
+	z-index: 30;
+	left: 0;
+	right: 0;
+	bottom: calc(100% + 9px);
+	padding: 6px;
+	border: 1px solid var(--line);
+	border-radius: 13px;
+	background: #ffffff;
+	box-shadow: 0 12px 32px rgb(0 0 0 / 0.13);
+}
+
+.account-popover[hidden] {
+	display: none;
+}
+
+.account-popover button {
+	width: 100%;
+	height: 38px;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 9px;
+	background: transparent;
+	color: var(--ink);
+	font-size: 13px;
+	text-align: left;
+}
+
+.account-popover button:hover {
+	background: var(--surface);
+}
+
+.account-popover button svg {
+	width: 16px;
+	height: 16px;
+	color: var(--muted);
+}
+
+.account-popover .account-logout {
+	color: #555555;
+}
+
+.account-menu-separator {
+	height: 1px;
+	margin: 5px 4px;
+	background: var(--line);
+}
+
+.user-menu-button {
+	width: 100%;
+	min-height: 52px;
+	display: grid;
+	grid-template-columns: 34px minmax(0, 1fr) 16px;
+	align-items: center;
+	gap: 10px;
+	padding: 7px 9px;
+	border: 0;
+	border-radius: 12px;
+	background: transparent;
+	color: var(--ink);
+	text-align: left;
+}
+
+.user-menu-button:hover,
+.account-menu-wrap.open .user-menu-button {
+	background: var(--surface);
+}
+
+.user-avatar {
+	width: 34px;
+	height: 34px;
+	display: grid;
+	place-items: center;
+	border-radius: 10px;
+	background: #111111;
+	color: #ffffff;
+}
+
+.user-avatar svg {
+	width: 16px;
+	height: 16px;
+}
+
+.user-copy {
+	min-width: 0;
+	display: grid;
+	gap: 2px;
+}
+
+.user-copy strong,
+.user-copy small {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.user-copy strong {
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.user-copy small {
+	color: var(--quiet);
+	font-size: 10px;
+}
+
+.user-chevron {
+	width: 15px;
+	height: 15px;
+	color: var(--quiet);
+	transition: transform 140ms ease;
+}
+
+.account-menu-wrap.open .user-chevron {
+	transform: rotate(180deg);
 }
 
 .service-status {
@@ -1384,15 +1509,42 @@ dialog::backdrop {
 		background: #ffffff;
 	}
 
-	.nav-label,
-	.sidebar-footer {
+	.nav-label {
 		display: none;
 	}
 
 	.nav {
-		width: 100%;
+		width: calc(100% - 58px);
 		display: grid;
-		grid-template-columns: repeat(5, 1fr);
+		grid-template-columns: repeat(3, 1fr);
+	}
+
+	.sidebar-footer {
+		position: absolute;
+		right: 8px;
+		bottom: 7px;
+		width: 54px;
+		padding: 0;
+		border: 0;
+	}
+
+	.user-menu-button {
+		min-height: 53px;
+		grid-template-columns: 1fr;
+		place-items: center;
+		padding: 0;
+	}
+
+	.user-copy,
+	.user-chevron {
+		display: none;
+	}
+
+	.account-popover {
+		left: auto;
+		right: 0;
+		width: 210px;
+		bottom: calc(100% + 8px);
 	}
 
 	.nav-button {
@@ -1678,6 +1830,20 @@ dialog::backdrop {
 	.nav-button.active {
 		background: #282828;
 		color: var(--ink);
+	}
+
+	.account-popover {
+		background: #202020;
+		box-shadow: 0 12px 32px rgb(0 0 0 / 0.45);
+	}
+
+	.account-popover .account-logout {
+		color: #cccccc;
+	}
+
+	.user-avatar {
+		background: #f3f3f3;
+		color: #111111;
 	}
 
 	.file-table tr:hover td,
