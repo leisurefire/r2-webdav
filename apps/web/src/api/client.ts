@@ -38,7 +38,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 	try {
 		payload = (await response.json()) as ApiResponse<T>;
 	} catch {
-		throw new ApiError(response.statusText || 'Request failed', response.status);
+		throw new ApiError(
+			response.status >= 500
+				? `Server request failed (${response.status}). Check the Worker deployment logs.`
+				: response.statusText || 'Request failed',
+			response.status,
+		);
 	}
 	if (!response.ok || !payload.ok) {
 		const error = payload.ok ? null : payload.error;

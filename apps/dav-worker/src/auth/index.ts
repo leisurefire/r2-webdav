@@ -4,7 +4,7 @@ import type { Env } from '../env';
 const encoder = new TextEncoder();
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 const SESSION_TABLE = 'r2_webdav_sessions';
-let schemaReady: Promise<void> | null = null;
+let schemaInitialized = false;
 
 export class DatabaseSetupError extends Error {}
 
@@ -50,8 +50,10 @@ async function hashToken(token: string): Promise<string> {
 
 export async function ensureDatabase(env: Env): Promise<void> {
 	if (!env.NOTES_DB) throw new DatabaseSetupError('D1 binding NOTES_DB is missing');
-	schemaReady ??= env.NOTES_DB.batch([
-		env.NOTES_DB.prepare(`CREATE TABLE IF NOT EXISTS ${SESSION_TABLE} (
+	if (schemaInitialized) return;
+	try {
+		await env.NOTES_DB.batch([
+			env.NOTES_DB.prepare(`CREATE TABLE IF NOT EXISTS ${SESSION_TABLE} (
 				id TEXT PRIMARY KEY,
 				user_id TEXT NOT NULL,
 				token_hash TEXT NOT NULL UNIQUE,
@@ -65,10 +67,10 @@ export async function ensureDatabase(env: Env): Promise<void> {
 				last_seen_at TEXT NOT NULL,
 				expires_at TEXT NOT NULL
 			)`),
-		env.NOTES_DB.prepare(
-			`CREATE INDEX IF NOT EXISTS r2_webdav_sessions_user_expiry ON ${SESSION_TABLE}(user_id, expires_at)`,
-		),
-		env.NOTES_DB.prepare(`CREATE TABLE IF NOT EXISTS r2_webdav_notes (
+			env.NOTES_DB.prepare(
+				`CREATE INDEX IF NOT EXISTS r2_webdav_sessions_user_expiry ON ${SESSION_TABLE}(user_id, expires_at)`,
+			),
+			env.NOTES_DB.prepare(`CREATE TABLE IF NOT EXISTS r2_webdav_notes (
 				id TEXT PRIMARY KEY,
 				user_id TEXT NOT NULL,
 				title TEXT NOT NULL,
@@ -79,14 +81,12 @@ export async function ensureDatabase(env: Env): Promise<void> {
 				updated_at TEXT NOT NULL,
 				accessed_at TEXT NOT NULL
 			)`),
-		env.NOTES_DB.prepare(
-			'CREATE INDEX IF NOT EXISTS r2_webdav_notes_user_order ON r2_webdav_notes(user_id, is_archived, is_pinned DESC, updated_at DESC)',
-		),
-	]).then(() => undefined);
-	try {
-		await schemaReady;
+			env.NOTES_DB.prepare(
+				'CREATE INDEX IF NOT EXISTS r2_webdav_notes_user_order ON r2_webdav_notes(user_id, is_archived, is_pinned DESC, updated_at DESC)',
+			),
+		]);
+		schemaInitialized = true;
 	} catch (error) {
-		schemaReady = null;
 		throw new DatabaseSetupError(error instanceof Error ? error.message : 'D1 schema initialization failed');
 	}
 }

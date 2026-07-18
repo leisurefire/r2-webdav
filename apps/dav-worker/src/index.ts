@@ -72,7 +72,22 @@ export default {
 
 		if (isApi) {
 			let session: SessionContext | null = null;
-			if (!isLogin && !isHealth) session = await authorizeSession(request, env);
+			if (!isLogin && !isHealth) {
+				try {
+					session = await authorizeSession(request, env);
+				} catch (error) {
+					console.error('Session validation failed', error);
+					return applyCors(
+						request,
+						jsonError(
+							'INTERNAL_ERROR',
+							'Session validation failed. Please sign in again after redeploying the Worker.',
+							500,
+						),
+						env,
+					);
+				}
+			}
 			if (!isLogin && !isHealth && url.pathname !== '/api/v1/auth/logout' && !session) {
 				return applyCors(request, unauthorized(true), env);
 			}

@@ -1586,6 +1586,206 @@ dialog::backdrop {
 	}
 }
 
+@media (prefers-color-scheme: dark) {
+	:root {
+		color-scheme: dark;
+		color: #f3f3f3;
+		background: #171717;
+		--ink: #f3f3f3;
+		--muted: #a3a3a3;
+		--quiet: #777777;
+		--line: #303030;
+		--soft-line: #292929;
+		--surface: #242424;
+		--surface-strong: #2c2c2c;
+	}
+
+	body,
+	.global-header,
+	.sidebar,
+	.workspace,
+	.login-panel {
+		background: #171717;
+	}
+
+	.global-header,
+	.sidebar {
+		border-color: var(--line);
+	}
+
+	.brand-wordmark {
+		background: #f3f3f3;
+		color: #111111;
+	}
+
+	.brand-wordmark.inverse {
+		background: #ffffff;
+		color: #111111;
+	}
+
+	.brand-mark,
+	.button.primary,
+	.progress-bar,
+	.day-cell.today .day-number {
+		background: #f3f3f3;
+		color: #111111;
+	}
+
+	.brand-mark.light {
+		background: #f3f3f3;
+		color: #111111;
+	}
+
+	.status-dot {
+		background: #d8d8d8;
+	}
+
+	.header-action,
+	.language-button,
+	.button,
+	.input,
+	dialog,
+	.error-banner {
+		border-color: #3c3c3c;
+		background: #1d1d1d;
+		color: var(--ink);
+	}
+
+	.header-action:hover,
+	.language-button:hover,
+	.button:hover {
+		background: #292929;
+	}
+
+	.button.primary {
+		border-color: #f3f3f3;
+	}
+
+	.button.primary:hover {
+		background: #ffffff;
+	}
+
+	.button.danger,
+	.row-action.danger:hover {
+		color: #c9c9c9;
+	}
+
+	.nav-button {
+		color: #a3a3a3;
+	}
+
+	.nav-button:hover,
+	.nav-button.active {
+		background: #282828;
+		color: var(--ink);
+	}
+
+	.file-table tr:hover td,
+	.crumb:hover {
+		background: #222222;
+	}
+
+	.name-button svg {
+		color: #a3a3a3;
+	}
+
+	.day-cell {
+		background: #191919;
+	}
+
+	.day-cell.outside {
+		background: #202020;
+		color: #777777;
+	}
+
+	.event-chip {
+		background: #292929;
+		color: #c0c0c0;
+	}
+
+	.event-chip:hover {
+		background: #343434;
+	}
+
+	.segment-control,
+	.note-count,
+	.current-badge {
+		background: #292929;
+	}
+
+	.segment-control button.active {
+		background: #3a3a3a;
+		color: #ffffff;
+		box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+	}
+
+	.notes-layout,
+	.notes-list {
+		background: #1b1b1b;
+	}
+
+	.note-card:hover,
+	.note-card.active {
+		background: #292929;
+	}
+
+	.note-card.active {
+		box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+	}
+
+	.note-editor,
+	.note-pane textarea {
+		background: #171717;
+		color: #dddddd;
+	}
+
+	.note-editor-head > input {
+		color: #f3f3f3;
+	}
+
+	.note-preview article {
+		color: #dedede;
+	}
+
+	.note-preview article code {
+		background: #2b2b2b;
+	}
+
+	.note-preview article blockquote {
+		border-left-color: #d4d4d4;
+	}
+
+	.device-card {
+		background: #1b1b1b;
+	}
+
+	.device-icon {
+		background: #292929;
+	}
+
+	.login-intro {
+		background: #0e0e0e;
+		border-color: #303030;
+	}
+
+	.storage-signal {
+		color: #181818;
+	}
+
+	.toast {
+		background: #f3f3f3;
+		color: #111111;
+	}
+
+	dialog::backdrop {
+		background: rgb(0 0 0 / 0.72);
+	}
+
+	input[type='checkbox'] {
+		accent-color: #f3f3f3;
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
 	*,
 	*::before,
