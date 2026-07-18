@@ -16,7 +16,7 @@
 	border: 1px solid var(--line);
 	border-radius: 8px;
 	background: var(--panel-bg);
-	overflow: visible;
+	overflow: hidden;
 }
 
 .notes-layout > .note-editor {

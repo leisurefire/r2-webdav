@@ -254,12 +254,11 @@
 	grid-template-columns: minmax(0, 1fr);
 	align-items: stretch;
 	overflow: hidden;
-	border: 0;
+	border: 1px solid var(--line);
 	border-radius: 6px;
 	background: var(--surface);
 	color: var(--ink);
 	text-decoration: none;
-	border: 1px solid var(--line);
 	box-shadow: none;
 	transition:
 		box-shadow 140ms ease,
