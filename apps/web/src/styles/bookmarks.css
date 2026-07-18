@@ -1,16 +1,23 @@
-.bookmark-layout {
+/* Link collections share the same quiet surfaces as the notes tree. */
+.notes-layout.bookmark-layout {
 	display: grid;
-	grid-template-columns: 220px minmax(0, 1fr);
+	grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+	grid-template-rows: auto minmax(0, 1fr);
 	gap: 14px;
 }
 
 .bookmark-folders {
+	grid-column: 1;
+	grid-row: 2;
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
 	gap: 4px;
-	padding: 8px 0 48px;
+	padding: 10px 0 48px;
 	overflow-y: auto;
+	border-radius: 8px;
+	background: var(--panel-bg);
+	box-shadow: 0 5px 18px rgb(0 0 0 / 0.05);
 }
 
 .bookmark-folder-select-wrap {
@@ -32,17 +39,12 @@
 	align-items: center;
 	gap: 7px;
 	padding: 0 10px;
-	border: 1px solid var(--line);
+	border: 0;
 	border-radius: 6px;
-	background: var(--panel-bg);
+	background: transparent;
 	color: var(--muted);
 	text-align: left;
-	font-size: 13px;
-}
-
-.bookmark-folder svg {
-	width: 15px;
-	height: 15px;
+	font-size: 12px;
 }
 
 .bookmark-folder:hover,
@@ -52,10 +54,6 @@
 	box-shadow: 0 4px 12px rgb(0 0 0 / 0.06);
 }
 
-.bookmark-folder.active {
-	box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
-}
-
 .bookmark-folder span,
 .bookmark-card-body h3,
 .bookmark-link p,
@@ -63,6 +61,11 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.bookmark-folder svg {
+	width: 15px;
+	height: 15px;
 }
 
 .bookmark-folder small,
@@ -79,10 +82,13 @@
 }
 
 .bookmarks-main {
+	grid-column: 2;
+	grid-row: 2;
 	min-width: 0;
 	min-height: 0;
 	display: flex;
 	flex-direction: column;
+	overflow: hidden;
 }
 
 .bookmark-path {
@@ -95,9 +101,9 @@
 	gap: 3px;
 	margin: 4px 0 8px;
 	padding: 4px;
-	border: 1px solid var(--line);
+	border: 0;
 	border-radius: 8px;
-	background: var(--panel-bg);
+	background: var(--surface);
 	color: var(--muted);
 	font-size: 12px;
 	overflow-x: auto;
@@ -139,10 +145,11 @@
 }
 
 .bookmarks-grid {
+	width: 100%;
 	min-height: 0;
 	flex: 1;
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+	grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
 	align-content: start;
 	gap: 10px;
 	overflow: auto;
@@ -163,24 +170,23 @@
 
 .bookmark-card {
 	min-width: 0;
-	height: 92px;
+	height: 86px;
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
 	align-items: stretch;
 	overflow: hidden;
-	border: 1px solid var(--line);
-	border-radius: 8px;
-	background: var(--panel-bg);
+	border: 0;
+	border-radius: 6px;
+	background: var(--surface);
 	color: var(--ink);
 	text-decoration: none;
-	transition:
-		transform 140ms ease,
-		box-shadow 140ms ease;
+	box-shadow: 0 1px 3px rgb(0 0 0 / 0.03);
+	transition: box-shadow 140ms ease, background 140ms ease;
 }
 
 .bookmark-card:hover {
-	transform: translateY(-1px);
-	box-shadow: 0 8px 20px rgb(0 0 0 / 0.08);
+	background: var(--panel-bg);
+	box-shadow: 0 5px 14px rgb(0 0 0 / 0.07);
 }
 
 .bookmark-favicon span[hidden] {
@@ -219,15 +225,15 @@
 .bookmark-favicon {
 	position: relative;
 	flex: none;
-	width: 18px;
-	height: 18px;
+	width: 15px;
+	height: 15px;
 	display: grid;
 	place-items: center;
 	overflow: hidden;
 	border-radius: 4px;
 	background: var(--surface);
 	color: var(--muted);
-	font-size: 10px;
+	font-size: 9px;
 	font-weight: 700;
 }
 
@@ -255,10 +261,11 @@
 }
 
 @media (max-width: 760px) {
-	.bookmark-layout {
+	.notes-layout.bookmark-layout {
 		display: flex;
 		flex-direction: column;
 		height: 100%;
+		gap: 10px;
 	}
 
 	.bookmark-folders {
@@ -288,133 +295,14 @@
 		white-space: nowrap;
 	}
 
-	.bookmark-folder {
-		width: auto;
-		min-width: max-content;
-		grid-template-columns: 15px auto auto;
-		min-height: 34px;
-		padding-inline: 8px;
-	}
-
-	.bookmark-folder svg {
-		width: 15px;
-		height: 15px;
-	}
-
 	.bookmarks-main {
+		width: 100%;
 		flex: 1;
-		overflow: hidden;
 	}
 
 	.bookmarks-grid {
 		grid-template-columns: 1fr;
 		padding: 8px 0 24px;
-		overflow-y: auto;
-	}
-
-	.bookmark-card {
-		grid-template-columns: minmax(0, 1fr);
-		height: 78px;
-	}
-}
-
-/* Collection hierarchy uses surface contrast; outlines are reserved for focus and emphasis. */
-.bookmark-folder {
-	border: 0;
-	background: transparent;
-}
-
-.bookmark-folder:hover,
-.bookmark-folder.active {
-	background: var(--panel-bg);
-	box-shadow: 0 4px 12px rgb(0 0 0 / 0.06);
-}
-
-.bookmark-path {
-	border: 0;
-	background: var(--surface);
-	box-shadow: 0 2px 8px rgb(0 0 0 / 0.04);
-}
-
-.bookmark-card {
-	border: 0;
-	background: var(--panel-bg);
-	box-shadow: 0 2px 8px rgb(0 0 0 / 0.04);
-}
-
-.bookmark-card:hover {
-	box-shadow: 0 8px 20px rgb(0 0 0 / 0.09);
-}
-
-/* Bookmarks occupy the full content column; their scale matches the notes tree. */
-.notes-layout.bookmark-layout {
-	grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) !important;
-	grid-template-rows: auto minmax(0, 1fr) !important;
-	gap: 14px;
-}
-
-.bookmark-folders {
-	grid-column: 1;
-	grid-row: 2;
-	padding: 10px;
-	border-radius: 8px;
-	background: var(--panel-bg);
-	box-shadow: 0 5px 18px rgb(0 0 0 / 0.05);
-}
-
-.bookmarks-main {
-	grid-column: 2;
-	grid-row: 2;
-	width: 100%;
-	max-width: none;
-	overflow: hidden;
-}
-
-.bookmarks-grid {
-	width: 100%;
-	grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
-	gap: 10px;
-}
-
-.bookmark-card {
-	height: 86px;
-	border-radius: 6px;
-	background: var(--surface);
-	box-shadow: 0 1px 3px rgb(0 0 0 / 0.03);
-}
-
-.bookmark-card:hover {
-	transform: none;
-	background: var(--panel-bg);
-	box-shadow: 0 5px 14px rgb(0 0 0 / 0.07);
-}
-
-.bookmark-favicon {
-	width: 15px;
-	height: 15px;
-	border-radius: 4px;
-	font-size: 9px;
-}
-
-.bookmark-folder,
-.bookmark-folder svg {
-	font-size: 12px;
-}
-
-.bookmark-folder svg {
-	width: 15px;
-	height: 15px;
-}
-
-@media (max-width: 760px) {
-	.notes-layout.bookmark-layout {
-		display: flex !important;
-		flex-direction: column;
-	}
-
-	.bookmarks-main {
-		width: 100%;
-		flex: 1;
 	}
 
 	.bookmark-card {

@@ -1293,25 +1293,6 @@ dialog::backdrop {
 	font-size: 12px;
 }
 
-.notes-layout {
-	display: grid;
-	grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
-	min-height: 650px;
-	border: 1px solid var(--line);
-	border-radius: 18px;
-	overflow: hidden;
-	background: #f7f7f7;
-}
-
-.notes-list {
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
-	padding: 10px;
-	border-right: 1px solid var(--line);
-	background: #f7f7f7;
-}
-
 .note-card {
 	position: relative;
 	width: 100%;
@@ -1958,17 +1939,6 @@ dialog::backdrop {
 		justify-content: center;
 	}
 
-	.notes-layout {
-		grid-template-columns: 1fr;
-	}
-
-	.notes-list {
-		max-height: 310px;
-		overflow: auto;
-		border-right: 0;
-		border-bottom: 1px solid var(--line);
-	}
-
 	.note-split {
 		grid-template-columns: 1fr;
 	}
@@ -2142,11 +2112,6 @@ dialog::backdrop {
 		background: #3a3a3a;
 		color: #ffffff;
 		box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
-	}
-
-	.notes-layout,
-	.notes-list {
-		background: #1b1b1b;
 	}
 
 	.note-card:hover,
@@ -2410,13 +2375,6 @@ dialog::backdrop {
 }
 
 /* Notes stay inside one quiet workspace surface; controls belong to the document. */
-.notes-layout {
-	grid-template-rows: auto minmax(0, 1fr);
-	border: 0;
-	border-radius: 0;
-	background: transparent;
-}
-
 .notes-inner-toolbar {
 	grid-column: 1 / -1;
 	display: flex;
@@ -2429,19 +2387,6 @@ dialog::backdrop {
 
 .notes-inner-toolbar .segment-control {
 	background: var(--surface);
-}
-
-.notes-list {
-	position: relative;
-	padding: 8px 14px 48px 0;
-	border-right: 1px solid var(--line);
-	background: transparent;
-}
-
-.notes-list-cards {
-	display: flex;
-	flex-direction: column;
-	gap: 3px;
 }
 
 .note-editor {
@@ -2494,21 +2439,9 @@ dialog::backdrop {
 	height: 18px;
 }
 
-.notes-archived-button.active {
-	background: var(--hover-bg);
-	border-color: var(--ink);
-}
 @media (max-width: 760px) {
-	.notes-layout {
-		display: block;
-	}
-
 	.notes-inner-toolbar {
 		padding-bottom: 8px;
-	}
-
-	.notes-list {
-		padding-right: 0;
 	}
 
 	.note-editor-head > time {
@@ -2812,18 +2745,6 @@ body:has(.app-shell) {
 	min-height: 0;
 }
 
-.notes-layout {
-	min-height: 0;
-	flex: 1;
-	grid-template-columns: minmax(230px, 292px) minmax(0, 1fr);
-	border-radius: 8px;
-}
-
-.notes-list {
-	min-height: 0;
-	overflow-y: auto;
-}
-
 .note-card {
 	padding: 0;
 	border-radius: 6px;
@@ -3094,15 +3015,6 @@ body:has(.app-shell) {
 		width: 210px;
 	}
 
-	.notes-archived-button {
-		width: 38px;
-		padding: 0;
-	}
-
-	.notes-archived-button span {
-		display: none;
-	}
-
 	.floating-primary-action {
 		right: 16px;
 		bottom: 80px;
@@ -3155,23 +3067,8 @@ body:has(.app-shell) {
 		min-height: 0;
 	}
 
-	.notes-layout {
-		display: block;
-	}
-
-	.notes-list {
-		height: 100%;
-		max-height: none;
-		border-right: 0;
-		border-bottom: 0;
-	}
-
 	.note-card.active {
 		box-shadow: none;
-	}
-
-	.note-card-actions {
-		display: none;
 	}
 
 	.note-card-title {
