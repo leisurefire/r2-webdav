@@ -11,6 +11,7 @@ const METHODS = [
 	'HEAD',
 	'POST',
 	'PUT',
+	'PATCH',
 	'DELETE',
 	'OPTIONS',
 	'PROPFIND',
@@ -45,7 +46,8 @@ function applyCors(request: Request, response: Response, env: Env): Response {
 		'Access-Control-Expose-Headers',
 		'Content-Type, Content-Length, DAV, ETag, Last-Modified, Location, Content-Range, Lock-Token',
 	);
-	headers.set('Access-Control-Max-Age', '86400');
+	// Keep preflight caching short enough that newly added API methods roll out promptly.
+	headers.set('Access-Control-Max-Age', '600');
 	return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 

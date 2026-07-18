@@ -36,6 +36,26 @@ async function login(): Promise<string> {
 beforeEach(clearState);
 
 describe('authentication and file API', () => {
+	it('allows CORS preflight for every browser API mutation method', async () => {
+		for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+			const response = await SELF.fetch('https://dav.example.com/api/v1/notes/example', {
+				method: 'OPTIONS',
+				headers: {
+					Origin: 'https://app.example.com',
+					'Access-Control-Request-Method': method,
+					'Access-Control-Request-Headers': 'authorization, content-type',
+				},
+			});
+			expect(response.status).toBe(204);
+			expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://app.example.com');
+			expect(response.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+			expect(response.headers.get('Access-Control-Allow-Methods')?.split(/,\s*/)).toContain(method);
+			const allowedHeaders = response.headers.get('Access-Control-Allow-Headers')?.toLowerCase() ?? '';
+			expect(allowedHeaders).toContain('authorization');
+			expect(allowedHeaders).toContain('content-type');
+		}
+	});
+
 	it('issues a JWT and rejects invalid credentials', async () => {
 		const bad = await SELF.fetch('https://dav.example.com/api/v1/auth/login', {
 			method: 'POST',
