@@ -86,7 +86,13 @@ database_id = "0dcb94cd-c8b4-4dfa-8a32-4328ddae0aa3"
 npm run db:migrate -w @r2-webdav/dav-worker
 ```
 
-该命令会在远端建立项目专用的 `r2_webdav_sessions` 和 `r2_webdav_notes` 表。Worker 运行时也会执行幂等初始化，但 Pages Functions 不负责建表，因此正式部署必须先应用 migration。
+该命令会按顺序应用 `0001_sessions_and_notes.sql` 与 `0002_note_folders.sql`，建立会话、便签和便签目录表，并为既有便签补充 `folder_id`。Worker 运行时也会执行幂等初始化，但 Pages Functions 不负责建表，因此正式部署必须先应用 migration。
+
+升级已有部署时，先迁移数据库，再部署 Worker 和 Pages。`0002` 只新增目录表、字段和索引，不会删除或改写既有便签；旧便签迁移后会显示在“未分类”中。可先查看待应用迁移：
+
+```bash
+npx wrangler d1 migrations list notes --remote --config apps/dav-worker/wrangler.toml
+```
 
 ## 5. 首次部署 Worker
 

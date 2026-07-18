@@ -18,6 +18,7 @@ import {
 	FolderOpen,
 	FolderPlus,
 	Image,
+	Inbox,
 	Languages,
 	Laptop,
 	LogOut,
@@ -51,6 +52,7 @@ import type {
 	FileEntry,
 	FileListing,
 	Note,
+	NoteFolder,
 	NotePage,
 } from '@r2-webdav/shared-types';
 import { Lunar, Solar } from 'lunar-typescript';
@@ -238,6 +240,7 @@ function refreshIcons(): void {
 			FolderOpen,
 			FolderPlus,
 			Image,
+			Inbox,
 			Languages,
 			Laptop,
 			LogOut,
@@ -1158,6 +1161,9 @@ let notesArchived = false;
 let notesData: NotePage | null = null;
 let notesLoadingMore = false;
 let notesRequest = 0;
+let noteFolders: NoteFolder[] = [];
+let noteFoldersLoaded = false;
+let selectedNoteFolderId: string | null | undefined;
 let mobileNoteDialogOpen = false;
 let flushMobileNote: (() => Promise<void>) | null = null;
 let mobileNoteId: string | undefined;
@@ -1288,12 +1294,16 @@ function bookmarkFolderOptions(root: BookmarkFolder): BookmarkFolder[] {
 	return result;
 }
 
-function noteCacheKey(archived = notesArchived): string {
-	return `r2_notes_v2_${archived ? 'archived' : 'active'}`;
+function noteFolderCachePart(folderId = selectedNoteFolderId): string {
+	return folderId === undefined ? 'all' : folderId === null ? 'root' : encodeURIComponent(folderId);
 }
 
-function cacheNotes(data: NotePage, archived = notesArchived): void {
-	localStorage.setItem(noteCacheKey(archived), JSON.stringify(data));
+function noteCacheKey(archived = notesArchived, folderId = selectedNoteFolderId): string {
+	return `r2_notes_v3_${archived ? 'archived' : 'active'}_${noteFolderCachePart(folderId)}`;
+}
+
+function cacheNotes(data: NotePage, archived = notesArchived, folderId = selectedNoteFolderId): void {
+	localStorage.setItem(noteCacheKey(archived, folderId), JSON.stringify(data));
 }
 
 function cachedNotes(): NotePage | null {
@@ -1301,6 +1311,17 @@ function cachedNotes(): NotePage | null {
 		return JSON.parse(localStorage.getItem(noteCacheKey()) ?? 'null') as NotePage | null;
 	} catch {
 		return null;
+	}
+}
+
+async function loadNoteFolders(force = false): Promise<void> {
+	if (noteFoldersLoaded && !force) return;
+	try {
+		noteFolders = await api.noteFolders();
+		noteFoldersLoaded = true;
+		if (selectedNoteFolderId && !noteFolders.some((folder) => folder.id === selectedNoteFolderId)) selectedNoteFolderId = undefined;
+	} catch (error) {
+		if (force) toast(errorMessage(error));
 	}
 }
 
@@ -1340,10 +1361,14 @@ function renderMarkdown(value: string): string {
 	return renderMarkdownDocument(value).html;
 }
 
+function noteFolderSelectMarkup(selectedFolderId: string | null | undefined): string {
+	return `<select class="note-folder-select" data-note-folder-select aria-label="${locale === 'zh' ? '便签目录' : 'Note folder'}"><option value="" ${selectedFolderId ? '' : 'selected'}>${locale === 'zh' ? '未分类' : 'Unfiled'}</option>${noteFolders.map((folder) => `<option value="${html(folder.id)}" ${selectedFolderId === folder.id ? 'selected' : ''}>${html(folder.name)}</option>`).join('')}</select>`;
+}
+
 function noteEditorMarkup(selected: Note, mobile = false): string {
 	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'}">
 		<form data-note-form>
-			<div class="note-editor-head">${mobile ? `<button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>` : ''}<input data-note-title value="${html(selected.title)}" aria-label="Title"><span class="note-save-status" data-note-save-status aria-live="polite"></span><time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
+			<div class="note-editor-head">${mobile ? `<button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>` : ''}<input data-note-title value="${html(selected.title)}" aria-label="Title"><span class="note-save-status" data-note-save-status aria-live="polite"></span>${noteFolderSelectMarkup(selected.folderId)}<time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
 				<button type="button" class="row-action note-mode active" data-note-mode="preview" title="${t('preview')}" aria-label="${t('preview')}"><i data-lucide="eye"></i></button>
 				<button type="button" class="row-action note-mode" data-note-mode="edit" title="${locale === 'zh' ? '编辑' : 'Edit'}" aria-label="${locale === 'zh' ? '编辑' : 'Edit'}"><i data-lucide="pencil"></i></button>
 				<button type="button" class="row-action" data-note-export title="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}" aria-label="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}"><i data-lucide="file-down"></i></button>
@@ -1351,7 +1376,7 @@ function noteEditorMarkup(selected: Note, mobile = false): string {
 				<button type="button" class="row-action" data-note-archive title="${selected.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
 				<button type="button" class="row-action danger" data-note-delete title="${t('delete')}"><i data-lucide="trash-2"></i></button>
 			</div></div>
-			<div class="note-compose previewing" data-note-compose><aside class="note-outline" data-note-outline></aside><div class="note-document"><textarea class="note-source" data-note-source spellcheck="true" aria-label="${t('markdown')}">${html(selected.content)}</textarea><article class="note-render" data-note-render aria-label="${t('preview')}" title="${locale === 'zh' ? '点击进入编辑' : 'Click to edit'}"></article></div></div>
+			<div class="note-compose previewing" data-note-compose><div class="note-document"><textarea class="note-source" data-note-source spellcheck="true" aria-label="${t('markdown')}">${html(selected.content)}</textarea><article class="note-render" data-note-render aria-label="${t('preview')}" title="${locale === 'zh' ? '点击进入编辑' : 'Click to edit'}"></article></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
 		</form>
 	</section>`;
 }
@@ -1437,11 +1462,21 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		const rendered = renderMarkdownDocument(draftContent);
 		noteRender.innerHTML = rendered.html || `<p class="muted">${locale === 'zh' ? '空便签' : 'Empty note'}</p>`;
 		outline.innerHTML = rendered.headings.length
-			? `<strong>${locale === 'zh' ? '目录' : 'Contents'}</strong>${rendered.headings.map((heading) => `<button type="button" data-outline-target="${html(heading.id)}" style="--outline-level:${heading.level}">${html(heading.text)}</button>`).join('')}`
-			: `<span class="muted">${locale === 'zh' ? '添加标题后生成目录' : 'Headings create an outline'}</span>`;
+			? rendered.headings.map((heading) => `<button type="button" data-outline-target="${html(heading.id)}" aria-label="${html(heading.text)}" title="${html(heading.text)}" style="--outline-level:${heading.level}"><span></span></button>`).join('')
+			: '';
+		outline.classList.toggle('empty', rendered.headings.length === 0);
 		outline.querySelectorAll<HTMLElement>('[data-outline-target]').forEach((button) => button.addEventListener('click', () => {
 			noteRender.querySelector(`#${CSS.escape(button.dataset.outlineTarget!)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 		}));
+		updateOutlineActive();
+	};
+	const updateOutlineActive = () => {
+		const headings = [...noteRender.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')];
+		let active = headings[0];
+		for (const heading of headings) {
+			if (heading.offsetTop - noteRender.scrollTop <= 72) active = heading;
+		}
+		outline.querySelectorAll<HTMLElement>('[data-outline-target]').forEach((button) => button.classList.toggle('active', button.dataset.outlineTarget === active?.id));
 	};
 	const setMode = (mode: 'edit' | 'preview') => {
 		compose.classList.toggle('previewing', mode === 'preview');
@@ -1454,6 +1489,7 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		if ((event.target as HTMLElement).closest('a')) return;
 		setMode('edit');
 	});
+	noteRender.addEventListener('scroll', updateOutlineActive, { passive: true });
 	source.addEventListener('input', () => {
 		draftContent = source.value.replaceAll('\r', '');
 		queueSave({ content: draftContent });
@@ -1485,14 +1521,16 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		URL.revokeObjectURL(objectUrl);
 	});
 	paintPreview();
-	const update = async (changes: Partial<Pick<Note, 'title' | 'content' | 'pinned' | 'archived'>>) => {
+	const update = async (changes: Partial<Pick<Note, 'title' | 'content' | 'pinned' | 'archived' | 'folderId'>>) => {
 		try {
 			const updated = await api.updateNote(selected.id, changes);
 			const index = data.items.findIndex((note) => note.id === updated.id);
-			if (index >= 0 && updated.archived !== notesArchived) {
+			const leftCurrentFolder = selectedNoteFolderId !== undefined && updated.folderId !== selectedNoteFolderId;
+			if (index >= 0 && (updated.archived !== notesArchived || leftCurrentFolder)) {
 				data.items.splice(index, 1);
 				data.total = Math.max(0, data.total - 1);
 			} else if (index >= 0) data.items[index] = updated;
+			if (changes.folderId !== undefined) await loadNoteFolders(true);
 			cacheNotes(data);
 			paintNotes(
 				data,
@@ -1503,6 +1541,10 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 			toast(errorMessage(error));
 		}
 	};
+	root.querySelector<HTMLSelectElement>('[data-note-folder-select]')?.addEventListener('change', (event) => {
+		const folderId = (event.target as HTMLSelectElement).value || null;
+		void update({ folderId });
+	});
 	root
 		.querySelector<HTMLFormElement>('[data-note-form]')
 		?.addEventListener('submit', (event) => event.preventDefault());
@@ -1536,6 +1578,79 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 
 function notesTabsMarkup(): string {
 	return `<div class="segment-control" role="tablist"><button class="${notesView === 'active' ? 'active' : ''}" data-note-view="active">${t('active')}</button>${bookmarkHub ? `<button class="${notesView === 'bookmarks' ? 'active' : ''}" data-note-view="bookmarks">${t('bookmarks')}</button>` : ''}</div>${notesView === 'bookmarks' ? '' : `<button class="button notes-archived-button ${notesView === 'archived' ? 'active' : ''}" data-note-archived><i data-lucide="archive"></i><span>${t('archived')}</span></button>`}`;
+}
+
+function notesFolderSidebarMarkup(data: NotePage): string {
+	const active = (folderId: string | null | undefined) =>
+		(folderId === undefined && selectedNoteFolderId === undefined) || folderId === selectedNoteFolderId ? 'active' : '';
+	return `<aside class="notes-folders" aria-label="${locale === 'zh' ? '便签目录' : 'Note folders'}">
+		<div class="notes-folders-head"><strong>${locale === 'zh' ? '便签目录' : 'Folders'}</strong><button class="row-action" data-new-note-folder title="${locale === 'zh' ? '新建目录' : 'New folder'}" aria-label="${locale === 'zh' ? '新建目录' : 'New folder'}"><i data-lucide="folder-plus"></i></button></div>
+		<div class="notes-folder-list">
+			<div class="note-folder-card ${active(undefined)}" data-note-folder-drop="all"><button type="button" data-note-folder-filter="all"><i data-lucide="sticky-note"></i><span>${locale === 'zh' ? '全部便签' : 'All notes'}</span><small>${selectedNoteFolderId === undefined ? data.total : ''}</small></button></div>
+			<div class="note-folder-card ${active(null)}" data-note-folder-drop="root"><button type="button" data-note-folder-filter="root"><i data-lucide="inbox"></i><span>${locale === 'zh' ? '未分类' : 'Unfiled'}</span></button></div>
+			${noteFolders.map((folder) => `<div class="note-folder-card ${active(folder.id)}" data-note-folder-drop="${html(folder.id)}"><button type="button" data-note-folder-filter="${html(folder.id)}"><i data-lucide="folder"></i><span>${html(folder.name)}</span><small>${folder.noteCount}</small></button><div class="note-folder-actions"><button class="row-action" data-rename-note-folder="${html(folder.id)}" title="${locale === 'zh' ? '重命名' : 'Rename'}" aria-label="${locale === 'zh' ? '重命名' : 'Rename'}"><i data-lucide="pencil"></i></button><button class="row-action danger" data-delete-note-folder="${html(folder.id)}" title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button></div></div>`).join('')}
+		</div>
+	</aside>`;
+}
+
+function bindNotesFolders(content: HTMLElement, data: NotePage): void {
+	const selectFolder = (value: string) => {
+		selectedNoteFolderId = value === 'all' ? undefined : value === 'root' ? null : value;
+		notesData = null;
+		void renderNotes(undefined, false);
+	};
+	content.querySelectorAll<HTMLElement>('[data-note-folder-filter]').forEach((button) => button.addEventListener('click', () => selectFolder(button.dataset.noteFolderFilter ?? 'all')));
+	content.querySelector('[data-new-note-folder]')?.addEventListener('click', async () => {
+		const name = await openTextDialog(locale === 'zh' ? '新建便签目录' : 'New note folder', locale === 'zh' ? '目录名称' : 'Folder name');
+		if (!name) return;
+		try {
+			const created = await api.createNoteFolder(name);
+			noteFolders.push(created);
+			selectedNoteFolderId = created.id;
+			validatedNotePages.delete(noteCacheKey());
+			await renderNotes(undefined, true);
+		} catch (error) { toast(errorMessage(error)); }
+	});
+	content.querySelectorAll<HTMLElement>('[data-rename-note-folder]').forEach((button) => button.addEventListener('click', async (event) => {
+		event.stopPropagation();
+		const folder = noteFolders.find((item) => item.id === button.dataset.renameNoteFolder);
+		if (!folder) return;
+		const name = await openTextDialog(locale === 'zh' ? '重命名便签目录' : 'Rename note folder', locale === 'zh' ? '目录名称' : 'Folder name', folder.name);
+		if (!name || name === folder.name) return;
+		try {
+			const updated = await api.updateNoteFolder(folder.id, name);
+			Object.assign(folder, updated);
+			paintNotes(data, data.items[0]?.id);
+		} catch (error) { toast(errorMessage(error)); }
+	}));
+	content.querySelectorAll<HTMLElement>('[data-delete-note-folder]').forEach((button) => button.addEventListener('click', async (event) => {
+		event.stopPropagation();
+		const folder = noteFolders.find((item) => item.id === button.dataset.deleteNoteFolder);
+		if (!folder || !(await confirmAction(locale === 'zh' ? '删除便签目录？' : 'Delete note folder?', locale === 'zh' ? '目录中的便签会移到未分类，不会被删除。' : 'Notes in this folder will move to Unfiled and will not be deleted.', t('delete')))) return;
+		try {
+			await api.deleteNoteFolder(folder.id);
+			noteFolders = noteFolders.filter((item) => item.id !== folder.id);
+			if (selectedNoteFolderId === folder.id) selectedNoteFolderId = undefined;
+			await renderNotes(undefined, true);
+		} catch (error) { toast(errorMessage(error)); }
+	}));
+	content.querySelectorAll<HTMLElement>('[data-note-folder-drop]').forEach((target) => {
+		target.addEventListener('dragover', (event) => { event.preventDefault(); target.classList.add('drag-over'); });
+		target.addEventListener('dragleave', () => target.classList.remove('drag-over'));
+		target.addEventListener('drop', async (event) => {
+			event.preventDefault();
+			target.classList.remove('drag-over');
+			const noteId = event.dataTransfer?.getData('text/x-truespace-note');
+			if (!noteId) return;
+			const folderId = target.dataset.noteFolderDrop === 'all' || target.dataset.noteFolderDrop === 'root' ? null : target.dataset.noteFolderDrop;
+			try {
+				await api.updateNote(noteId, { folderId });
+				await loadNoteFolders(true);
+				validatedNotePages.delete(noteCacheKey());
+				await renderNotes(undefined, true);
+			} catch (error) { toast(errorMessage(error)); }
+		});
+	});
 }
 
 function paintBookmarkView(): void {
@@ -1641,7 +1756,7 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 		.map(
 			(
 				note,
-			) => `<article class="note-card ${note.id === selected?.id ? 'active' : ''}"><button class="note-card-open" data-note="${note.id}">
+			) => `<article class="note-card ${note.id === selected?.id ? 'active' : ''}" draggable="true" data-note-card-id="${note.id}"><button class="note-card-open" data-note="${note.id}">
 				<div class="note-card-title">${note.pinned ? '<i data-lucide="pin"></i>' : ''}<strong>${html(note.title)}</strong></div>
 				<p>${html(note.content.replace(/[#*_`>\[\]]/g, '').slice(0, 110) || '—')}</p>
 				<time>${new Date(note.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>
@@ -1655,6 +1770,7 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 		.join('');
 	content.innerHTML = `<div class="notes-layout">
 		<div class="notes-inner-toolbar">${notesTabsMarkup()}<span class="toolbar-spacer"></span><span class="note-count">${data.total}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}" aria-label="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}"><i data-lucide="refresh-cw"></i></button></div>
+		${notesFolderSidebarMarkup(data)}
 		<aside class="notes-list"><div class="notes-list-cards">${cards || `<div class="notes-empty"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div>`}</div>
 			<button class="button primary floating-primary-action" id="new-note" title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i><span>${t('newNote')}</span></button>
 			<div class="notes-load-status" aria-live="polite">${notesLoadingMore ? loadingMarkup(true) : ''}</div>
@@ -1666,6 +1782,14 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 	content.querySelectorAll<HTMLElement>('[data-note]').forEach((node) => {
 		const openNote = () => paintNotes(data, node.dataset.note, true);
 		node.addEventListener('click', openNote);
+	});
+	content.querySelectorAll<HTMLElement>('[data-note-card-id]').forEach((card) => {
+		card.addEventListener('dragstart', (event) => {
+			event.dataTransfer?.setData('text/x-truespace-note', card.dataset.noteCardId!);
+			if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+			card.classList.add('dragging');
+		});
+		card.addEventListener('dragend', () => card.classList.remove('dragging'));
 	});
 	const updateFromCard = async (noteId: string, changes: Partial<Pick<Note, 'pinned' | 'archived'>>): Promise<void> => {
 		try {
@@ -1694,9 +1818,10 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 		}),
 	);
 	bindNotesNavigation(content);
+	bindNotesFolders(content, data);
 	content.querySelector('#new-note')?.addEventListener('click', async () => {
 		try {
-			const note = await api.createNote(locale === 'zh' ? '无标题便签' : 'Untitled note', '');
+			const note = await api.createNote(locale === 'zh' ? '无标题便签' : 'Untitled note', '', typeof selectedNoteFolderId === 'string' ? selectedNoteFolderId : null);
 			notesArchived = false;
 			notesData = null;
 			validatedNotePages.delete(noteCacheKey());
@@ -1745,9 +1870,10 @@ async function loadMoreNotes(selectedId?: string, scrollTop = 0): Promise<void> 
 		status.innerHTML = loadingMarkup(true);
 	}
 	const archived = notesArchived;
+	const folderId = selectedNoteFolderId;
 	try {
-		const next = await api.notes(current.page + 1, archived);
-		if (notesData !== current || archived !== notesArchived || pageFromPath() !== 'notes') return;
+		const next = await api.notes(current.page + 1, archived, folderId);
+		if (notesData !== current || archived !== notesArchived || folderId !== selectedNoteFolderId || pageFromPath() !== 'notes') return;
 		const knownIds = new Set(current.items.map((note) => note.id));
 		current.items.push(...next.items.filter((note) => !knownIds.has(note.id)));
 		current.page = next.page;
@@ -1772,6 +1898,7 @@ async function renderNotes(selectedId?: string, forceSync = false, openMobile = 
 		shell('notes', bookmarkHub ? (locale === 'zh' ? '收藏空间' : 'Collection') : t('notes'));
 	const hadBookmarks = Boolean(bookmarkHub);
 	await pullBookmarks(false);
+	await loadNoteFolders(forceSync);
 	if (!hadBookmarks && bookmarkHub) {
 		const label = locale === 'zh' ? '收藏空间' : 'Collection';
 		const nav = document.querySelector<HTMLElement>('[data-route="/notes"] span');
@@ -1788,6 +1915,7 @@ async function renderNotes(selectedId?: string, forceSync = false, openMobile = 
 	}
 	const cacheKey = noteCacheKey();
 	const requestedArchived = notesArchived;
+	const requestedFolderId = selectedNoteFolderId;
 	if (!forceSync && validatedNotePages.has(cacheKey) && cached) {
 		notesData = cached;
 		return;
@@ -1795,8 +1923,8 @@ async function renderNotes(selectedId?: string, forceSync = false, openMobile = 
 	validatedNotePages.add(cacheKey);
 	const request = ++notesRequest;
 	try {
-		const data = await api.notes(1, requestedArchived);
-		if (request !== notesRequest || requestedArchived !== notesArchived) return;
+		const data = await api.notes(1, requestedArchived, requestedFolderId);
+		if (request !== notesRequest || requestedArchived !== notesArchived || requestedFolderId !== selectedNoteFolderId) return;
 		notesData = data;
 		cacheNotes(data, requestedArchived);
 		if (pageFromPath() === 'notes') paintNotes(data, selectedId, openMobile);

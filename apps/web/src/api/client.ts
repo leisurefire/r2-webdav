@@ -6,6 +6,7 @@ import type {
 	DeviceSession,
 	FileListing,
 	Note,
+	NoteFolder,
 	NotePage,
 } from '@r2-webdav/shared-types';
 
@@ -198,8 +199,29 @@ export const api = {
 	deleteDevice(id: string): Promise<{ deleted: boolean; current: boolean }> {
 		return request(`/auth/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
 	},
-	notes(page = 1, archived = false): Promise<NotePage> {
-		return notesRequest(`?page=${page}&limit=20&archived=${archived ? '1' : '0'}`);
+	notes(page = 1, archived = false, folderId?: string | null): Promise<NotePage> {
+		const folder = folderId === null ? '&folder=root' : folderId ? `&folder=${encodeURIComponent(folderId)}` : '';
+		return notesRequest(`?page=${page}&limit=20&archived=${archived ? '1' : '0'}${folder}`);
+	},
+	noteFolders(): Promise<NoteFolder[]> {
+		return notesRequest('/folders');
+	},
+	createNoteFolder(name: string): Promise<NoteFolder> {
+		return notesRequest('/folders', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ name }),
+		});
+	},
+	updateNoteFolder(id: string, name: string): Promise<NoteFolder> {
+		return notesRequest(`/folders/${encodeURIComponent(id)}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ name }),
+		});
+	},
+	deleteNoteFolder(id: string): Promise<{ deleted: boolean }> {
+		return notesRequest(`/folders/${encodeURIComponent(id)}`, { method: 'DELETE' });
 	},
 	async bookmarks(): Promise<BookmarkHub | null> {
 		try {
@@ -209,14 +231,14 @@ export const api = {
 			throw error;
 		}
 	},
-	createNote(title: string, content = ''): Promise<Note> {
+	createNote(title: string, content = '', folderId?: string | null): Promise<Note> {
 		return notesRequest('', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ title, content }),
+			body: JSON.stringify({ title, content, ...(folderId ? { folderId } : {}) }),
 		});
 	},
-	updateNote(id: string, changes: Partial<Pick<Note, 'title' | 'content' | 'pinned' | 'archived'>>): Promise<Note> {
+	updateNote(id: string, changes: Partial<Pick<Note, 'title' | 'content' | 'pinned' | 'archived' | 'folderId'>>): Promise<Note> {
 		return notesRequest(`/${encodeURIComponent(id)}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },

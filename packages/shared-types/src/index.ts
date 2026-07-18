@@ -78,6 +78,7 @@ export interface Note {
 	createdAt: string;
 	updatedAt: string;
 	accessedAt: string;
+	folderId?: string | null;
 }
 
 export interface NotePage {
@@ -86,6 +87,14 @@ export interface NotePage {
 	pageSize: number;
 	total: number;
 	hasMore: boolean;
+}
+
+export interface NoteFolder {
+	id: string;
+	name: string;
+	noteCount: number;
+	createdAt: string;
+	updatedAt: string;
 }
 
 export interface BookmarkNode {

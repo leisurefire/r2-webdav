@@ -317,3 +317,31 @@
 		height: 78px;
 	}
 }
+
+/* Collection hierarchy uses surface contrast; outlines are reserved for focus and emphasis. */
+.bookmark-folder {
+	border: 0;
+	background: transparent;
+}
+
+.bookmark-folder:hover,
+.bookmark-folder.active {
+	background: var(--panel-bg);
+	box-shadow: 0 4px 12px rgb(0 0 0 / 0.06);
+}
+
+.bookmark-path {
+	border: 0;
+	background: var(--surface);
+	box-shadow: 0 2px 8px rgb(0 0 0 / 0.04);
+}
+
+.bookmark-card {
+	border: 0;
+	background: var(--panel-bg);
+	box-shadow: 0 2px 8px rgb(0 0 0 / 0.04);
+}
+
+.bookmark-card:hover {
+	box-shadow: 0 8px 20px rgb(0 0 0 / 0.09);
+}
