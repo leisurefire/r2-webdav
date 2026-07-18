@@ -125,7 +125,7 @@ const messages = {
 		loading: '加载中…',
 		language: 'English',
 		newNote: '新建便签',
-		active: '当前便签',
+		active: '便签',
 		bookmarks: '链接收藏',
 		archived: '已归档',
 		noNotes: '这里还没有便签',
@@ -1095,7 +1095,7 @@ function bookmarkCardMarkup(card: BookmarkCard): string {
 	const favicon = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(card.domain)}&sz=128`;
 	return `<a class="bookmark-card" href="${html(card.url)}" target="_blank" rel="noopener noreferrer">
 		<div class="bookmark-card-cover"><img src="${favicon}" alt="" loading="lazy" referrerpolicy="no-referrer"><span>${html(card.domain.slice(0, 1).toUpperCase())}</span></div>
-		<div class="bookmark-card-body"><h3>${html(card.title)}</h3><p>${html(card.domain)}</p><small>${html(card.path.filter(Boolean).join(' / '))}</small></div>
+		<div class="bookmark-card-body"><h3>${html(card.title)}</h3><p>${html(card.domain)}</p><small>${html(card.path.filter(Boolean).join(' / '))}</small><time>${card.dateModified ? new Date(card.dateModified).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en') : ''}</time></div>
 	</a>`;
 }
 

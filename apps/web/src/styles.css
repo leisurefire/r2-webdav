@@ -2203,6 +2203,13 @@ dialog::backdrop {
 	font-size: 10px;
 }
 
+.bookmark-card-body time {
+	display: block;
+	margin-top: 6px;
+	color: var(--quiet);
+	font-size: 10px;
+}
+
 @media (max-width: 760px) {
 	.notes-layout {
 		display: block;
