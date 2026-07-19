@@ -10,6 +10,7 @@ import {
 	splitTableRow,
 	type StructuralBlock,
 } from './markdownStructure';
+import { normalizeClipboardText, readClipboardText } from './markdownClipboard';
 
 class CheckboxWidget extends WidgetType {
 	constructor(
@@ -350,11 +351,16 @@ function buildDecorations(view: EditorView) {
 const livePreviewPlugin = ViewPlugin.fromClass(
 	class {
 		decorations = Decoration.none;
+		private parsedTree!: ReturnType<typeof syntaxTree>;
 		constructor(private readonly view: EditorView) {
+			this.parsedTree = syntaxTree(view.state);
 			this.decorations = buildDecorations(view);
 		}
 		update(update: ViewUpdate) {
-			if (update.docChanged || update.selectionSet || update.viewportChanged)
+			const parsedTree = syntaxTree(update.state);
+			const syntaxTreeChanged = parsedTree !== this.parsedTree;
+			this.parsedTree = parsedTree;
+			if (update.docChanged || update.selectionSet || update.viewportChanged || syntaxTreeChanged)
 				this.decorations = buildDecorations(this.view);
 		}
 	},
@@ -376,6 +382,19 @@ function readFileAsDataUrl(file: File): Promise<string> {
 	});
 }
 
+function clipboardText(event: ClipboardEvent): string {
+	const data = event.clipboardData;
+	if (!data) return '';
+	const text = readClipboardText((type) => data.getData(type));
+	if (text) return text;
+	const html = data.getData('text/html');
+	if (!html) return '';
+	const fragment = document.createElement('div');
+	fragment.innerHTML = html;
+	fragment.querySelectorAll('br').forEach((breakNode) => breakNode.replaceWith('\n'));
+	return normalizeClipboardText(fragment.innerText || fragment.textContent || '');
+}
+
 export function createMarkdownLivePreview(
 	parent: HTMLElement,
 	value: string,
@@ -389,34 +408,48 @@ export function createMarkdownLivePreview(
 		paste(event, view) {
 			if ((event.target as HTMLElement | null)?.closest('.cm-live-table textarea')) return false;
 			const image = [...(event.clipboardData?.files ?? [])].find((file) => file.type.startsWith('image/'));
-			if (!image) return false;
-			event.preventDefault();
-			if (image.size > 256 * 1024) {
-				options.onImageTooLarge?.();
+			if (image) {
+				event.preventDefault();
+				if (image.size > 256 * 1024) {
+					options.onImageTooLarge?.();
+					return true;
+				}
+				const id = ++nextImagePasteId;
+				const selection = view.state.selection.main;
+				pendingImageRanges.set(id, { from: selection.from, to: selection.to, empty: selection.empty });
+				void readFileAsDataUrl(image)
+					.then((dataUrl) => {
+						const range = pendingImageRanges.get(id);
+						pendingImageRanges.delete(id);
+						if (!range || !view.dom.isConnected) return;
+						const alt = image.name || 'image';
+						const markdown = `![${alt.replaceAll(']', '\\]')}](${dataUrl})`;
+						view.dispatch({
+							changes: { from: range.from, to: range.to, insert: markdown },
+							selection: { anchor: range.from + markdown.length },
+							annotations: Transaction.userEvent.of('input.paste'),
+							scrollIntoView: true,
+						});
+						view.focus();
+					})
+					.catch(() => {
+						pendingImageRanges.delete(id);
+						options.onImageReadError?.();
+					});
 				return true;
 			}
-			const id = ++nextImagePasteId;
+
+			const text = clipboardText(event);
+			if (!text) return false;
+			event.preventDefault();
 			const selection = view.state.selection.main;
-			pendingImageRanges.set(id, { from: selection.from, to: selection.to, empty: selection.empty });
-			void readFileAsDataUrl(image)
-				.then((dataUrl) => {
-					const range = pendingImageRanges.get(id);
-					pendingImageRanges.delete(id);
-					if (!range || !view.dom.isConnected) return;
-					const alt = image.name || 'image';
-					const markdown = `![${alt.replaceAll(']', '\\]')}](${dataUrl})`;
-					view.dispatch({
-						changes: { from: range.from, to: range.to, insert: markdown },
-						selection: { anchor: range.from + markdown.length },
-						annotations: Transaction.userEvent.of('input.paste'),
-						scrollIntoView: true,
-					});
-					view.focus();
-				})
-				.catch(() => {
-					pendingImageRanges.delete(id);
-					options.onImageReadError?.();
-				});
+			view.dispatch({
+				changes: { from: selection.from, to: selection.to, insert: text },
+				selection: { anchor: selection.from + text.length },
+				annotations: Transaction.userEvent.of('input.paste'),
+				scrollIntoView: true,
+			});
+			view.focus();
 			return true;
 		},
 	});
@@ -427,7 +460,7 @@ export function createMarkdownLivePreview(
 			syntaxHighlighting(defaultHighlightStyle),
 			livePreview.of(livePreviewPlugin),
 			clipboardHandlers,
-			EditorView.clipboardInputFilter.of((text) => text.replaceAll('\r\n', '\n').replaceAll('\r', '\n')),
+			EditorView.clipboardInputFilter.of(normalizeClipboardText),
 			EditorView.lineWrapping,
 			EditorView.theme({
 				'&': { height: '100%' },
