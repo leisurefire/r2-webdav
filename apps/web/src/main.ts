@@ -1361,11 +1361,19 @@ function bookmarkFolderTreeMarkup(root: BookmarkFolder, selectedKey: string): st
 		root.folders,
 		(folder) => folder.folders,
 		(folder, depth, children) => {
-			const active = folder.key === selectedKey;
-			const expanded = bookmarkExpandedFolders.has(folder.key) || active;
-			return `<div class="bookmark-tree-node ${expanded ? 'expanded' : ''}" style="--bookmark-depth:${depth}"><button class="bookmark-folder collection-tree-row ${active ? 'active' : ''}" data-bookmark-folder="${html(folder.key)}">${caret(expanded)}<span>${html(folder.name)}</span><small>${folder.links.length}</small></button>${expanded && children ? `<div class="bookmark-tree-children">${children}</div>` : ''}</div>`;
+			const hasChildren = folder.folders.length > 0;
+			const active = folder.key === selectedKey && !hasChildren;
+			const expanded = hasChildren && bookmarkExpandedFolders.has(folder.key);
+			return `<div class="bookmark-tree-node note-tree-node note-tree-special ${expanded ? 'expanded' : ''}" style="--tree-depth:${depth}"><button class="bookmark-folder collection-tree-row ${active ? 'active' : ''}" data-bookmark-folder="${html(folder.key)}" data-bookmark-has-children="${hasChildren}">${caret(expanded)}<span>${html(folder.name)}</span><small>${folder.links.length}</small></button>${expanded && children ? `<div class="bookmark-tree-children notes-tree-children">${children}</div>` : ''}</div>`;
 		},
 	);
+}
+
+function expandBookmarkAncestors(key: string): void {
+	const path = key.split('\u001f');
+	for (let depth = 1; depth < path.length; depth += 1) {
+		bookmarkExpandedFolders.add(path.slice(0, depth).join('\u001f'));
+	}
 }
 
 function noteFolderCachePart(folderId = selectedNoteFolderId): string {
@@ -1748,7 +1756,7 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 			name: locale === 'zh' ? '未分类' : 'Unfiled',
 			count: rootNotes.length || '',
 			expanded: notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === null),
-			active: notesView === 'active' && selectedNoteFolderId === null,
+			active: notesView === 'active' && selectedNoteFolderId === null && rootNotes.length === 0,
 			children: noteNodes(rootNotes),
 		},
 		...noteFolders.map((folder) => ({
@@ -1757,7 +1765,7 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 			name: folder.name,
 			count: folder.noteCount,
 			expanded: notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === folder.id),
-			active: notesView === 'active' && selectedNoteFolderId === folder.id,
+			active: notesView === 'active' && selectedNoteFolderId === folder.id && notesFor(folder.id).length === 0,
 			children: noteNodes(notesFor(folder.id)),
 		})),
 		{
@@ -1766,7 +1774,7 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 			name: t('archived'),
 			count: notesView === 'archived' ? data.total : '',
 			expanded: notesView === 'archived',
-			active: notesView === 'archived',
+			active: notesView === 'archived' && data.items.length === 0,
 			children: notesView === 'archived' ? noteNodes(data.items) : [],
 		},
 	];
@@ -1917,6 +1925,7 @@ function paintBookmarkView(): void {
 	}
 	const cards = folder.links;
 	const selectedFolderKey = bookmarkFolderPath.join('\u001f');
+	if (selectedFolderKey) expandBookmarkAncestors(selectedFolderKey);
 	const folderOptions = bookmarkFolderOptions(root)
 		.map(
 			(item) =>
@@ -1926,7 +1935,7 @@ function paintBookmarkView(): void {
 	const folderTree = bookmarkFolderTreeMarkup(root, selectedFolderKey);
 	content.innerHTML = `<div class="notes-layout bookmark-layout">
 		<div class="notes-inner-toolbar">${notesTabsMarkup()}<div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择收藏目录' : 'Choose collection folder'}">${folderOptions}</select></div><span class="toolbar-spacer"></span><span class="note-count">${cards.length}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}" aria-label="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}"><i data-lucide="refresh-cw"></i></button></div>
-		<aside class="bookmark-folders"><div class="bookmark-folders-head"><strong>${locale === 'zh' ? '收藏目录' : 'Folders'}</strong></div><div class="bookmark-folder-tree"><button class="bookmark-folder collection-tree-row bookmark-folder-root expanded ${folder === root ? 'active' : ''}" data-bookmark-folder="" style="--bookmark-depth:0"><i class="tree-caret-icon" data-lucide="chevron-down" aria-hidden="true"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderTree || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</div></aside>
+		<aside class="notes-folders bookmark-folders"><div class="notes-folders-head bookmark-folders-head"><strong>${locale === 'zh' ? '收藏目录' : 'Folders'}</strong></div><div class="notes-tree bookmark-folder-tree"><div class="bookmark-tree-node note-tree-node note-tree-special expanded"><button class="bookmark-folder collection-tree-row bookmark-folder-root ${folder === root && root.folders.length === 0 ? 'active' : ''}" data-bookmark-folder="" data-bookmark-has-children="${root.folders.length > 0}" style="--tree-depth:0"><i class="tree-caret-icon" data-lucide="chevron-down" aria-hidden="true"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderTree || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</div></div></aside>
 		<div class="bookmarks-main">${bookmarkPathMarkup(bookmarkFolderPath)}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div></div>
 	</div>`;
 	refreshIcons();
@@ -1937,10 +1946,11 @@ function paintBookmarkView(): void {
 	content.querySelectorAll<HTMLElement>('[data-bookmark-folder]').forEach((button) =>
 		button.addEventListener('click', () => {
 			const key = button.dataset.bookmarkFolder ?? '';
-			if (key) {
-				if (button.classList.contains('active')) bookmarkExpandedFolders.delete(key);
+			if (key && button.dataset.bookmarkHasChildren === 'true') {
+				if (button.closest('.bookmark-tree-node')?.classList.contains('expanded')) bookmarkExpandedFolders.delete(key);
 				else bookmarkExpandedFolders.add(key);
 			}
+			if (key) expandBookmarkAncestors(key);
 			bookmarkFolderPath = key ? key.split('\u001f') : [];
 			paintBookmarkView();
 		}),
