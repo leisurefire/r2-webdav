@@ -336,13 +336,14 @@
 	display: none;
 }
 
-.note-source {
-	caret-color: var(--ink);
+.note-source,
+.note-source .cm-content {
+	caret-color: var(--input-caret);
 }
 
 .note-source .cm-cursor,
 .note-source .cm-dropCursor {
-	border-left-color: var(--ink) !important;
+	border-left-color: var(--input-caret) !important;
 }
 
 .note-source,
@@ -392,8 +393,17 @@
 }
 .cm-live-link {
 	color: var(--accent);
+	cursor: pointer;
 	text-decoration: underline;
 	text-underline-offset: 2px;
+}
+
+.cm-live-link-disabled {
+	color: var(--muted);
+}
+
+.cm-live-strike {
+	text-decoration: line-through;
 }
 
 .cm-live-inline-code,

@@ -14,6 +14,7 @@
 	background: #ffffff;
 	font-synthesis: none;
 	--ink: #000000;
+	--input-caret: #111111;
 	--muted: #666666;
 	--quiet: #8f8f8f;
 	--accent: #1d4ed8;
@@ -46,6 +47,12 @@ textarea,
 select {
 	font: inherit;
 	letter-spacing: 0;
+}
+
+input,
+textarea,
+[contenteditable='true'] {
+	caret-color: var(--input-caret);
 }
 
 input[type='checkbox'] {
@@ -1974,6 +1981,7 @@ dialog::backdrop {
 		color: #f3f3f3;
 		background: #171717;
 		--ink: #f3f3f3;
+		--input-caret: #ffffff;
 		--muted: #a3a3a3;
 		--quiet: #777777;
 		--accent: #93c5fd;

@@ -2,6 +2,7 @@ import { EditorState, StateField, Transaction } from '@codemirror/state';
 import { EditorView, Decoration, WidgetType, type DecorationSet } from '@codemirror/view';
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, defaultHighlightStyle, syntaxTree } from '@codemirror/language';
+import { GFM } from '@lezer/markdown';
 import katex from 'katex';
 import {
 	collectInlineExcludedRanges,
@@ -11,7 +12,69 @@ import {
 	type StructuralBlock,
 } from './markdownStructure';
 import { normalizeClipboardText, prepareClipboardText, readClipboardText } from './markdownClipboard';
-import { renderMarkdown, renderMarkdownInline } from './markdownRenderer';
+import {
+	renderMarkdown,
+	renderMarkdownDocument,
+	renderMarkdownInline,
+	renderResolvedMarkdownLink,
+} from './markdownRenderer';
+
+export const markdownLanguageSupport = markdown({ extensions: GFM });
+
+type LinkDefinition = { href: string; title?: string };
+type ResolvedLink = LinkDefinition & { label: string };
+
+function isMarkdownHeading(name: string): boolean {
+	return /^ATXHeading[1-6]$|^SetextHeading[12]$/.test(name);
+}
+
+function normalizeReferenceLabel(value: string): string {
+	return value
+		.replace(/\\([\\[\]])/g, '$1')
+		.trim()
+		.replace(/\s+/g, ' ')
+		.toLocaleLowerCase();
+}
+
+function markdownDestination(value: string): string {
+	const trimmed = value.trim();
+	const destination = trimmed.startsWith('<') && trimmed.endsWith('>') ? trimmed.slice(1, -1) : trimmed;
+	return destination.replace(/\\([\\()<>{}\[\]])/g, '$1');
+}
+
+function markdownLinkTitle(value: string): string {
+	const trimmed = value.trim();
+	if (
+		(trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+		(trimmed.startsWith("'") && trimmed.endsWith("'")) ||
+		(trimmed.startsWith('(') && trimmed.endsWith(')'))
+	)
+		return trimmed.slice(1, -1);
+	return trimmed;
+}
+
+function headingPositionForHash(view: EditorView, hash: string): number | null {
+	let id: string;
+	try {
+		id = decodeURIComponent(hash.slice(1));
+	} catch {
+		return null;
+	}
+	const headingIndex = renderMarkdownDocument(view.state.doc.toString()).headings.findIndex(
+		(heading) => heading.id === id,
+	);
+	if (headingIndex < 0) return null;
+	let index = 0;
+	let position: number | null = null;
+	syntaxTree(view.state).iterate({
+		enter(node) {
+			if (!isMarkdownHeading(node.name)) return;
+			if (index === headingIndex) position = node.from;
+			index += 1;
+		},
+	});
+	return position;
+}
 
 export function taskMarkerChange(
 	from: number,
@@ -54,6 +117,45 @@ class InlineMathWidget extends WidgetType {
 			node.textContent = `$${this.expression}$`;
 		}
 		return node;
+	}
+}
+
+class LinkWidget extends WidgetType {
+	constructor(
+		private readonly source: string,
+		private readonly resolved?: ResolvedLink,
+	) {
+		super();
+	}
+	toDOM(view: EditorView): HTMLElement {
+		const container = document.createElement('span');
+		container.innerHTML = this.resolved
+			? renderResolvedMarkdownLink(this.resolved.label, this.resolved.href, this.resolved.title)
+			: renderMarkdownInline(this.source);
+		const anchor = container.querySelector<HTMLAnchorElement>('a[href]');
+		if (!anchor) {
+			container.className = 'cm-live-link-disabled';
+			container.replaceChildren(document.createTextNode(container.textContent || this.source));
+			return container;
+		}
+		anchor.classList.add('cm-live-link');
+		anchor.addEventListener('click', (event) => {
+			const href = anchor.getAttribute('href') ?? '';
+			if (
+				!href.startsWith('#') ||
+				event.button !== 0 ||
+				event.ctrlKey ||
+				event.metaKey ||
+				event.shiftKey ||
+				event.altKey
+			)
+				return;
+			const position = headingPositionForHash(view, href);
+			if (position === null) return;
+			event.preventDefault();
+			view.dispatch({ effects: EditorView.scrollIntoView(position, { y: 'start' }) });
+		});
+		return anchor;
 	}
 }
 
@@ -197,6 +299,17 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 	try {
 		const text = state.doc.toString();
 		const blocks = collectStructuralBlocks(text);
+		const tree = syntaxTree(state);
+		const renderedInlineRanges: Array<{ from: number; to: number }> = [];
+		tree.iterate({
+			enter(node) {
+				if (node.name === 'Link' || node.name === 'Image' || node.name === 'Autolink' || node.name === 'URL') {
+					renderedInlineRanges.push({ from: node.from, to: node.to });
+					return false;
+				}
+				if (node.name === 'LinkReference') return false;
+			},
+		});
 		const decorations: { from: number; to: number; value: Decoration }[] = [];
 		const add = (from: number, to: number, value: Decoration) => decorations.push({ from, to, value });
 		const active = new Set<number>();
@@ -246,18 +359,37 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 			}
 			const excludedRanges = collectInlineExcludedRanges(lineText);
 			for (const range of excludedRanges) {
-				if (range.kind === 'math') inlineExclusions.push({ from: line.from + range.from, to: line.from + range.to });
-				if (range.kind !== 'math' || isActive) continue;
+				const from = line.from + range.from;
+				const to = line.from + range.to;
+				const renderedByParent = renderedInlineRanges.some((item) => from >= item.from && to <= item.to);
+				if (range.kind !== 'math' || renderedByParent) continue;
+				inlineExclusions.push({ from, to });
+				if (isActive) continue;
 				add(
-					line.from + range.from,
-					line.from + range.to,
+					from,
+					to,
 					Decoration.replace({ widget: new InlineMathWidget(lineText.slice(range.from + 1, range.to - 1)) }),
 				);
 			}
 		}
 		const overlapsExcluded = (from: number, to: number) =>
 			inlineExclusions.some((range) => from < range.to && to > range.from);
-		const tree = syntaxTree(state);
+		const references = new Map<string, LinkDefinition>();
+		tree.iterate({
+			enter: (node) => {
+				if (node.name !== 'LinkReference') return;
+				const label = node.node.getChild('LinkLabel');
+				const destination = node.node.getChild('URL');
+				if (label && destination) {
+					const title = node.node.getChild('LinkTitle');
+					references.set(normalizeReferenceLabel(state.sliceDoc(label.from + 1, label.to - 1)), {
+						href: markdownDestination(state.sliceDoc(destination.from, destination.to)),
+						...(title ? { title: markdownLinkTitle(state.sliceDoc(title.from, title.to)) } : {}),
+					});
+				}
+				return false;
+			},
+		});
 		tree.iterate({
 			from: 0,
 			to: state.doc.length,
@@ -271,23 +403,59 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 					if (!isActive) add(node.from, node.to, Decoration.replace({ widget: new HorizontalRuleWidget() }));
 					return;
 				}
-				if (
-					node.name === 'ATXHeading1' ||
-					node.name === 'ATXHeading2' ||
-					node.name === 'ATXHeading3' ||
-					node.name === 'ATXHeading4' ||
-					node.name === 'ATXHeading5' ||
-					node.name === 'ATXHeading6'
-				) {
+				if (isMarkdownHeading(node.name)) {
 					const level = node.name.at(-1);
 					add(node.from, node.to, Decoration.mark({ class: `cm-live-heading cm-live-h${level}` }));
+					return;
+				}
+				if (node.name === 'Link') {
+					if (!isActive) {
+						const destination = node.node.getChild('URL');
+						let resolved: ResolvedLink | undefined;
+						if (!destination) {
+							const marks = node.node.getChildren('LinkMark');
+							const labelStart = marks[0]?.to ?? node.from + 1;
+							const labelEnd = marks[1]?.from ?? labelStart;
+							const label = state.sliceDoc(labelStart, labelEnd);
+							const referenceLabel = node.node.getChild('LinkLabel');
+							const key = normalizeReferenceLabel(
+								referenceLabel ? state.sliceDoc(referenceLabel.from + 1, referenceLabel.to - 1) || label : label,
+							);
+							const definition = references.get(key);
+							if (definition) resolved = { ...definition, label };
+						}
+						add(
+							node.from,
+							node.to,
+							Decoration.replace({ widget: new LinkWidget(state.sliceDoc(node.from, node.to), resolved) }),
+						);
+					} else add(node.from, node.to, Decoration.mark({ class: 'cm-live-link' }));
+					return false;
+				}
+				if (node.name === 'Autolink') {
+					if (!isActive)
+						add(node.from, node.to, Decoration.replace({ widget: new LinkWidget(state.sliceDoc(node.from, node.to)) }));
+					else add(node.from, node.to, Decoration.mark({ class: 'cm-live-link' }));
+					return false;
+				}
+				if (node.name === 'LinkReference') {
+					if (!isActive) add(node.from, node.to, Decoration.replace({}));
+					return false;
+				}
+				if (node.name === 'URL') {
+					if (!isActive)
+						add(node.from, node.to, Decoration.replace({ widget: new LinkWidget(state.sliceDoc(node.from, node.to)) }));
+					else add(node.from, node.to, Decoration.mark({ class: 'cm-live-link' }));
+					return false;
+				}
+				if (node.name === 'Strikethrough') {
+					add(node.from, node.to, Decoration.mark({ class: 'cm-live-strike' }));
 					return;
 				}
 				if (
 					node.name === 'StrongEmphasis' ||
 					node.name === 'Emphasis' ||
 					node.name === 'InlineCode' ||
-					node.name === 'Link' ||
 					node.name === 'Image'
 				) {
 					if (node.name === 'Image' && !isActive) {
@@ -314,7 +482,7 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 					node.name === 'EmphasisMark' ||
 					node.name === 'CodeMark' ||
 					node.name === 'LinkMark' ||
-					node.name === 'URL' ||
+					node.name === 'StrikethroughMark' ||
 					node.name === 'QuoteMark' ||
 					node.name === 'ListMark'
 				) {
@@ -386,6 +554,7 @@ export function createMarkdownLivePreview(
 	options: MarkdownLivePreviewOptions,
 ): EditorView {
 	localStorage.setItem('wysiwygMode', 'true');
+	const darkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
 	const pendingImageRanges = new Map<number, { from: number; to: number; empty: boolean }>();
 	let nextImagePasteId = 0;
 	const clipboardHandlers = EditorView.domEventHandlers({
@@ -445,17 +614,26 @@ export function createMarkdownLivePreview(
 	const state = EditorState.create({
 		doc: value,
 		extensions: [
-			markdown(),
+			markdownLanguageSupport,
 			syntaxHighlighting(defaultHighlightStyle),
 			livePreviewField,
 			clipboardHandlers,
 			EditorView.clipboardInputFilter.of(normalizeClipboardText),
 			EditorView.lineWrapping,
-			EditorView.theme({
-				'&': { height: '100%' },
-				'.cm-scroller': { overflow: 'auto', fontFamily: 'inherit' },
-				'.cm-content': { padding: '22px 24px', minHeight: '100%', lineHeight: '1.75' },
-			}),
+			EditorView.theme(
+				{
+					'&': { height: '100%' },
+					'.cm-scroller': { overflow: 'auto', fontFamily: 'inherit' },
+					'.cm-content': {
+						padding: '22px 24px',
+						minHeight: '100%',
+						lineHeight: '1.75',
+						caretColor: 'var(--input-caret)',
+					},
+					'.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--input-caret) !important' },
+				},
+				{ dark: darkMode },
+			),
 			EditorView.updateListener.of((update) => {
 				if (!update.docChanged) return;
 				for (const [id, range] of pendingImageRanges) {

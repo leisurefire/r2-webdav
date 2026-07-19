@@ -23,9 +23,9 @@ describe('Markdown clipboard text', () => {
 	});
 
 	it('normalizes multiline LaTeX display delimiters', () => {
-		expect(prepareClipboardText('\\[\r\n\\begin{aligned}\r\nx &= 1 \\\\\r\ny &= 2\r\n\\end{aligned}\r\n\\]')).toBe(
-			'$$\n\\begin{aligned}\nx &= 1 \\\\ny &= 2\n\\end{aligned}\n$$',
-		);
+		const input = ['\\[', '\\begin{aligned}', 'x &= 1 \\\\', 'y &= 2', '\\end{aligned}', '\\]'].join('\r\n');
+		const expected = ['$$', '\\begin{aligned}', 'x &= 1 \\\\', 'y &= 2', '\\end{aligned}', '$$', ''].join('\n');
+		expect(prepareClipboardText(input)).toBe(expected);
 	});
 
 	it('keeps display delimiter examples inside fenced code unchanged', () => {
