@@ -308,11 +308,64 @@ export function blockClickPosition(measured: number | null, from: number, to: nu
 	return Math.max(from, Math.min(measured ?? from, to));
 }
 
-function selectBlockSourceAtCoords(view: EditorView, from: number, to: number, x: number, y: number): void {
+export type RelativePointer = { x: number; y: number };
+
+type ScreenRect = { left: number; right: number; top: number; bottom: number };
+
+function clampUnit(value: number): number {
+	return Math.max(0, Math.min(value, 1));
+}
+
+/** Capture a click relative to the rendered element before its source is shown. */
+export function relativePointer(x: number, y: number, rect: ScreenRect): RelativePointer {
+	return {
+		x: clampUnit((x - rect.left) / Math.max(1, rect.right - rect.left)),
+		y: clampUnit((y - rect.top) / Math.max(1, rect.bottom - rect.top)),
+	};
+}
+
+/** Project a captured click into a block whose layout may have changed. */
+export function projectPointer(pointer: RelativePointer, rect: ScreenRect): { x: number; y: number } {
+	return {
+		x: rect.left + pointer.x * Math.max(0, rect.right - rect.left - 1),
+		y: rect.top + pointer.y * Math.max(0, rect.bottom - rect.top - 1),
+	};
+}
+
+function numericStyle(value: string): number {
+	const parsed = Number.parseFloat(value);
+	return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function expandedSourceRect(view: EditorView, from: number, to: number): ScreenRect {
+	const first = view.lineBlockAt(from);
+	const last = view.lineBlockAt(Math.max(from, Math.min(view.state.doc.length, to - 1)));
+	const contentRect = view.contentDOM.getBoundingClientRect();
+	const style = getComputedStyle(view.contentDOM);
+	return {
+		left: contentRect.left + numericStyle(style.paddingLeft),
+		right: contentRect.right - numericStyle(style.paddingRight),
+		top: view.documentTop + first.top * view.scaleY,
+		bottom: view.documentTop + last.bottom * view.scaleY,
+	};
+}
+
+function selectBlockSourceAtCoords(
+	view: EditorView,
+	from: number,
+	to: number,
+	renderedRect: ScreenRect,
+	x: number,
+	y: number,
+): void {
 	const start = Math.max(0, Math.min(from, view.state.doc.length));
+	const pointer = relativePointer(x, y, renderedRect);
 	view.dispatch({ selection: { anchor: start } });
 	view.requestMeasure({
-		read: () => view.posAtCoords({ x, y }),
+		read: () => {
+			const sourceRect = expandedSourceRect(view, from, to);
+			return view.posAtCoords(projectPointer(pointer, sourceRect));
+		},
 		write: (measured) => {
 			if (view.state.selection.main.anchor !== start) return;
 			const position = blockClickPosition(measured, from, to);
@@ -343,7 +396,8 @@ function bindSourceNavigation(node: HTMLElement, view: EditorView, from: number,
 		event.preventDefault();
 		event.stopPropagation();
 		if (sourceTo !== undefined) {
-			selectBlockSourceAtCoords(view, from, sourceTo, event.clientX, event.clientY);
+			const rect = node.getBoundingClientRect();
+			selectBlockSourceAtCoords(view, from, sourceTo, rect, event.clientX, event.clientY);
 			return;
 		}
 		selectSource(view, view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? from);
@@ -582,12 +636,18 @@ class BlockWidget extends WidgetType {
 		const head = document.createElement('thead');
 		const body = document.createElement('tbody');
 		let sourceClickTimer = 0;
+		table.addEventListener('mousedown', (event) => {
+			if (hasInteractiveTarget(event.target)) return;
+			event.preventDefault();
+			event.stopPropagation();
+		});
 		table.addEventListener('click', (event) => {
 			if (event.detail > 1 || hasInteractiveTarget(event.target)) return;
 			window.clearTimeout(sourceClickTimer);
 			const { clientX, clientY } = event;
+			const rect = table.getBoundingClientRect();
 			sourceClickTimer = window.setTimeout(
-				() => selectBlockSourceAtCoords(view, this.block.from, this.block.to, clientX, clientY),
+				() => selectBlockSourceAtCoords(view, this.block.from, this.block.to, rect, clientX, clientY),
 				220,
 			);
 		});
@@ -978,13 +1038,21 @@ export function createMarkdownLivePreview(
 			if (!(event instanceof MouseEvent) || event.button !== 0 || hasInteractiveTarget(event.target)) return false;
 			const lineElement = (event.target as Element | null)?.closest('.cm-line');
 			if (!(lineElement instanceof HTMLElement)) return false;
+			if ((event.target as Element | null)?.closest('.cm-live-table')) return false;
 			const position = view.posAtDOM(lineElement, 0);
 			if (position === null) return false;
 			const line = view.state.doc.lineAt(position);
 			if (!lineHasRenderedReplacement(view, line.from, line.to)) return false;
 			event.preventDefault();
 			event.stopPropagation();
-			selectBlockSourceAtCoords(view, line.from, line.to, event.clientX, event.clientY);
+			selectBlockSourceAtCoords(
+				view,
+				line.from,
+				line.to,
+				lineElement.getBoundingClientRect(),
+				event.clientX,
+				event.clientY,
+			);
 			return true;
 		},
 		paste(event, view) {

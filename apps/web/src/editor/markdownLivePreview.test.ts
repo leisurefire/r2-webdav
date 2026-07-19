@@ -8,6 +8,8 @@ import {
 	markdownLanguageSupport,
 	markdownLivePreviewHighlightStyle,
 	parsedDeleteRange,
+	projectPointer,
+	relativePointer,
 	taskMarkerChange,
 } from './markdownLivePreview';
 
@@ -40,6 +42,27 @@ describe('live preview block decorations', () => {
 		expect(blockClickPosition(8, 10, 20)).toBe(10);
 		expect(blockClickPosition(16, 10, 20)).toBe(16);
 		expect(blockClickPosition(24, 10, 20)).toBe(20);
+	});
+
+	it('preserves the visible click position when one row expands into several rows', () => {
+		const pointer = relativePointer(250, 124, { left: 100, right: 400, top: 100, bottom: 130 });
+		expect(pointer.x).toBe(0.5);
+		expect(pointer.y).toBe(0.8);
+		expect(projectPointer(pointer, { left: 100, right: 400, top: 100, bottom: 220 })).toEqual({
+			x: 249.5,
+			y: 195.2,
+		});
+	});
+
+	it('clamps clicks outside rendered content before projecting them', () => {
+		expect(relativePointer(20, 180, { left: 100, right: 400, top: 100, bottom: 130 })).toEqual({
+			x: 0,
+			y: 1,
+		});
+		expect(projectPointer({ x: 0, y: 1 }, { left: 50, right: 150, top: 200, bottom: 300 })).toEqual({
+			x: 50,
+			y: 299,
+		});
 	});
 
 	it('places the heading underline reset after the default highlight rules', () => {
