@@ -9,10 +9,15 @@ import {
 describe('collectStructuralBlocks', () => {
 	it('collects the reported mixed inline and block math example without changing source offsets', () => {
 		const source =
-			'包含变量 $x_1,x_2,\\cdots,x_n$ 的**线性方程**是形如\n\n$$\na_1x_1+a_2x_2+\\cdots+a_nx_n=b\n$$\n\n的方程.';
+			'包含变量 $x_1,x_2,\\cdots,x_n$ 的**线性方程**是形如\n\n$$\na_1x_1+a_2x_2+\\cdots+a_nx_n=b\n$$\n\n的方程. 其中 $b$ 与系数 $a_1,a_2,\\cdots,a_n$ 是实数或复数，通常是已知数. 下标 $n$ 则是任意正整数.';
 		const blocks = collectStructuralBlocks(source);
 		expect(blocks).toHaveLength(1);
 		expect(source.slice(blocks[0].from, blocks[0].to)).toBe('$$\na_1x_1+a_2x_2+\\cdots+a_nx_n=b\n$$');
+	});
+
+	it('leaves an unclosed display formula visible as source', () => {
+		const source = 'before\n\n$$\nx + y\nafter';
+		expect(collectStructuralBlocks(source)).toEqual([]);
 	});
 
 	it('does not parse math or table syntax inside a fenced code block', () => {

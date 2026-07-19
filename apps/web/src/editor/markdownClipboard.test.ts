@@ -35,5 +35,6 @@ describe('Markdown clipboard text', () => {
 	it('separates a pasted display formula from adjacent line content', () => {
 		expect(prepareClipboardText('$$\nx + y\n$$', 'x', 'y')).toBe('\n$$\nx + y\n$$\n');
 		expect(prepareClipboardText('$$\nx + y\n$$', '\n', '\n')).toBe('$$\nx + y\n$$');
+		expect(prepareClipboardText('$$\nx + y\n$$')).toBe('$$\nx + y\n$$\n');
 	});
 });

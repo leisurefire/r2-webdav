@@ -30,7 +30,7 @@ export function prepareClipboardText(value: string, before = '', after = ''): st
 	const startsWithDisplayMath = /^\s*\$\$\s*$/.test(lines[0] ?? '');
 	const endsWithDisplayMath = /^\s*\$\$\s*$/.test(lines.at(-1) ?? '');
 	if (startsWithDisplayMath && before && before !== '\n') text = `\n${text}`;
-	if (endsWithDisplayMath && after && after !== '\n') text = `${text}\n`;
+	if (endsWithDisplayMath && after !== '\n') text = `${text}\n`;
 	return text;
 }
 

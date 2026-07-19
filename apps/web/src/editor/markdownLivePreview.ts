@@ -1,5 +1,5 @@
-import { Compartment, EditorState, Transaction } from '@codemirror/state';
-import { EditorView, Decoration, ViewPlugin, ViewUpdate, WidgetType } from '@codemirror/view';
+import { EditorState, StateField, Transaction } from '@codemirror/state';
+import { EditorView, Decoration, WidgetType, type DecorationSet } from '@codemirror/view';
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, defaultHighlightStyle, syntaxTree } from '@codemirror/language';
 import katex from 'katex';
@@ -186,23 +186,20 @@ class BlockWidget extends WidgetType {
 	}
 }
 
-function buildDecorations(view: EditorView) {
+export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 	try {
-		const text = view.state.doc.toString();
+		const text = state.doc.toString();
 		const blocks = collectStructuralBlocks(text);
 		const decorations: { from: number; to: number; value: Decoration }[] = [];
 		const add = (from: number, to: number, value: Decoration) => decorations.push({ from, to, value });
 		const active = new Set<number>();
-		for (const range of view.state.selection.ranges) {
-			const line = view.state.doc.lineAt(range.from);
+		for (const range of state.selection.ranges) {
+			const line = state.doc.lineAt(range.from);
 			active.add(line.from);
-			active.add(view.state.doc.lineAt(range.to).from);
+			active.add(state.doc.lineAt(range.to).from);
 		}
-		const visible = (from: number, to: number) =>
-			view.visibleRanges.some((range) => from <= range.to && to >= range.from);
 		for (const block of blocks) {
-			if (!visible(block.from, block.to)) continue;
-			const touched = view.state.selection.ranges.some((range) => range.from <= block.to && range.to >= block.from);
+			const touched = state.selection.ranges.some((range) => range.from <= block.to && range.to >= block.from);
 			if (!touched)
 				add(
 					block.from,
@@ -211,27 +208,17 @@ function buildDecorations(view: EditorView) {
 				);
 			else {
 				let position = block.from;
-				while (position <= block.to && position <= view.state.doc.length) {
-					const line = view.state.doc.lineAt(position);
+				while (position <= block.to && position <= state.doc.length) {
+					const line = state.doc.lineAt(position);
 					add(line.from, line.from, Decoration.line({ class: `cm-live-raw-block cm-live-raw-${block.kind}` }));
-					if (line.to >= block.to || line.to === view.state.doc.length) break;
+					if (line.to >= block.to || line.to === state.doc.length) break;
 					position = line.to + 1;
 				}
 			}
 		}
-		const visibleLines = new Set<number>();
-		for (const range of view.visibleRanges) {
-			let position = view.state.doc.lineAt(range.from).from;
-			while (position <= range.to) {
-				visibleLines.add(view.state.doc.lineAt(position).number);
-				const line = view.state.doc.lineAt(position);
-				if (line.to === view.state.doc.length) break;
-				position = line.to + 1;
-			}
-		}
 		const inlineExclusions: Array<{ from: number; to: number }> = [];
-		for (const lineNo of visibleLines) {
-			const line = view.state.doc.line(lineNo);
+		for (let lineNo = 1; lineNo <= state.doc.lines; lineNo += 1) {
+			const line = state.doc.line(lineNo);
 			const isActive = active.has(line.from);
 			const block = blocks.find((item) => line.from >= item.from && line.from < item.to);
 			if (block) continue;
@@ -263,82 +250,80 @@ function buildDecorations(view: EditorView) {
 		}
 		const overlapsExcluded = (from: number, to: number) =>
 			inlineExclusions.some((range) => from < range.to && to > range.from);
-		const tree = syntaxTree(view.state);
-		for (const visibleRange of view.visibleRanges) {
-			tree.iterate({
-				from: visibleRange.from,
-				to: visibleRange.to,
-				enter: (node) => {
-					if (overlapsExcluded(node.from, node.to)) return;
-					const block = blocks.find((item) => node.from < item.to && node.to > item.from);
-					if (block) return;
-					const line = view.state.doc.lineAt(node.from);
-					const isActive = active.has(line.from);
-					if (node.name === 'HorizontalRule') {
-						if (!isActive) add(node.from, node.to, Decoration.replace({ widget: new HorizontalRuleWidget() }));
-						return;
+		const tree = syntaxTree(state);
+		tree.iterate({
+			from: 0,
+			to: state.doc.length,
+			enter: (node) => {
+				if (overlapsExcluded(node.from, node.to)) return;
+				const block = blocks.find((item) => node.from < item.to && node.to > item.from);
+				if (block) return;
+				const line = state.doc.lineAt(node.from);
+				const isActive = active.has(line.from);
+				if (node.name === 'HorizontalRule') {
+					if (!isActive) add(node.from, node.to, Decoration.replace({ widget: new HorizontalRuleWidget() }));
+					return;
+				}
+				if (
+					node.name === 'ATXHeading1' ||
+					node.name === 'ATXHeading2' ||
+					node.name === 'ATXHeading3' ||
+					node.name === 'ATXHeading4' ||
+					node.name === 'ATXHeading5' ||
+					node.name === 'ATXHeading6'
+				) {
+					const level = node.name.at(-1);
+					add(node.from, node.to, Decoration.mark({ class: `cm-live-heading cm-live-h${level}` }));
+					return;
+				}
+				if (
+					node.name === 'StrongEmphasis' ||
+					node.name === 'Emphasis' ||
+					node.name === 'InlineCode' ||
+					node.name === 'Link' ||
+					node.name === 'Image'
+				) {
+					if (node.name === 'Image' && !isActive) {
+						add(
+							node.from,
+							node.to,
+							Decoration.replace({ widget: new ImageWidget(state.sliceDoc(node.from, node.to)) }),
+						);
+						return false;
 					}
-					if (
-						node.name === 'ATXHeading1' ||
-						node.name === 'ATXHeading2' ||
-						node.name === 'ATXHeading3' ||
-						node.name === 'ATXHeading4' ||
-						node.name === 'ATXHeading5' ||
-						node.name === 'ATXHeading6'
-					) {
-						const level = node.name.at(-1);
-						add(node.from, node.to, Decoration.mark({ class: `cm-live-heading cm-live-h${level}` }));
-						return;
-					}
-					if (
-						node.name === 'StrongEmphasis' ||
-						node.name === 'Emphasis' ||
-						node.name === 'InlineCode' ||
-						node.name === 'Link' ||
-						node.name === 'Image'
-					) {
-						if (node.name === 'Image' && !isActive) {
-							add(
-								node.from,
-								node.to,
-								Decoration.replace({ widget: new ImageWidget(view.state.sliceDoc(node.from, node.to)) }),
-							);
-							return false;
-						}
-						const className =
-							node.name === 'StrongEmphasis'
-								? 'cm-live-strong'
-								: node.name === 'Emphasis'
-									? 'cm-live-em'
-									: node.name === 'InlineCode'
-										? 'cm-live-inline-code'
-										: 'cm-live-link';
-						add(node.from, node.to, Decoration.mark({ class: className }));
-						return;
-					}
-					if (
-						node.name === 'HeaderMark' ||
-						node.name === 'EmphasisMark' ||
-						node.name === 'CodeMark' ||
-						node.name === 'LinkMark' ||
-						node.name === 'URL' ||
-						node.name === 'QuoteMark' ||
-						node.name === 'ListMark'
-					) {
-						if (!isActive && node.name === 'QuoteMark') {
-							add(node.from, node.to, Decoration.replace({}));
-							add(node.from, node.from, Decoration.line({ class: 'cm-live-blockquote' }));
-						} else if (!isActive && node.name === 'ListMark') {
-							add(
-								node.from,
-								node.to,
-								Decoration.replace({ widget: new ListMarkerWidget(view.state.sliceDoc(node.from, node.to)) }),
-							);
-						} else if (!isActive) add(node.from, node.to, Decoration.replace({}));
-					}
-				},
-			});
-		}
+					const className =
+						node.name === 'StrongEmphasis'
+							? 'cm-live-strong'
+							: node.name === 'Emphasis'
+								? 'cm-live-em'
+								: node.name === 'InlineCode'
+									? 'cm-live-inline-code'
+									: 'cm-live-link';
+					add(node.from, node.to, Decoration.mark({ class: className }));
+					return;
+				}
+				if (
+					node.name === 'HeaderMark' ||
+					node.name === 'EmphasisMark' ||
+					node.name === 'CodeMark' ||
+					node.name === 'LinkMark' ||
+					node.name === 'URL' ||
+					node.name === 'QuoteMark' ||
+					node.name === 'ListMark'
+				) {
+					if (!isActive && node.name === 'QuoteMark') {
+						add(node.from, node.to, Decoration.replace({}));
+						add(node.from, node.from, Decoration.line({ class: 'cm-live-blockquote' }));
+					} else if (!isActive && node.name === 'ListMark') {
+						add(
+							node.from,
+							node.to,
+							Decoration.replace({ widget: new ListMarkerWidget(state.sliceDoc(node.from, node.to)) }),
+						);
+					} else if (!isActive) add(node.from, node.to, Decoration.replace({}));
+				}
+			},
+		});
 		return Decoration.set(
 			decorations.map((item) => item.value.range(item.from, item.to)),
 			true,
@@ -348,24 +333,15 @@ function buildDecorations(view: EditorView) {
 	}
 }
 
-const livePreviewPlugin = ViewPlugin.fromClass(
-	class {
-		decorations = Decoration.none;
-		private parsedTree!: ReturnType<typeof syntaxTree>;
-		constructor(private readonly view: EditorView) {
-			this.parsedTree = syntaxTree(view.state);
-			this.decorations = buildDecorations(view);
-		}
-		update(update: ViewUpdate) {
-			const parsedTree = syntaxTree(update.state);
-			const syntaxTreeChanged = parsedTree !== this.parsedTree;
-			this.parsedTree = parsedTree;
-			if (update.docChanged || update.selectionSet || update.viewportChanged || syntaxTreeChanged)
-				this.decorations = buildDecorations(this.view);
-		}
+export const livePreviewField = StateField.define<DecorationSet>({
+	create: buildLivePreviewDecorations,
+	update(decorations, transaction) {
+		return transaction.docChanged || transaction.selection
+			? buildLivePreviewDecorations(transaction.state)
+			: decorations;
 	},
-	{ decorations: (value) => value.decorations },
-);
+	provide: (field) => EditorView.decorations.from(field),
+});
 
 type MarkdownLivePreviewOptions = {
 	onChange: (value: string, immediate: boolean) => void;
@@ -401,7 +377,6 @@ export function createMarkdownLivePreview(
 	options: MarkdownLivePreviewOptions,
 ): EditorView {
 	localStorage.setItem('wysiwygMode', 'true');
-	const livePreview = new Compartment();
 	const pendingImageRanges = new Map<number, { from: number; to: number; empty: boolean }>();
 	let nextImagePasteId = 0;
 	const clipboardHandlers = EditorView.domEventHandlers({
@@ -463,7 +438,7 @@ export function createMarkdownLivePreview(
 		extensions: [
 			markdown(),
 			syntaxHighlighting(defaultHighlightStyle),
-			livePreview.of(livePreviewPlugin),
+			livePreviewField,
 			clipboardHandlers,
 			EditorView.clipboardInputFilter.of(normalizeClipboardText),
 			EditorView.lineWrapping,

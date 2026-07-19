@@ -102,7 +102,6 @@ export function collectStructuralBlocks(text: string): StructuralBlock[] {
 	}
 
 	if (fence) blocks.push({ from: fence.from, to: text.length, kind: 'fence' });
-	if (math !== null) blocks.push({ from: math, to: text.length, kind: 'math' });
 	if (details) blocks.push({ from: details.from, to: text.length, kind: 'details' });
 	if (table !== null) blocks.push({ ...table, kind: 'table' });
 	return blocks.sort((left, right) => left.from - right.from);
