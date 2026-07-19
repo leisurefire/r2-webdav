@@ -1456,6 +1456,11 @@ dialog::backdrop {
 	gap: 4px;
 }
 
+.note-actions .row-action.active {
+	color: var(--accent);
+	background: var(--surface);
+}
+
 .note-split {
 	min-height: 0;
 	flex: 1;

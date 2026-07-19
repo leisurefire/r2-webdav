@@ -24,9 +24,10 @@ import {
 
 export const markdownLanguageSupport = markdown({ extensions: GFM });
 
-// The default CodeMirror style underlines headings, which is useful for source
-// editors but conflicts with the rendered live-preview treatment.
-const markdownLivePreviewHighlightOverrides = HighlightStyle.define([
+// Keep the reset in the same style module as CodeMirror's defaults so its
+// documented rule ordering reliably removes the default heading underline.
+export const markdownLivePreviewHighlightStyle = HighlightStyle.define([
+	...defaultHighlightStyle.specs,
 	{ tag: tags.heading, textDecoration: 'none', fontWeight: 'bold' },
 ]);
 
@@ -103,17 +104,40 @@ function selectSource(view: EditorView, from: number, to = from): void {
 	view.focus();
 }
 
+export function blockClickPosition(measured: number | null, from: number, to: number): number {
+	return Math.max(from, Math.min(measured ?? from, to));
+}
+
+function selectBlockSourceAtCoords(view: EditorView, from: number, to: number, x: number, y: number): void {
+	selectSource(view, from);
+	view.requestMeasure({
+		read: () => view.posAtCoords({ x, y }),
+		write: (measured) => {
+			if (view.state.selection.main.anchor !== from) return;
+			const position = blockClickPosition(measured, from, to);
+			view.dispatch({
+				selection: { anchor: position },
+				effects: EditorView.scrollIntoView(position, { y: 'nearest' }),
+			});
+			view.focus();
+		},
+	});
+}
+
 function hasInteractiveTarget(target: EventTarget | null): boolean {
 	return target instanceof Element && !!target.closest('a,button,input,textarea,select,summary');
 }
 
-function bindSourceNavigation(node: HTMLElement, view: EditorView, from: number, block = false): void {
+function bindSourceNavigation(node: HTMLElement, view: EditorView, from: number, blockTo?: number): void {
 	node.addEventListener('mousedown', (event) => {
 		if (!(event instanceof MouseEvent) || event.button !== 0 || hasInteractiveTarget(event.target)) return;
 		event.preventDefault();
 		event.stopPropagation();
-		const position = block ? from : (view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? from);
-		selectSource(view, position);
+		if (blockTo !== undefined) {
+			selectBlockSourceAtCoords(view, from, blockTo, event.clientX, event.clientY);
+			return;
+		}
+		selectSource(view, view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? from);
 	});
 }
 
@@ -325,7 +349,7 @@ class BlockWidget extends WidgetType {
 				wrapper.append(properties);
 			}
 		} else wrapper.innerHTML = renderMarkdown(this.source);
-		bindSourceNavigation(wrapper, view, this.block.from, true);
+		bindSourceNavigation(wrapper, view, this.block.from, this.block.to);
 		return wrapper;
 	}
 	private tableDOM(view: EditorView): HTMLElement {
@@ -333,7 +357,7 @@ class BlockWidget extends WidgetType {
 		if (!parsed) {
 			const fallback = document.createElement('pre');
 			fallback.textContent = this.source;
-			bindSourceNavigation(fallback, view, this.block.from, true);
+			bindSourceNavigation(fallback, view, this.block.from, this.block.to);
 			return fallback;
 		}
 		const table = document.createElement('table');
@@ -344,7 +368,11 @@ class BlockWidget extends WidgetType {
 		table.addEventListener('click', (event) => {
 			if (event.detail > 1 || hasInteractiveTarget(event.target)) return;
 			window.clearTimeout(sourceClickTimer);
-			sourceClickTimer = window.setTimeout(() => selectSource(view, this.block.from), 220);
+			const { clientX, clientY } = event;
+			sourceClickTimer = window.setTimeout(
+				() => selectBlockSourceAtCoords(view, this.block.from, this.block.to, clientX, clientY),
+				220,
+			);
 		});
 		const rows = parsed.rows;
 		rows.forEach((cells, rowIndex) => {
@@ -750,8 +778,7 @@ export function createMarkdownLivePreview(
 		doc: value,
 		extensions: [
 			markdownLanguageSupport,
-			syntaxHighlighting(defaultHighlightStyle),
-			syntaxHighlighting(markdownLivePreviewHighlightOverrides),
+			syntaxHighlighting(markdownLivePreviewHighlightStyle),
 			livePreviewField,
 			clipboardHandlers,
 			EditorView.clipboardInputFilter.of(normalizeClipboardText),

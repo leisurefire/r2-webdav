@@ -5,6 +5,18 @@
 	white-space: nowrap;
 }
 
+.note-save-status[data-state='pending'] {
+	color: var(--muted);
+}
+
+.note-save-status[data-state='syncing'] {
+	color: var(--accent);
+}
+
+.note-save-status[data-state='failed'] {
+	color: #b42318;
+}
+
 /* Notes are a two-column workspace: one tree and one document. */
 .notes-layout {
 	display: grid;
@@ -165,6 +177,22 @@
 	margin-left: 16px;
 	padding: 1px 0 3px 12px;
 	border-left: 1px solid var(--line);
+}
+
+.notes-tree-root {
+	margin-left: 0;
+	padding: 0 0 4px;
+	border-left: 0;
+}
+
+.notes-tree-root.drag-over,
+.notes-tree.root-drag-over {
+	background: color-mix(in srgb, var(--accent) 8%, transparent);
+	border-radius: 6px;
+}
+
+.notes-tree-root .note-card::before {
+	display: none;
 }
 
 .note-card {
@@ -447,6 +475,7 @@
 	border-radius: 6px;
 	background: var(--surface);
 	color: var(--ink);
+	cursor: text;
 }
 
 .cm-live-code-chrome {
@@ -616,6 +645,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 	border: 1px solid var(--line);
 	text-align: left;
 	vertical-align: top;
+	cursor: text;
 }
 
 .cm-live-table th {

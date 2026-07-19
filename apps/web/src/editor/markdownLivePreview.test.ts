@@ -1,6 +1,13 @@
 import { EditorState } from '@codemirror/state';
+import { tags } from '@lezer/highlight';
 import { describe, expect, it } from 'vitest';
-import { livePreviewField, markdownLanguageSupport, taskMarkerChange } from './markdownLivePreview';
+import {
+	blockClickPosition,
+	livePreviewField,
+	markdownLanguageSupport,
+	markdownLivePreviewHighlightStyle,
+	taskMarkerChange,
+} from './markdownLivePreview';
 
 const REPORTED_SOURCE =
 	'包含变量 $x_1,x_2,\\cdots,x_n$ 的**线性方程**是形如\n\n$$\na_1x_1+a_2x_2+\\cdots+a_nx_n=b\n$$\n\n的方程. 其中 $b$ 与系数 $a_1,a_2,\\cdots,a_n$ 是实数或复数，通常是已知数. 下标 $n$ 则是任意正整数.';
@@ -26,6 +33,21 @@ function widgetReplacements(state: EditorState): Array<{ from: number; to: numbe
 }
 
 describe('live preview block decorations', () => {
+	it('keeps measured block clicks inside the source block', () => {
+		expect(blockClickPosition(null, 10, 20)).toBe(10);
+		expect(blockClickPosition(8, 10, 20)).toBe(10);
+		expect(blockClickPosition(16, 10, 20)).toBe(16);
+		expect(blockClickPosition(24, 10, 20)).toBe(20);
+	});
+
+	it('places the heading underline reset after the default highlight rules', () => {
+		expect(markdownLivePreviewHighlightStyle.specs.at(-1)).toEqual({
+			tag: tags.heading,
+			textDecoration: 'none',
+			fontWeight: 'bold',
+		});
+	});
+
 	it('loads the reported mixed Markdown and math document', () => {
 		const state = createState(REPORTED_SOURCE);
 		const blocks = blockReplacements(state);
