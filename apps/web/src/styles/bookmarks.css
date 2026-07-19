@@ -1,4 +1,19 @@
 /* Link collections share the same quiet surfaces as the notes tree. */
+.collection-path {
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 0;
+	white-space: nowrap;
+	overflow-x: auto;
+	overflow-y: hidden;
+	scrollbar-width: none;
+}
+
+.collection-path::-webkit-scrollbar {
+	display: none;
+}
+
 .notes-layout.bookmark-layout {
 	display: grid;
 	grid-template-columns: minmax(240px, 288px) minmax(0, 1fr);
@@ -19,7 +34,6 @@
 	border-radius: 8px;
 	overflow-y: auto;
 	overflow-x: hidden;
-	border-radius: 0;
 	background: var(--panel-bg);
 	box-shadow: none;
 }
@@ -61,7 +75,7 @@
 	gap: 8px;
 	padding: 0 8px 0 calc(8px + var(--bookmark-depth, 0) * 16px);
 	border: 0;
-	border-radius: 0;
+	border-radius: 6px;
 	background: transparent;
 	color: var(--muted);
 	text-align: left;
@@ -76,6 +90,10 @@
 .bookmark-folder.active {
 	background: var(--hover-bg);
 	color: var(--ink);
+}
+
+.bookmark-folder.collection-tree-row {
+	padding-left: calc(8px + var(--bookmark-depth, 0) * 16px);
 }
 
 .bookmark-tree-node {
@@ -168,7 +186,7 @@
 	min-height: 32px;
 	display: inline-flex;
 	align-items: center;
-	gap: 3px;
+	gap: 0;
 	margin: 4px 0 8px;
 	padding: 4px;
 	border: 0;
@@ -176,6 +194,7 @@
 	background: transparent;
 	color: var(--muted);
 	font-size: 12px;
+	white-space: nowrap;
 	overflow-x: auto;
 	overflow-y: hidden;
 	scrollbar-width: none;

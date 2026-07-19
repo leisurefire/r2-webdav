@@ -67,7 +67,7 @@
 	position: relative;
 	min-width: 0;
 	margin-bottom: 0;
-	border-radius: 0;
+	border-radius: 6px;
 	background: transparent;
 	transition:
 		background 140ms ease,
@@ -92,11 +92,14 @@
 	text-align: left;
 }
 
-.note-tree-special:hover,
-.note-tree-special.active,
-.note-folder-card:hover,
-.note-folder-card.active,
 .note-folder-card.drag-over {
+	background: var(--hover-bg);
+}
+
+.collection-tree-row:hover,
+.collection-tree-row.active,
+.note-tree-special.active > .collection-tree-row,
+.note-folder-card.active > .collection-tree-row {
 	background: var(--hover-bg);
 }
 
@@ -167,7 +170,7 @@
 
 .note-card {
 	position: relative;
-	border-radius: 0;
+	border-radius: 6px;
 	background: transparent;
 	box-shadow: none;
 	transition: background 140ms ease;
@@ -176,6 +179,14 @@
 .notes-tree-children .note-card:hover,
 .notes-tree-children .note-card.active {
 	background: var(--hover-bg);
+}
+
+.notes-tree-children .note-card.active {
+	box-shadow: none;
+}
+
+.note-tree-node > .collection-tree-row {
+	padding-left: calc(8px + var(--tree-depth, 0) * 16px);
 }
 
 .notes-tree-children .note-card-open {
@@ -347,18 +358,34 @@
 	min-width: 0;
 	display: flex;
 	align-items: center;
-	gap: 5px;
+	gap: 0;
 	color: var(--quiet);
 	font-size: 10px;
 	line-height: 1.2;
 	white-space: nowrap;
-	overflow: hidden;
+	overflow-x: auto;
+	overflow-y: hidden;
+	scrollbar-width: none;
+}
+
+.note-location::-webkit-scrollbar {
+	display: none;
 }
 
 .note-location span {
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+.note-location span:not([aria-hidden='true']) {
+	padding: 2px 4px;
+	border-radius: 4px;
+}
+
+.note-location span:last-child {
+	background: var(--hover-bg);
+	color: var(--ink);
 }
 
 .note-location span[aria-hidden='true'] {

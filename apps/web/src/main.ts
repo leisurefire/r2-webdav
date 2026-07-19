@@ -1262,6 +1262,17 @@ interface BookmarkFolder {
 	folders: BookmarkFolder[];
 }
 
+function renderTreeNodes<T>(
+	nodes: T[],
+	childrenOf: (node: T) => T[],
+	renderNode: (node: T, depth: number, children: string) => string,
+	depth = 0,
+): string {
+	return nodes
+		.map((node) => renderNode(node, depth, renderTreeNodes(childrenOf(node), childrenOf, renderNode, depth + 1)))
+		.join('');
+}
+
 let bookmarkFolderPath: string[] = [];
 const bookmarkExpandedFolders = new Set<string>();
 
@@ -1318,7 +1329,9 @@ function bookmarkCardMarkup(card: BookmarkCard): string {
 
 function bookmarkPathMarkup(path: string[]): string {
 	const rootLabel = locale === 'zh' ? '全部链接' : 'All links';
-	const crumbs = [`<button class="bookmark-path-item" data-bookmark-path="">${rootLabel}</button>`];
+	const crumbs = [
+		`<button class="bookmark-path-item ${path.length ? '' : 'current'}" data-bookmark-path="">${rootLabel}</button>`,
+	];
 	path.forEach((name, index) => {
 		const target = path.slice(0, index + 1).join('\u001f');
 		crumbs.push('<span class="bookmark-path-separator" aria-hidden="true">/</span>');
@@ -1326,7 +1339,7 @@ function bookmarkPathMarkup(path: string[]): string {
 			`<button class="bookmark-path-item ${index === path.length - 1 ? 'current' : ''}" data-bookmark-path="${html(target)}">${html(name)}</button>`,
 		);
 	});
-	return `<nav class="bookmark-path" aria-label="${locale === 'zh' ? '当前收藏路径' : 'Current collection path'}">${crumbs.join('')}</nav>`;
+	return `<nav class="collection-path bookmark-path" aria-label="${locale === 'zh' ? '当前收藏路径' : 'Current collection path'}">${crumbs.join('')}</nav>`;
 }
 
 function bookmarkFolderOptions(root: BookmarkFolder): BookmarkFolder[] {
@@ -1344,16 +1357,15 @@ function bookmarkFolderOptions(root: BookmarkFolder): BookmarkFolder[] {
 function bookmarkFolderTreeMarkup(root: BookmarkFolder, selectedKey: string): string {
 	const caret = (expanded: boolean) =>
 		`<i class="tree-caret-icon" data-lucide="${expanded ? 'chevron-down' : 'chevron-right'}" aria-hidden="true"></i>`;
-	const renderFolders = (folders: BookmarkFolder[], depth: number): string =>
-		folders
-			.map((folder) => {
-				const active = folder.key === selectedKey;
-				const expanded = bookmarkExpandedFolders.has(folder.key) || active;
-				return `<div class="bookmark-tree-node ${expanded ? 'expanded' : ''}" style="--bookmark-depth:${depth}"><button class="bookmark-folder ${active ? 'active' : ''}" data-bookmark-folder="${html(folder.key)}">${caret(expanded)}<span>${html(folder.name)}</span><small>${folder.links.length}</small></button>${expanded && folder.folders.length ? `<div class="bookmark-tree-children">${renderFolders(folder.folders, depth + 1)}</div>` : ''}</div>`;
-			})
-			.join('');
-
-	return renderFolders(root.folders, 0);
+	return renderTreeNodes(
+		root.folders,
+		(folder) => folder.folders,
+		(folder, depth, children) => {
+			const active = folder.key === selectedKey;
+			const expanded = bookmarkExpandedFolders.has(folder.key) || active;
+			return `<div class="bookmark-tree-node ${expanded ? 'expanded' : ''}" style="--bookmark-depth:${depth}"><button class="bookmark-folder collection-tree-row ${active ? 'active' : ''}" data-bookmark-folder="${html(folder.key)}">${caret(expanded)}<span>${html(folder.name)}</span><small>${folder.links.length}</small></button>${expanded && children ? `<div class="bookmark-tree-children">${children}</div>` : ''}</div>`;
+		},
+	);
 }
 
 function noteFolderCachePart(folderId = selectedNoteFolderId): string {
@@ -1448,7 +1460,7 @@ function noteLocationMarkup(note: Note): string {
 			? '未分类'
 			: 'Unfiled';
 	const parts = [folder, note.title].filter((part): part is string => Boolean(part?.trim()));
-	return `<div class="note-location" title="${html(parts.join(' / '))}">${parts.map((part, index) => `${index ? '<span aria-hidden="true">/</span>' : ''}<span>${html(part)}</span>`).join('')}</div>`;
+	return `<div class="collection-path note-location" title="${html(parts.join(' / '))}">${parts.map((part, index) => `${index ? '<span aria-hidden="true">/</span>' : ''}<span>${html(part)}</span>`).join('')}</div>`;
 }
 
 function noteEditorMarkup(selected: Note, mobile = false): string {
@@ -1689,7 +1701,7 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 }
 
 function notesTabsMarkup(): string {
-	return `<div class="segment-control" role="tablist"><button class="${notesView === 'active' ? 'active' : ''}" data-note-view="active">${t('active')}</button>${bookmarkHub ? `<button class="${notesView === 'bookmarks' ? 'active' : ''}" data-note-view="bookmarks">${t('bookmarks')}</button>` : ''}</div>`;
+	return `<div class="segment-control" role="tablist"><button class="${notesView !== 'bookmarks' ? 'active' : ''}" data-note-view="active">${t('active')}</button>${bookmarkHub ? `<button class="${notesView === 'bookmarks' ? 'active' : ''}" data-note-view="bookmarks">${t('bookmarks')}</button>` : ''}</div>`;
 }
 
 function noteCardMarkup(note: Note, selected?: Note): string {
@@ -1706,29 +1718,85 @@ function noteCardMarkup(note: Note, selected?: Note): string {
 function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 	const caret = (expanded: boolean) =>
 		`<i class="tree-caret-icon" data-lucide="${expanded ? 'chevron-down' : 'chevron-right'}" aria-hidden="true"></i>`;
-	const active = (folderId: string | null | undefined) =>
-		notesView === 'active' &&
-		((folderId === undefined && selectedNoteFolderId === undefined) || folderId === selectedNoteFolderId)
-			? 'active'
-			: '';
 	const notesFor = (folderId: string | null) => data.items.filter((note) => (note.folderId ?? null) === folderId);
-	const noteChildren = (items: Note[]) =>
-		items.length
-			? `<div class="notes-tree-children">${items.map((note) => noteCardMarkup(note, selected)).join('')}</div>`
-			: '';
-	const folderRow = (folder: NoteFolder) => {
-		const expanded =
-			notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === folder.id);
-		return `<div class="note-folder-card ${active(folder.id)} ${expanded ? 'expanded' : ''}" data-note-folder-drop="${html(folder.id)}"><button type="button" data-note-folder-filter="${html(folder.id)}">${caret(expanded)}<span>${html(folder.name)}</span><small>${folder.noteCount}</small></button><div class="note-folder-actions"><button class="row-action" data-rename-note-folder="${html(folder.id)}" title="${locale === 'zh' ? '重命名' : 'Rename'}" aria-label="${locale === 'zh' ? '重命名' : 'Rename'}"><i data-lucide="pencil"></i></button><button class="row-action danger" data-delete-note-folder="${html(folder.id)}" title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button></div>${expanded ? noteChildren(notesFor(folder.id)) : ''}</div>`;
+	type NoteTreeNode = {
+		kind: 'folder' | 'note' | 'archive' | 'root';
+		key: string;
+		name: string;
+		count: number | string;
+		expanded: boolean;
+		active: boolean;
+		children: NoteTreeNode[];
+		note?: Note;
 	};
+	const noteNodes = (items: Note[]): NoteTreeNode[] =>
+		items.map((note) => ({
+			kind: 'note',
+			key: note.id,
+			name: note.title,
+			count: '',
+			expanded: false,
+			active: note.id === selected?.id,
+			children: [],
+			note,
+		}));
 	const rootNotes = notesFor(null);
+	const tree: NoteTreeNode[] = [
+		{
+			kind: 'root',
+			key: 'root',
+			name: locale === 'zh' ? '未分类' : 'Unfiled',
+			count: rootNotes.length || '',
+			expanded: notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === null),
+			active: notesView === 'active' && selectedNoteFolderId === null,
+			children: noteNodes(rootNotes),
+		},
+		...noteFolders.map((folder) => ({
+			kind: 'folder' as const,
+			key: folder.id,
+			name: folder.name,
+			count: folder.noteCount,
+			expanded: notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === folder.id),
+			active: notesView === 'active' && selectedNoteFolderId === folder.id,
+			children: noteNodes(notesFor(folder.id)),
+		})),
+		{
+			kind: 'archive',
+			key: 'archive',
+			name: t('archived'),
+			count: notesView === 'archived' ? data.total : '',
+			expanded: notesView === 'archived',
+			active: notesView === 'archived',
+			children: notesView === 'archived' ? noteNodes(data.items) : [],
+		},
+	];
+	const treeMarkup = renderTreeNodes(
+		tree,
+		(node) => node.children,
+		(node, depth, children) => {
+			if (node.kind === 'note') return node.note ? noteCardMarkup(node.note, selected) : '';
+			const folder = node.kind === 'folder';
+			const icon =
+				node.kind === 'archive'
+					? '<i data-lucide="archive"></i>'
+					: node.kind === 'root'
+						? caret(node.expanded)
+						: caret(node.expanded);
+			const actions = folder
+				? `<div class="note-folder-actions"><button class="row-action" data-rename-note-folder="${html(node.key)}" title="${locale === 'zh' ? '重命名' : 'Rename'}" aria-label="${locale === 'zh' ? '重命名' : 'Rename'}"><i data-lucide="pencil"></i></button><button class="row-action danger" data-delete-note-folder="${html(node.key)}" title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button></div>`
+				: '';
+			const filter =
+				node.kind === 'archive'
+					? 'data-note-archived'
+					: `data-note-folder-filter="${node.kind === 'root' ? 'root' : html(node.key)}"`;
+			const drop = node.kind === 'archive' ? 'archive' : node.kind === 'root' ? 'root' : node.key;
+			return `<div class="note-tree-node ${folder ? 'note-folder-card' : 'note-tree-special'} ${node.kind === 'archive' ? 'archive-tree-item' : ''} ${node.active ? 'active' : ''} ${node.expanded ? 'expanded' : ''}" data-note-folder-drop="${html(drop)}" style="--tree-depth:${depth}"><button type="button" class="collection-tree-row" ${filter}>${icon}<span>${html(node.name)}</span><small>${node.count || ''}</small></button>${actions}${node.expanded && children ? `<div class="notes-tree-children">${children}</div>` : ''}</div>`;
+		},
+	);
 	return `<aside class="notes-folders" aria-label="${locale === 'zh' ? '便签目录' : 'Note folders'}">
 		<div class="notes-folders-head"><strong>${locale === 'zh' ? '便签目录' : 'Folders'}</strong><button class="row-action" data-new-note-folder title="${locale === 'zh' ? '新建目录' : 'New folder'}" aria-label="${locale === 'zh' ? '新建目录' : 'New folder'}"><i data-lucide="folder-plus"></i></button></div>
 		<div class="notes-tree" data-notes-tree>
-			<div class="note-tree-special ${active(undefined)}" data-note-folder-drop="all"><button type="button" data-note-folder-filter="all"><i data-lucide="sticky-note"></i><span>${locale === 'zh' ? '全部便签' : 'All notes'}</span><small>${selectedNoteFolderId === undefined && notesView === 'active' ? data.total : ''}</small></button></div>
-			<div class="note-tree-special ${notesView === 'active' && selectedNoteFolderId === null ? 'active' : ''} ${notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === null) ? 'expanded' : ''}" data-note-folder-drop="root"><button type="button" data-note-folder-filter="root">${caret(notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === null))}<span>${locale === 'zh' ? '未分类' : 'Unfiled'}</span><small>${rootNotes.length || ''}</small></button>${notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === null) ? noteChildren(rootNotes) : ''}</div>
-			${noteFolders.map(folderRow).join('')}
-			<div class="note-tree-special archive-tree-item ${notesView === 'archived' ? 'active' : ''}" data-note-folder-drop="archive"><button type="button" data-note-archived><i data-lucide="archive"></i><span>${t('archived')}</span><small>${notesView === 'archived' ? data.total : ''}</small></button>${notesView === 'archived' ? noteChildren(data.items) : ''}</div>
+			${treeMarkup}
 		</div>
 		<button class="button primary floating-primary-action" id="new-note" title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i><span>${t('newNote')}</span></button>
 		<div class="notes-load-status" aria-live="polite">${notesLoadingMore ? loadingMarkup(true) : ''}</div>
@@ -1858,8 +1926,8 @@ function paintBookmarkView(): void {
 	const folderTree = bookmarkFolderTreeMarkup(root, selectedFolderKey);
 	content.innerHTML = `<div class="notes-layout bookmark-layout">
 		<div class="notes-inner-toolbar">${notesTabsMarkup()}<div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择收藏目录' : 'Choose collection folder'}">${folderOptions}</select></div><span class="toolbar-spacer"></span><span class="note-count">${cards.length}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}" aria-label="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}"><i data-lucide="refresh-cw"></i></button></div>
-		<aside class="bookmark-folders"><div class="bookmark-folders-head"><strong>${locale === 'zh' ? '收藏目录' : 'Folders'}</strong></div><div class="bookmark-folder-tree"><button class="bookmark-folder bookmark-folder-root expanded ${folder === root ? 'active' : ''}" data-bookmark-folder="" style="--bookmark-depth:0"><i class="tree-caret-icon" data-lucide="chevron-down" aria-hidden="true"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderTree || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</div></aside>
-		<div class="bookmarks-main">${bookmarkFolderPath.length ? bookmarkPathMarkup(bookmarkFolderPath) : ''}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div></div>
+		<aside class="bookmark-folders"><div class="bookmark-folders-head"><strong>${locale === 'zh' ? '收藏目录' : 'Folders'}</strong></div><div class="bookmark-folder-tree"><button class="bookmark-folder collection-tree-row bookmark-folder-root expanded ${folder === root ? 'active' : ''}" data-bookmark-folder="" style="--bookmark-depth:0"><i class="tree-caret-icon" data-lucide="chevron-down" aria-hidden="true"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderTree || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</div></aside>
+		<div class="bookmarks-main">${bookmarkPathMarkup(bookmarkFolderPath)}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div></div>
 	</div>`;
 	refreshIcons();
 	bindBookmarkPreviews(content);
@@ -1935,7 +2003,8 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 		paintBookmarkView();
 		return;
 	}
-	const selected = data.items.find((note) => note.id === selectedId) ?? data.items[0];
+	const selected =
+		data.items.find((note) => note.id === selectedId) ?? data.items.find((note) => note.pinned) ?? data.items[0];
 	content.innerHTML = `<div class="notes-layout">
 		<div class="notes-inner-toolbar">${notesTabsMarkup()}<span class="toolbar-spacer"></span><span class="note-count">${data.total}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}" aria-label="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}"><i data-lucide="refresh-cw"></i></button></div>
 		${notesFolderSidebarMarkup(data, selected)}
