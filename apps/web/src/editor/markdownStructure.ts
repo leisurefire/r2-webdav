@@ -319,6 +319,50 @@ export function splitTableRow(line: string): string[] {
 	return cells;
 }
 
+export type TableCellSourceRange = { from: number; to: number };
+
+/** Return the source ranges of the visible cell values in one table row. */
+export function tableCellSourceRanges(line: string): TableCellSourceRange[] {
+	const trimmedStart = line.search(/\S|$/);
+	const trimmedEnd = line.trimEnd().length;
+	let contentFrom = trimmedStart;
+	let contentTo = trimmedEnd;
+	if (line[contentFrom] === '|') contentFrom += 1;
+	if (contentTo > contentFrom && line[contentTo - 1] === '|') contentTo -= 1;
+	const ranges: TableCellSourceRange[] = [];
+	let cellFrom = contentFrom;
+	let escaped = false;
+	let codeTicks = 0;
+	for (let index = contentFrom; index < contentTo; index += 1) {
+		const char = line[index];
+		if (char === '`' && !escaped) {
+			const ticks = line.slice(index).match(/^`+/)![0];
+			if (codeTicks === 0) codeTicks = ticks.length;
+			else if (codeTicks === ticks.length) codeTicks = 0;
+			index += ticks.length - 1;
+			continue;
+		}
+		if (char === '|' && !escaped && codeTicks === 0) {
+			let from = cellFrom;
+			let to = index;
+			while (from < to && /\s/.test(line[from])) from += 1;
+			while (to > from && /\s/.test(line[to - 1])) to -= 1;
+			ranges.push({ from, to });
+			cellFrom = index + 1;
+			escaped = false;
+			continue;
+		}
+		if (escaped) escaped = false;
+		else if (char === '\\') escaped = true;
+	}
+	let from = cellFrom;
+	let to = contentTo;
+	while (from < to && /\s/.test(line[from])) from += 1;
+	while (to > from && /\s/.test(line[to - 1])) to -= 1;
+	ranges.push({ from, to });
+	return ranges;
+}
+
 export function parseTableBlock(source: string): ParsedTable | null {
 	const lines = source.trimEnd().split('\n');
 	if (lines.length < 2) return null;

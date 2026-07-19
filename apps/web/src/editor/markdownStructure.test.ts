@@ -7,6 +7,7 @@ import {
 	parseTableBlock,
 	serializeTableRows,
 	splitTableRow,
+	tableCellSourceRanges,
 } from './markdownStructure';
 
 describe('collectStructuralBlocks', () => {
@@ -103,6 +104,10 @@ describe('collectObsidianInlineRanges', () => {
 describe('splitTableRow', () => {
 	it('keeps escaped pipes inside cells', () => {
 		expect(splitTableRow('| a \\| b | `c|d` |')).toEqual(['a | b', '`c|d`']);
+		expect(tableCellSourceRanges('| a \\| b | `c|d` |')).toEqual([
+			{ from: 2, to: 8 },
+			{ from: 11, to: 16 },
+		]);
 	});
 
 	it('serializes every cell without exposing pipe delimiters', () => {

@@ -12,7 +12,7 @@ import {
 	collectStructuralBlocks,
 	parseFrontmatterBlock,
 	parseTableBlock,
-	serializeTableRows,
+	tableCellSourceRanges,
 	type StructuralBlock,
 } from './markdownStructure';
 import { normalizeClipboardText, prepareClipboardText, readClipboardText } from './markdownClipboard';
@@ -299,108 +299,108 @@ function selectSource(view: EditorView, from: number, to = from): void {
 	const end = Math.max(start, Math.min(to, view.state.doc.length));
 	view.dispatch({
 		selection: { anchor: start, head: end },
-		effects: EditorView.scrollIntoView(start, { y: 'center' }),
+		effects: EditorView.scrollIntoView(start, { y: 'nearest' }),
 	});
 	view.focus();
 }
 
-export function blockClickPosition(measured: number | null, from: number, to: number): number {
-	return Math.max(from, Math.min(measured ?? from, to));
-}
-
-export type RelativePointer = { x: number; y: number };
-
-type ScreenRect = { left: number; right: number; top: number; bottom: number };
+export type ScreenRect = { left: number; right: number; top: number; bottom: number };
 
 function clampUnit(value: number): number {
 	return Math.max(0, Math.min(value, 1));
 }
 
-/** Capture a click relative to the rendered element before its source is shown. */
-export function relativePointer(x: number, y: number, rect: ScreenRect): RelativePointer {
-	return {
-		x: clampUnit((x - rect.left) / Math.max(1, rect.right - rect.left)),
-		y: clampUnit((y - rect.top) / Math.max(1, rect.bottom - rect.top)),
-	};
+/** Map a visible text boundary back to its matching boundary in Markdown source. */
+export function visibleSourcePosition(source: string, visible: string, visibleOffset: number): number {
+	const target = Math.max(0, Math.min(visibleOffset, visible.length));
+	let sourceOffset = 0;
+	for (let visibleIndex = 0; visibleIndex < visible.length; visibleIndex += 1) {
+		const char = visible[visibleIndex];
+		let match = -1;
+		if (/\s/.test(char)) {
+			for (let index = sourceOffset; index < source.length; index += 1) {
+				if (/\s/.test(source[index])) {
+					match = index;
+					break;
+				}
+			}
+		} else match = source.indexOf(char, sourceOffset);
+		if (match < 0) return Math.round((target / Math.max(1, visible.length)) * source.length);
+		if (visibleIndex === target) return match;
+		sourceOffset = match + 1;
+		if (visibleIndex + 1 === target) return sourceOffset;
+	}
+	return sourceOffset;
 }
 
-/** Project a captured click into a block whose layout may have changed. */
-export function projectPointer(pointer: RelativePointer, rect: ScreenRect): { x: number; y: number } {
-	return {
-		x: rect.left + pointer.x * Math.max(0, rect.right - rect.left - 1),
-		y: rect.top + pointer.y * Math.max(0, rect.bottom - rect.top - 1),
-	};
-}
-
-function numericStyle(value: string): number {
-	const parsed = Number.parseFloat(value);
-	return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function expandedSourceRect(view: EditorView, from: number, to: number): ScreenRect {
-	const first = view.lineBlockAt(from);
-	const last = view.lineBlockAt(Math.max(from, Math.min(view.state.doc.length, to - 1)));
-	const contentRect = view.contentDOM.getBoundingClientRect();
-	const style = getComputedStyle(view.contentDOM);
-	return {
-		left: contentRect.left + numericStyle(style.paddingLeft),
-		right: contentRect.right - numericStyle(style.paddingRight),
-		top: view.documentTop + first.top * view.scaleY,
-		bottom: view.documentTop + last.bottom * view.scaleY,
-	};
-}
-
-function selectBlockSourceAtCoords(
-	view: EditorView,
-	from: number,
-	to: number,
-	renderedRect: ScreenRect,
-	x: number,
-	y: number,
-): void {
-	const start = Math.max(0, Math.min(from, view.state.doc.length));
-	const pointer = relativePointer(x, y, renderedRect);
-	view.dispatch({ selection: { anchor: start } });
-	view.requestMeasure({
-		read: () => {
-			const sourceRect = expandedSourceRect(view, from, to);
-			return view.posAtCoords(projectPointer(pointer, sourceRect));
-		},
-		write: (measured) => {
-			if (view.state.selection.main.anchor !== start) return;
-			const position = blockClickPosition(measured, from, to);
-			view.dispatch({
-				selection: { anchor: position },
-				effects: EditorView.scrollIntoView(position, { y: 'nearest' }),
-			});
-			view.focus();
-		},
-	});
+/** Map a pointer to the source line and column represented by a rendered rectangle. */
+export function geometricSourcePosition(source: string, x: number, y: number, rect: ScreenRect): number {
+	const lines = source.split('\n');
+	const xRatio = clampUnit((x - rect.left) / Math.max(1, rect.right - rect.left));
+	const yRatio = clampUnit((y - rect.top) / Math.max(1, rect.bottom - rect.top));
+	const lineIndex = Math.min(lines.length - 1, Math.floor(yRatio * lines.length));
+	let offset = 0;
+	for (let index = 0; index < lineIndex; index += 1) offset += lines[index].length + 1;
+	return offset + Math.round(xRatio * lines[lineIndex].length);
 }
 
 function hasInteractiveTarget(target: EventTarget | null): boolean {
 	return target instanceof Element && !!target.closest('a,button,input,textarea,select,summary');
 }
 
-function lineHasRenderedReplacement(view: EditorView, from: number, to: number): boolean {
-	let rendered = false;
-	view.state.field(livePreviewField).between(from, to, (_start, _end, decoration) => {
-		if (decoration.spec.widget || decoration.spec.replace) rendered = true;
-	});
-	return rendered;
+function textOffsetAtPoint(node: HTMLElement, x: number, y: number): number | null {
+	const caretDocument = document as Document & {
+		caretPositionFromPoint?: (clientX: number, clientY: number) => { offsetNode: Node; offset: number } | null;
+		caretRangeFromPoint?: (clientX: number, clientY: number) => Range | null;
+	};
+	const caret = caretDocument.caretPositionFromPoint?.(x, y);
+	const offsetNode = caret?.offsetNode ?? caretDocument.caretRangeFromPoint?.(x, y)?.startContainer;
+	const offset = caret?.offset ?? caretDocument.caretRangeFromPoint?.(x, y)?.startOffset;
+	if (!offsetNode || offset === undefined || (offsetNode !== node && !node.contains(offsetNode))) return null;
+	try {
+		const prefix = document.createRange();
+		prefix.selectNodeContents(node);
+		prefix.setEnd(offsetNode, offset);
+		return prefix.toString().length;
+	} catch {
+		return null;
+	}
 }
 
-function bindSourceNavigation(node: HTMLElement, view: EditorView, from: number, sourceTo?: number): void {
+type SourcePointerMode = 'text' | 'geometry';
+
+function sourcePositionAtPointer(
+	node: HTMLElement,
+	from: number,
+	source: string,
+	x: number,
+	y: number,
+	mode: SourcePointerMode,
+): number {
+	if (mode === 'text') {
+		const visible = node.textContent ?? '';
+		const visibleOffset = textOffsetAtPoint(node, x, y);
+		if (visible && visibleOffset !== null) return from + visibleSourcePosition(source, visible, visibleOffset);
+	}
+	return from + geometricSourcePosition(source, x, y, node.getBoundingClientRect());
+}
+
+function bindSourceNavigation(
+	node: HTMLElement,
+	view: EditorView,
+	from: number,
+	source: string,
+	mode: SourcePointerMode = 'text',
+	interactive = false,
+): void {
 	node.addEventListener('mousedown', (event) => {
-		if (!(event instanceof MouseEvent) || event.button !== 0 || hasInteractiveTarget(event.target)) return;
+		if (!(event instanceof MouseEvent) || event.button !== 0) return;
+		if (interactive && (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)) return;
+		if (!interactive && hasInteractiveTarget(event.target)) return;
+		const position = sourcePositionAtPointer(node, from, source, event.clientX, event.clientY, mode);
 		event.preventDefault();
 		event.stopPropagation();
-		if (sourceTo !== undefined) {
-			const rect = node.getBoundingClientRect();
-			selectBlockSourceAtCoords(view, from, sourceTo, rect, event.clientX, event.clientY);
-			return;
-		}
-		selectSource(view, view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? from);
+		selectSource(view, position);
 	});
 }
 
@@ -440,7 +440,7 @@ class InlineMathWidget extends WidgetType {
 		} catch {
 			node.textContent = `$${this.expression}$`;
 		}
-		bindSourceNavigation(node, view, this.from, this.to);
+		bindSourceNavigation(node, view, this.from + 1, this.expression, 'geometry');
 		return node;
 	}
 }
@@ -457,7 +457,13 @@ class InlineMarkdownWidget extends WidgetType {
 		const node = document.createElement('span');
 		node.className = 'cm-live-inline-rendered';
 		node.innerHTML = renderMarkdownInline(this.source);
-		bindSourceNavigation(node, view, this.from, this.to);
+		const delimiter = this.source.startsWith('==') && this.source.endsWith('==') ? 2 : 0;
+		bindSourceNavigation(
+			node,
+			view,
+			this.from + delimiter,
+			this.source.slice(delimiter, this.source.length - delimiter),
+		);
 		return node;
 	}
 }
@@ -480,10 +486,21 @@ class LinkWidget extends WidgetType {
 		if (!anchor) {
 			container.className = 'cm-live-link-disabled';
 			container.replaceChildren(document.createTextNode(container.textContent || this.source));
-			bindSourceNavigation(container, view, this.from, this.to);
+			bindSourceNavigation(container, view, this.from, this.source, 'text');
 			return container;
 		}
 		anchor.classList.add('cm-live-link');
+		const content = parsedWidgetContent(this.source, 'LinkWidget');
+		const contentFrom = content?.from ?? 0;
+		const contentTo = content?.to ?? this.source.length;
+		bindSourceNavigation(
+			anchor,
+			view,
+			this.from + contentFrom,
+			this.source.slice(contentFrom, contentTo),
+			'text',
+			true,
+		);
 		anchor.addEventListener('click', (event) => {
 			const href = anchor.getAttribute('href') ?? '';
 			if (
@@ -514,7 +531,7 @@ class HorizontalRuleWidget extends WidgetType {
 	toDOM(view: EditorView): HTMLElement {
 		const rule = document.createElement('hr');
 		rule.className = 'cm-live-hr';
-		bindSourceNavigation(rule, view, this.from, this.to);
+		bindSourceNavigation(rule, view, this.from, view.state.sliceDoc(this.from, this.to), 'geometry');
 		return rule;
 	}
 }
@@ -534,12 +551,12 @@ class ImageWidget extends WidgetType {
 		if (!image) {
 			const fallback = document.createElement('span');
 			fallback.textContent = this.source;
-			bindSourceNavigation(fallback, view, this.from, this.to);
+			bindSourceNavigation(fallback, view, this.from, this.source, 'geometry');
 			return fallback;
 		}
 		image.className = 'cm-live-image';
 		image.loading = 'lazy';
-		bindSourceNavigation(image, view, this.from, this.to);
+		bindSourceNavigation(image, view, this.from, this.source, 'geometry');
 		return image;
 	}
 }
@@ -556,7 +573,7 @@ class ListMarkerWidget extends WidgetType {
 		const node = document.createElement('span');
 		node.className = 'cm-live-list-marker';
 		node.textContent = /^\d/.test(this.marker) ? this.marker : '•';
-		bindSourceNavigation(node, view, this.from, this.to);
+		bindSourceNavigation(node, view, this.from, this.marker, 'geometry');
 		return node;
 	}
 }
@@ -583,17 +600,46 @@ class BlockWidget extends WidgetType {
 			const pre = document.createElement('pre');
 			pre.append(code);
 			wrapper.append(chrome, pre);
+			bindSourceNavigation(chrome, view, this.block.from, lines[0], 'geometry');
+			const codeFrom = lines[0].length + 1;
+			bindSourceNavigation(
+				code,
+				view,
+				this.block.from + codeFrom,
+				this.source.slice(codeFrom, this.source.lastIndexOf('\n')),
+			);
 		} else if (this.block.kind === 'math') {
+			const opening = /^\s*\$\$/.exec(this.source);
+			const closing = /\$\$\s*$/.exec(this.source);
+			const contentFrom = opening?.[0].length ?? 0;
+			const contentTo = closing?.index ?? this.source.length;
 			try {
-				katex.render(this.source.replace(/^\s*\$\$|\$\$\s*$/g, ''), wrapper, {
+				katex.render(this.source.slice(contentFrom, contentTo), wrapper, {
 					displayMode: true,
 					throwOnError: false,
 				});
 			} catch {
 				wrapper.textContent = this.source;
 			}
+			const renderedFormula = wrapper.querySelector<HTMLElement>('.katex-html');
+			if (renderedFormula)
+				bindSourceNavigation(
+					renderedFormula,
+					view,
+					this.block.from + contentFrom,
+					this.source.slice(contentFrom, contentTo),
+					'geometry',
+				);
+			bindSourceNavigation(
+				wrapper,
+				view,
+				this.block.from + contentFrom,
+				this.source.slice(contentFrom, contentTo),
+				'geometry',
+			);
 		} else if (this.block.kind === 'details') {
-			const summary = /<summary>([\s\S]*?)<\/summary>/i.exec(this.source)?.[1] ?? 'Details';
+			const summaryMatch = /<summary>([\s\S]*?)<\/summary>/i.exec(this.source);
+			const summary = summaryMatch?.[1] ?? 'Details';
 			const summaryNode = document.createElement('summary');
 			summaryNode.innerHTML = renderMarkdownInline(summary);
 			const content = document.createElement('div');
@@ -602,6 +648,10 @@ class BlockWidget extends WidgetType {
 			);
 			wrapper.append(summaryNode, content);
 			(wrapper as HTMLDetailsElement).open = true;
+			if (summaryMatch) {
+				const relativeFrom = summaryMatch.index + summaryMatch[0].indexOf(summaryMatch[1]);
+				bindSourceNavigation(summaryNode, view, this.block.from + relativeFrom, summary);
+			}
 		} else if (this.block.kind === 'frontmatter') {
 			const frontmatter = parseFrontmatterBlock(this.source);
 			if (!frontmatter || frontmatter.entries.length === 0) {
@@ -620,7 +670,7 @@ class BlockWidget extends WidgetType {
 				wrapper.append(properties);
 			}
 		} else wrapper.innerHTML = renderMarkdown(this.source);
-		bindSourceNavigation(wrapper, view, this.block.from, this.block.to);
+		if (this.block.kind !== 'math') bindSourceNavigation(wrapper, view, this.block.from, this.source);
 		return wrapper;
 	}
 	private tableDOM(view: EditorView): HTMLElement {
@@ -628,28 +678,45 @@ class BlockWidget extends WidgetType {
 		if (!parsed) {
 			const fallback = document.createElement('pre');
 			fallback.textContent = this.source;
-			bindSourceNavigation(fallback, view, this.block.from, this.block.to);
+			bindSourceNavigation(fallback, view, this.block.from, this.source);
 			return fallback;
 		}
 		const table = document.createElement('table');
 		table.className = 'cm-live-table';
 		const head = document.createElement('thead');
 		const body = document.createElement('tbody');
-		let sourceClickTimer = 0;
+		const sourceLines = this.source.split('\n');
+		const lineOffsets: number[] = [];
+		let lineOffset = 0;
+		for (const line of sourceLines) {
+			lineOffsets.push(lineOffset);
+			lineOffset += line.length + 1;
+		}
 		table.addEventListener('mousedown', (event) => {
-			if (hasInteractiveTarget(event.target)) return;
+			if (!(event instanceof MouseEvent) || event.button !== 0 || hasInteractiveTarget(event.target)) return;
+			const { clientX, clientY } = event;
+			const cell = (event.target as Element | null)?.closest<HTMLElement>('th[data-source-row],td[data-source-row]');
+			let position =
+				this.block.from + geometricSourcePosition(this.source, clientX, clientY, table.getBoundingClientRect());
+			if (cell) {
+				const rowIndex = Number(cell.dataset.sourceRow);
+				const columnIndex = Number(cell.dataset.sourceColumn);
+				const range = tableCellSourceRanges(sourceLines[rowIndex] ?? '')[columnIndex];
+				if (range) {
+					const source = sourceLines[rowIndex].slice(range.from, range.to);
+					position = sourcePositionAtPointer(
+						cell,
+						this.block.from + lineOffsets[rowIndex] + range.from,
+						source,
+						clientX,
+						clientY,
+						'text',
+					);
+				}
+			}
 			event.preventDefault();
 			event.stopPropagation();
-		});
-		table.addEventListener('click', (event) => {
-			if (event.detail > 1 || hasInteractiveTarget(event.target)) return;
-			window.clearTimeout(sourceClickTimer);
-			const { clientX, clientY } = event;
-			const rect = table.getBoundingClientRect();
-			sourceClickTimer = window.setTimeout(
-				() => selectBlockSourceAtCoords(view, this.block.from, this.block.to, rect, clientX, clientY),
-				220,
-			);
+			selectSource(view, position);
 		});
 		const rows = parsed.rows;
 		rows.forEach((cells, rowIndex) => {
@@ -657,34 +724,11 @@ class BlockWidget extends WidgetType {
 			const row = document.createElement('tr');
 			cells.forEach((value, columnIndex) => {
 				const cell = document.createElement(rowIndex < parsed.separatorIndex ? 'th' : 'td');
+				cell.dataset.sourceRow = String(rowIndex);
+				cell.dataset.sourceColumn = String(columnIndex);
 				const alignment = parsed.alignments[columnIndex];
 				if (alignment) cell.style.textAlign = alignment;
 				cell.innerHTML = renderMarkdownInline(value);
-				cell.tabIndex = 0;
-				cell.addEventListener('dblclick', () => {
-					window.clearTimeout(sourceClickTimer);
-					const input = document.createElement('textarea');
-					input.value = value;
-					cell.replaceChildren(input);
-					input.focus();
-					input.select();
-					const commit = () => {
-						const updated = rows.map((items, index) =>
-							index === rowIndex
-								? items.map((item, column) => (column === columnIndex ? input.value.replaceAll('\n', ' ') : item))
-								: items,
-						);
-						const markdown = serializeTableRows(updated);
-						view.dispatch({ changes: { from: this.block.from, to: this.block.to, insert: markdown } });
-					};
-					input.addEventListener('blur', commit, { once: true });
-					input.addEventListener('keydown', (event) => {
-						if (event.key === 'Enter' && !event.shiftKey) {
-							event.preventDefault();
-							input.blur();
-						}
-					});
-				});
 				row.append(cell);
 			});
 			(rowIndex < parsed.separatorIndex ? head : body).append(row);
@@ -1034,27 +1078,6 @@ export function createMarkdownLivePreview(
 		...historyKeymap,
 	]);
 	const clipboardHandlers = EditorView.domEventHandlers({
-		mousedown(event, view) {
-			if (!(event instanceof MouseEvent) || event.button !== 0 || hasInteractiveTarget(event.target)) return false;
-			const lineElement = (event.target as Element | null)?.closest('.cm-line');
-			if (!(lineElement instanceof HTMLElement)) return false;
-			if ((event.target as Element | null)?.closest('.cm-live-table')) return false;
-			const position = view.posAtDOM(lineElement, 0);
-			if (position === null) return false;
-			const line = view.state.doc.lineAt(position);
-			if (!lineHasRenderedReplacement(view, line.from, line.to)) return false;
-			event.preventDefault();
-			event.stopPropagation();
-			selectBlockSourceAtCoords(
-				view,
-				line.from,
-				line.to,
-				lineElement.getBoundingClientRect(),
-				event.clientX,
-				event.clientY,
-			);
-			return true;
-		},
 		paste(event, view) {
 			if ((event.target as HTMLElement | null)?.closest('.cm-live-table textarea')) return false;
 			const image = [...(event.clipboardData?.files ?? [])].find((file) => file.type.startsWith('image/'));

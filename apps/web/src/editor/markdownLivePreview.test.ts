@@ -3,14 +3,13 @@ import { history, undoDepth } from '@codemirror/commands';
 import { tags } from '@lezer/highlight';
 import { describe, expect, it } from 'vitest';
 import {
-	blockClickPosition,
+	geometricSourcePosition,
 	livePreviewField,
 	markdownLanguageSupport,
 	markdownLivePreviewHighlightStyle,
 	parsedDeleteRange,
-	projectPointer,
-	relativePointer,
 	taskMarkerChange,
+	visibleSourcePosition,
 } from './markdownLivePreview';
 
 const REPORTED_SOURCE =
@@ -37,32 +36,17 @@ function widgetReplacements(state: EditorState): Array<{ from: number; to: numbe
 }
 
 describe('live preview block decorations', () => {
-	it('keeps measured block clicks inside the source block', () => {
-		expect(blockClickPosition(null, 10, 20)).toBe(10);
-		expect(blockClickPosition(8, 10, 20)).toBe(10);
-		expect(blockClickPosition(16, 10, 20)).toBe(16);
-		expect(blockClickPosition(24, 10, 20)).toBe(20);
+	it('maps visible formatted text before the source block expands', () => {
+		const source = '**bold** and [docs](https://example.com/a-long-destination)';
+		expect(visibleSourcePosition(source, 'bold and docs', 4)).toBe(6);
+		expect(visibleSourcePosition(source, 'bold and docs', 13)).toBe(source.indexOf('docs') + 4);
 	});
 
-	it('preserves the visible click position when one row expands into several rows', () => {
-		const pointer = relativePointer(250, 124, { left: 100, right: 400, top: 100, bottom: 130 });
-		expect(pointer.x).toBe(0.5);
-		expect(pointer.y).toBe(0.8);
-		expect(projectPointer(pointer, { left: 100, right: 400, top: 100, bottom: 220 })).toEqual({
-			x: 249.5,
-			y: 195.2,
-		});
-	});
-
-	it('clamps clicks outside rendered content before projecting them', () => {
-		expect(relativePointer(20, 180, { left: 100, right: 400, top: 100, bottom: 130 })).toEqual({
-			x: 0,
-			y: 1,
-		});
-		expect(projectPointer({ x: 0, y: 1 }, { left: 50, right: 150, top: 200, bottom: 300 })).toEqual({
-			x: 50,
-			y: 299,
-		});
+	it('maps geometry to the correct source row for a multi-line block', () => {
+		const source = 'first line\nsecond line\nthird line';
+		expect(geometricSourcePosition(source, 245, 165, { left: 100, right: 300, top: 100, bottom: 200 })).toBe(
+			source.indexOf('second line') + 8,
+		);
 	});
 
 	it('places the heading underline reset after the default highlight rules', () => {
@@ -147,6 +131,24 @@ describe('live preview block decorations', () => {
 		const blocks = blockReplacements(createState(source));
 		expect(blocks).toHaveLength(1);
 		expect(source.slice(blocks[0].from, blocks[0].to)).toBe('| Name | Value |\n| --- | --- |\n| A | 1 |');
+	});
+
+	it('expands only the structural block containing the mapped cursor', () => {
+		const source = '| Name | Value |\n| --- | --- |\n| A | 1 |\n\n$$x^2$$';
+		const stateAtTable = EditorState.create({
+			doc: source,
+			selection: { anchor: source.indexOf('A') },
+			extensions: [markdownLanguageSupport, livePreviewField],
+		});
+		const stateAtFormula = EditorState.create({
+			doc: source,
+			selection: { anchor: source.lastIndexOf('x') },
+			extensions: [markdownLanguageSupport, livePreviewField],
+		});
+		expect(blockReplacements(stateAtTable).map(({ from, to }) => source.slice(from, to))).toEqual(['$$x^2$$']);
+		expect(blockReplacements(stateAtFormula).map(({ from, to }) => source.slice(from, to))).toEqual([
+			'| Name | Value |\n| --- | --- |\n| A | 1 |',
+		]);
 	});
 
 	it('replaces a complete blockquote from its own source range', () => {
