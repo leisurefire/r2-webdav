@@ -1190,12 +1190,14 @@ async function renderCalendar(forceSync = false): Promise<void> {
 	}
 }
 
-type NotesView = 'active' | 'bookmarks' | 'archived';
+type NotesView = 'active' | 'bookmarks';
 let notesView: NotesView = 'active';
-let notesArchived = false;
 let notesData: NotePage | null = null;
+let archivedNotesData: NotePage | null = null;
+let archiveExpanded = false;
 let notesLoadingMore = false;
 let notesRequest = 0;
+let archivedNotesRequest = 0;
 let noteFolders: NoteFolder[] = [];
 let noteFoldersLoaded = false;
 let selectedNoteFolderId: string | null | undefined;
@@ -1369,15 +1371,15 @@ function expandBookmarkAncestors(key: string): void {
 	}
 }
 
-function noteFolderCachePart(folderId = selectedNoteFolderId): string {
+function noteFolderCachePart(folderId: string | null | undefined): string {
 	return folderId === undefined ? 'all' : folderId === null ? 'root' : encodeURIComponent(folderId);
 }
 
-function noteCacheKey(archived = notesArchived, folderId = selectedNoteFolderId): string {
+function noteCacheKey(archived = false, folderId = archived ? undefined : selectedNoteFolderId): string {
 	return `r2_notes_v3_${archived ? 'archived' : 'active'}_${noteFolderCachePart(folderId)}`;
 }
 
-function cacheNotes(data: NotePage, archived = notesArchived, folderId = selectedNoteFolderId): void {
+function cacheNotes(data: NotePage, archived = false, folderId = archived ? undefined : selectedNoteFolderId): void {
 	localStorage.setItem(noteCacheKey(archived, folderId), JSON.stringify(data));
 }
 
@@ -1389,9 +1391,9 @@ function invalidateNoteCaches(): void {
 	validatedNotePages.clear();
 }
 
-function cachedNotes(): NotePage | null {
+function cachedNotes(archived = false, folderId = archived ? undefined : selectedNoteFolderId): NotePage | null {
 	try {
-		return JSON.parse(localStorage.getItem(noteCacheKey()) ?? 'null') as NotePage | null;
+		return JSON.parse(localStorage.getItem(noteCacheKey(archived, folderId)) ?? 'null') as NotePage | null;
 	} catch {
 		return null;
 	}
@@ -1592,7 +1594,8 @@ async function savePendingNote(state: NoteCommitState): Promise<boolean> {
 			if (current && current !== state.note) Object.assign(current, state.note);
 			sortNotes(state.data.items);
 			invalidateNoteCaches();
-			if (notesData === state.data) cacheNotes(state.data);
+			if (notesData === state.data) cacheNotes(state.data, false);
+			else if (archivedNotesData === state.data) cacheNotes(state.data, true, undefined);
 			state.failureReported = false;
 			state.status = state.pending ? 'pending' : 'synced';
 			paintNoteSaveStatus(state.note.id, state.status);
@@ -1676,22 +1679,34 @@ function discardNoteCommit(noteId: string): void {
 
 function optimisticallyUpdateNote(data: NotePage, note: Note, changes: NoteChanges): boolean {
 	const previous = { ...note };
+	const dataIsArchived = data === archivedNotesData;
 	Object.assign(note, changes, { updatedAt: new Date().toISOString() });
 	if (previous.folderId !== note.folderId || previous.archived !== note.archived)
 		updateNoteFolderCounts(previous, note);
 	const index = data.items.findIndex((item) => item.id === note.id);
 	const leftCurrentView =
-		note.archived !== notesArchived ||
-		(selectedNoteFolderId !== undefined && (note.folderId ?? null) !== selectedNoteFolderId);
+		note.archived !== dataIsArchived ||
+		(!dataIsArchived && selectedNoteFolderId !== undefined && (note.folderId ?? null) !== selectedNoteFolderId);
 	if (index >= 0 && leftCurrentView) {
 		data.items.splice(index, 1);
 		data.total = Math.max(0, data.total - 1);
+	}
+	if (previous.archived !== note.archived) {
+		const target = note.archived ? archivedNotesData : notesData;
+		const visibleInTarget =
+			note.archived || selectedNoteFolderId === undefined || (note.folderId ?? null) === selectedNoteFolderId;
+		if (target && target !== data && visibleInTarget && !target.items.some((item) => item.id === note.id)) {
+			target.items.push(note);
+			target.total += 1;
+			sortNotes(target.items);
+		}
 	}
 	sortNotes(data.items);
 	const count = document.querySelector<HTMLElement>('.notes-inner-toolbar .note-count');
 	if (count) count.textContent = String(data.total);
 	invalidateNoteCaches();
-	if (notesData === data) cacheNotes(data);
+	if (notesData === data) cacheNotes(data, false);
+	else if (archivedNotesData === data) cacheNotes(data, true, undefined);
 	queueNoteCommit(data, note, changes);
 	return leftCurrentView;
 }
@@ -1716,6 +1731,30 @@ function mergePendingNoteStates(data: NotePage, archived: boolean, folderId: str
 		}
 	}
 	sortNotes(data.items);
+}
+
+async function loadArchivedNotes(force = false): Promise<void> {
+	const cached = force ? null : cachedNotes(true, undefined);
+	if (cached) {
+		mergePendingNoteStates(cached, true, undefined);
+		archivedNotesData = cached;
+		if (notesData && pageFromPath() === 'notes') replaceNotesSidebar(notesData, currentSelectedNoteId());
+	}
+	const cacheKey = noteCacheKey(true, undefined);
+	if (!force && validatedNotePages.has(cacheKey) && cached) return;
+	validatedNotePages.add(cacheKey);
+	const request = ++archivedNotesRequest;
+	try {
+		const data = await api.notes(1, true);
+		if (request !== archivedNotesRequest || pageFromPath() !== 'notes') return;
+		mergePendingNoteStates(data, true, undefined);
+		archivedNotesData = data;
+		cacheNotes(data, true, undefined);
+		if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
+	} catch (error) {
+		validatedNotePages.delete(cacheKey);
+		if (!cached) toast(errorMessage(error));
+	}
 }
 
 function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobile: boolean): void {
@@ -1765,11 +1804,11 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		const leftCurrentView = optimisticallyUpdateNote(data, selected, changes);
 		if (leftCurrentView) {
 			if (mobile && mobileNoteDialogOpen) history.back();
-			else paintNotes(data);
+			else if (notesData) paintNotes(notesData);
 			return;
 		}
 		syncNoteMetadata(selected);
-		replaceNotesSidebar(data, selected.id);
+		if (notesData) replaceNotesSidebar(notesData, selected.id);
 	};
 	root.querySelector<HTMLSelectElement>('[data-note-folder-select]')?.addEventListener('change', (event) => {
 		const folderId = (event.target as HTMLSelectElement).value || null;
@@ -1780,7 +1819,7 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		?.addEventListener('submit', (event) => event.preventDefault());
 	root.querySelector('[data-note-pin]')?.addEventListener('click', () => {
 		optimisticallyUpdateNote(data, selected, { pinned: !selected.pinned });
-		replaceNotesSidebar(data, selected.id);
+		if (notesData) replaceNotesSidebar(notesData, selected.id);
 		syncNotePinControls(selected);
 	});
 	root
@@ -1810,7 +1849,7 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		else
 			void flushNoteCommit(selected.id).then(() => {
 				root.closest('dialog')?.close();
-				paintNotes(data, selected.id);
+				paintNotes(notesData ?? data, selected.id);
 			});
 	});
 	if (mobile) {
@@ -1866,18 +1905,18 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 			key: folder.id,
 			name: folder.name,
 			count: folder.noteCount,
-			expanded: notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === folder.id),
-			active: notesView === 'active' && selectedNoteFolderId === folder.id && notesFor(folder.id).length === 0,
+			expanded: selectedNoteFolderId === undefined || selectedNoteFolderId === folder.id,
+			active: selectedNoteFolderId === folder.id && notesFor(folder.id).length === 0,
 			children: noteNodes(notesFor(folder.id)),
 		})),
 		{
 			kind: 'archive',
 			key: 'archive',
 			name: t('archived'),
-			count: notesView === 'archived' ? data.total : '',
-			expanded: notesView === 'archived',
-			active: notesView === 'archived' && data.items.length === 0,
-			children: notesView === 'archived' ? noteNodes(data.items) : [],
+			count: archivedNotesData?.total ?? '',
+			expanded: archiveExpanded,
+			active: false,
+			children: archiveExpanded ? noteNodes(archivedNotesData?.items ?? []) : [],
 		},
 	];
 	const treeMarkup = renderTreeNodes(
@@ -1886,7 +1925,7 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 		(node, depth, children) => {
 			if (node.kind === 'note') return node.note ? noteCardMarkup(node.note, selected) : '';
 			const folder = node.kind === 'folder';
-			const icon = node.kind === 'archive' ? '<i data-lucide="archive"></i>' : caret(node.expanded);
+			const icon = caret(node.expanded);
 			const actions = folder
 				? `<div class="note-folder-actions"><button class="row-action" data-rename-note-folder="${html(node.key)}" title="${locale === 'zh' ? '重命名' : 'Rename'}" aria-label="${locale === 'zh' ? '重命名' : 'Rename'}"><i data-lucide="pencil"></i></button><button class="row-action danger" data-delete-note-folder="${html(node.key)}" title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button></div>`
 				: '';
@@ -1896,7 +1935,7 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 		},
 	);
 	const rootMarkup =
-		notesView === 'active' && (selectedNoteFolderId === undefined || selectedNoteFolderId === null)
+		selectedNoteFolderId === undefined || selectedNoteFolderId === null
 			? `<div class="notes-tree-children notes-tree-root" data-note-folder-drop="root">${rootNotes.map((note) => noteCardMarkup(note, selected)).join('')}</div>`
 			: '';
 	return `<aside class="notes-folders" aria-label="${locale === 'zh' ? '便签目录' : 'Note folders'}">
@@ -1912,7 +1951,6 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 	const selectFolder = (value: string) => {
 		notesView = 'active';
-		notesArchived = false;
 		selectedNoteFolderId = value === 'all' ? undefined : value === 'root' ? null : value;
 		notesData = null;
 		void renderNotes(undefined, false);
@@ -1985,16 +2023,17 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 		}),
 	);
 	const moveNote = (noteId: string, destination: string) => {
-		const note = data.items.find((item) => item.id === noteId);
+		const source = data.items.some((item) => item.id === noteId) ? data : archivedNotesData;
+		const note = source?.items.find((item) => item.id === noteId);
 		if (!note) return;
 		const changes: NoteChanges =
 			destination === 'archive'
 				? { archived: true }
 				: { archived: false, folderId: destination === 'root' ? null : destination };
-		const leftCurrentView = optimisticallyUpdateNote(data, note, changes);
+		const leftCurrentView = optimisticallyUpdateNote(source ?? data, note, changes);
 		const selectedId = currentSelectedNoteId();
-		if (leftCurrentView && selectedId === note.id) paintNotes(data);
-		else replaceNotesSidebar(data, selectedId);
+		if (leftCurrentView && selectedId === note.id && notesData) paintNotes(notesData);
+		else if (notesData) replaceNotesSidebar(notesData, selectedId);
 	};
 	content.querySelectorAll<HTMLElement>('[data-note-folder-drop]').forEach((target) => {
 		target.addEventListener('dragover', (event) => {
@@ -2090,7 +2129,6 @@ function paintBookmarkView(): void {
 		if (bookmarkHub) paintBookmarkView();
 		else {
 			notesView = 'active';
-			notesArchived = false;
 			paintNotes({ items: [], page: 1, pageSize: 20, total: 0, hasMore: false });
 			await renderNotes();
 		}
@@ -2101,7 +2139,6 @@ function bindNotesNavigation(content: HTMLElement): void {
 	content.querySelectorAll<HTMLElement>('[data-note-view]').forEach((node) =>
 		node.addEventListener('click', () => {
 			notesView = node.dataset.noteView as NotesView;
-			notesArchived = notesView === 'archived';
 			if (notesView === 'active') selectedNoteFolderId = undefined;
 			notesData = null;
 			if (notesView === 'bookmarks') {
@@ -2115,17 +2152,16 @@ function bindNotesNavigation(content: HTMLElement): void {
 	);
 	content.querySelectorAll<HTMLElement>('[data-note-archived]').forEach((node) =>
 		node.addEventListener('click', () => {
-			notesView = 'archived';
-			notesArchived = true;
-			selectedNoteFolderId = undefined;
-			notesData = null;
-			paintNotes({ items: [], page: 1, pageSize: 20, total: 0, hasMore: false });
-			void renderNotes();
+			archiveExpanded = !archiveExpanded;
+			if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
+			if (archiveExpanded) void loadArchivedNotes();
 		}),
 	);
 }
 
 function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?: Note): void {
+	const noteFor = (noteId: string | undefined) =>
+		data.items.find((item) => item.id === noteId) ?? archivedNotesData?.items.find((item) => item.id === noteId);
 	content.querySelectorAll<HTMLElement>('[data-note]').forEach((node) => {
 		node.addEventListener('click', () => paintNotes(data, node.dataset.note, true));
 	});
@@ -2138,27 +2174,28 @@ function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?: Note):
 		card.addEventListener('dragend', () => card.classList.remove('dragging'));
 	});
 	const updateFromCard = (noteId: string, changes: NoteChanges): void => {
-		const note = data.items.find((item) => item.id === noteId);
+		const source = data.items.some((item) => item.id === noteId) ? data : archivedNotesData;
+		const note = source?.items.find((item) => item.id === noteId);
 		if (!note) return;
-		const leftCurrentView = optimisticallyUpdateNote(data, note, changes);
+		const leftCurrentView = optimisticallyUpdateNote(source ?? data, note, changes);
 		const selectedId = currentSelectedNoteId();
-		if (leftCurrentView && selectedId === note.id) paintNotes(data);
+		if (leftCurrentView && selectedId === note.id && notesData) paintNotes(notesData);
 		else {
-			replaceNotesSidebar(data, selectedId);
+			if (notesData) replaceNotesSidebar(notesData, selectedId);
 			if (changes.pinned !== undefined && selectedId === note.id) syncNotePinControls(note);
 		}
 	};
 	content.querySelectorAll<HTMLElement>('[data-note-card-pin]').forEach((button) =>
 		button.addEventListener('click', (event) => {
 			event.stopPropagation();
-			const note = data.items.find((item) => item.id === button.dataset.noteCardPin);
+			const note = noteFor(button.dataset.noteCardPin);
 			if (note) updateFromCard(note.id, { pinned: !note.pinned });
 		}),
 	);
 	content.querySelectorAll<HTMLElement>('[data-note-card-archive]').forEach((button) =>
 		button.addEventListener('click', (event) => {
 			event.stopPropagation();
-			const note = data.items.find((item) => item.id === button.dataset.noteCardArchive);
+			const note = noteFor(button.dataset.noteCardArchive);
 			if (note) updateFromCard(note.id, { archived: !note.archived });
 		}),
 	);
@@ -2170,7 +2207,6 @@ function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?: Note):
 				'',
 				typeof selectedNoteFolderId === 'string' ? selectedNoteFolderId : null,
 			);
-			notesArchived = false;
 			notesData = null;
 			invalidateNoteCaches();
 			await renderNotes(note.id, true, true);
@@ -2195,7 +2231,9 @@ function replaceNotesSidebar(data: NotePage, selectedId?: string): void {
 	if (!content || !current) return;
 	const scrollTop = current.querySelector<HTMLElement>('[data-notes-tree]')?.scrollTop ?? 0;
 	const wrapper = document.createElement('div');
-	const selected = data.items.find((note) => note.id === selectedId);
+	const selected =
+		data.items.find((note) => note.id === selectedId) ??
+		archivedNotesData?.items.find((note) => note.id === selectedId);
 	wrapper.innerHTML = notesFolderSidebarMarkup(data, selected).trim();
 	const next = wrapper.firstElementChild;
 	if (!(next instanceof HTMLElement)) return;
@@ -2213,8 +2251,13 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 		paintBookmarkView();
 		return;
 	}
+	const archivedSelected = archivedNotesData?.items.find((note) => note.id === selectedId);
 	const selected =
-		data.items.find((note) => note.id === selectedId) ?? data.items.find((note) => note.pinned) ?? data.items[0];
+		data.items.find((note) => note.id === selectedId) ??
+		archivedSelected ??
+		data.items.find((note) => note.pinned) ??
+		data.items[0];
+	const selectedData = archivedSelected ? archivedNotesData! : data;
 	content.innerHTML = `<div class="notes-layout">
 		<div class="notes-inner-toolbar">${notesTabsMarkup()}<span class="toolbar-spacer"></span><span class="note-count">${data.total}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}" aria-label="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}"><i data-lucide="refresh-cw"></i></button></div>
 		${notesFolderSidebarMarkup(data, selected)}
@@ -2231,10 +2274,10 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 	});
 	if (!selected) return;
 	const desktopEditor = content.querySelector<HTMLElement>('.note-editor-desktop');
-	if (desktopEditor) bindNoteEditor(desktopEditor, data, selected, false);
+	if (desktopEditor) bindNoteEditor(desktopEditor, selectedData, selected, false);
 	const dialog = content.querySelector<HTMLDialogElement>('#note-dialog');
 	if (dialog) {
-		bindNoteEditor(dialog, data, selected, true);
+		bindNoteEditor(dialog, selectedData, selected, true);
 		if (openMobile && matchMedia('(max-width: 760px)').matches) {
 			history.pushState({ noteDialog: selected.id }, '', location.href);
 			mobileNoteDialogOpen = true;
@@ -2248,21 +2291,20 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 }
 
 async function loadMoreNotes(selectedId?: string, scrollTop = 0): Promise<void> {
-	const current = notesData;
+	const loadingArchive = Boolean(archiveExpanded && archivedNotesData?.hasMore);
+	const current = loadingArchive ? archivedNotesData : notesData;
 	if (!current?.hasMore || notesLoadingMore) return;
 	notesLoadingMore = true;
 	const status = document.querySelector<HTMLElement>('.notes-load-status');
 	if (status) {
 		status.innerHTML = loadingMarkup(true);
 	}
-	const archived = notesArchived;
-	const folderId = selectedNoteFolderId;
+	const folderId = loadingArchive ? undefined : selectedNoteFolderId;
 	try {
-		const next = await api.notes(current.page + 1, archived, folderId);
+		const next = await api.notes(current.page + 1, loadingArchive, folderId);
 		if (
-			notesData !== current ||
-			archived !== notesArchived ||
-			folderId !== selectedNoteFolderId ||
+			(loadingArchive ? archivedNotesData !== current || !archiveExpanded : notesData !== current) ||
+			(!loadingArchive && folderId !== selectedNoteFolderId) ||
 			pageFromPath() !== 'notes'
 		)
 			return;
@@ -2272,8 +2314,8 @@ async function loadMoreNotes(selectedId?: string, scrollTop = 0): Promise<void> 
 		current.pageSize = next.pageSize;
 		current.total = next.total;
 		current.hasMore = next.hasMore;
-		cacheNotes(current, archived);
-		paintNotes(current, selectedId);
+		cacheNotes(current, loadingArchive, folderId);
+		if (notesData) replaceNotesSidebar(notesData, selectedId);
 		const list = document.querySelector<HTMLElement>('[data-notes-tree]');
 		if (list) list.scrollTop = scrollTop;
 	} catch (error) {
@@ -2300,29 +2342,29 @@ async function renderNotes(selectedId?: string, forceSync = false, openMobile = 
 		paintBookmarkView();
 		return;
 	}
-	const cached = forceSync ? null : cachedNotes();
+	const cached = forceSync ? null : cachedNotes(false, selectedNoteFolderId);
 	if (cached) {
-		mergePendingNoteStates(cached, notesArchived, selectedNoteFolderId);
+		mergePendingNoteStates(cached, false, selectedNoteFolderId);
 		notesData = cached;
 		paintNotes(cached, selectedId);
 	}
-	const cacheKey = noteCacheKey();
-	const requestedArchived = notesArchived;
+	const cacheKey = noteCacheKey(false, selectedNoteFolderId);
 	const requestedFolderId = selectedNoteFolderId;
 	if (!forceSync && validatedNotePages.has(cacheKey) && cached) {
 		notesData = cached;
+		if (archiveExpanded) await loadArchivedNotes(false);
 		return;
 	}
 	validatedNotePages.add(cacheKey);
 	const request = ++notesRequest;
 	try {
-		const data = await api.notes(1, requestedArchived, requestedFolderId);
-		if (request !== notesRequest || requestedArchived !== notesArchived || requestedFolderId !== selectedNoteFolderId)
-			return;
-		mergePendingNoteStates(data, requestedArchived, requestedFolderId);
+		const data = await api.notes(1, false, requestedFolderId);
+		if (request !== notesRequest || requestedFolderId !== selectedNoteFolderId) return;
+		mergePendingNoteStates(data, false, requestedFolderId);
 		notesData = data;
-		cacheNotes(data, requestedArchived);
+		cacheNotes(data, false, requestedFolderId);
 		if (pageFromPath() === 'notes') paintNotes(data, selectedId, openMobile);
+		if (archiveExpanded) await loadArchivedNotes(forceSync);
 	} catch (error) {
 		validatedNotePages.delete(cacheKey);
 		if (!cached)

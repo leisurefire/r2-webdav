@@ -1,4 +1,5 @@
 import { EditorState } from '@codemirror/state';
+import { history, undoDepth } from '@codemirror/commands';
 import { tags } from '@lezer/highlight';
 import { describe, expect, it } from 'vitest';
 import {
@@ -6,6 +7,7 @@ import {
 	livePreviewField,
 	markdownLanguageSupport,
 	markdownLivePreviewHighlightStyle,
+	parsedDeleteRange,
 	taskMarkerChange,
 } from './markdownLivePreview';
 
@@ -156,5 +158,49 @@ describe('live preview block decorations', () => {
 		expect(
 			replacements.some(({ name, from, to }) => name === 'CheckboxWidget' && source.slice(from, to) === '[ ]'),
 		).toBe(true);
+	});
+});
+
+describe('parsed character deletion', () => {
+	it('deletes the final visible character inside common inline wrappers', () => {
+		for (const [source, expected] of [
+			['**bold**', { from: 5, to: 6 }],
+			['*italic*', { from: 6, to: 7 }],
+			['~~strike~~', { from: 7, to: 8 }],
+			['`code`', { from: 4, to: 5 }],
+			['[docs](https://example.com)', { from: 4, to: 5 }],
+			['==mark==', { from: 5, to: 6 }],
+		] as const) {
+			const state = EditorState.create({
+				doc: source,
+				selection: { anchor: source.length },
+				extensions: [markdownLanguageSupport, livePreviewField],
+			});
+			expect(parsedDeleteRange(state, 'backward'), source).toEqual(expected);
+		}
+	});
+
+	it('deletes one complete Unicode character', () => {
+		const source = '**ok\u{1f600}**';
+		const state = EditorState.create({
+			doc: source,
+			selection: { anchor: source.length },
+			extensions: [markdownLanguageSupport, livePreviewField],
+		});
+		expect(parsedDeleteRange(state, 'backward')).toEqual({ from: 4, to: 6 });
+	});
+
+	it('records parsed deletions in the undo history', () => {
+		const source = '**bold**';
+		const initial = EditorState.create({
+			doc: source,
+			selection: { anchor: source.length },
+			extensions: [markdownLanguageSupport, livePreviewField, history()],
+		});
+		const range = parsedDeleteRange(initial, 'backward');
+		expect(range).not.toBeNull();
+		const changed = initial.update({ changes: range!, userEvent: 'delete.backward' }).state;
+		expect(changed.doc.toString()).toBe('**bol**');
+		expect(undoDepth(changed)).toBe(1);
 	});
 });
