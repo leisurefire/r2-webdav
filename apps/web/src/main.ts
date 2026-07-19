@@ -1570,27 +1570,57 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 			queueSave({ content: draftContent });
 		});
 	});
-	source.addEventListener('paste', (event) => {
-		if (!editor) return;
-		const images = event.clipboardData
-			? [...event.clipboardData.files].filter((file) => file.type.startsWith('image/'))
-			: [];
-		if (!images.length) return;
-		event.preventDefault();
-		const image = images[0];
-		if (image.size > 256 * 1024) {
-			toast(locale === 'zh' ? '图片超过 256 KB，暂不允许粘贴' : 'Images over 256 KB cannot be pasted yet');
-			return;
-		}
-		const reader = new FileReader();
-		reader.addEventListener('load', () => {
+	source.addEventListener(
+		'paste',
+		(event) => {
 			if (!editor) return;
-			const start = editor.state.selection.main.head;
-			const markdownImage = `![${image.name || (locale === 'zh' ? '图片' : 'image')}](${String(reader.result)})`;
-			editor.dispatch({ changes: { from: start, to: editor.state.selection.main.to, insert: markdownImage } });
-		});
-		reader.readAsDataURL(image);
-	});
+			const clipboard = event.clipboardData;
+			if (!clipboard) return;
+			const images = event.clipboardData
+				? [...event.clipboardData.files].filter((file) => file.type.startsWith('image/'))
+				: [];
+			event.preventDefault();
+			event.stopPropagation();
+			const selection = editor.state.selection.main;
+			const insertMarkdown = (value: string) => {
+				if (!editor) return;
+				const markdown = value.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+				editor.dispatch({
+					changes: { from: selection.from, to: selection.to, insert: markdown },
+					selection: { anchor: selection.from + markdown.length },
+					scrollIntoView: true,
+				});
+				editor.focus();
+				void savePending();
+			};
+			if (!images.length) {
+				let markdown = clipboard.getData('text/plain');
+				if (!markdown) {
+					const htmlClipboard = clipboard.getData('text/html');
+					if (htmlClipboard) {
+						const fragment = document.createElement('div');
+						fragment.innerHTML = htmlClipboard;
+						fragment.querySelectorAll('br').forEach((breakNode) => breakNode.replaceWith('\n'));
+						markdown = fragment.innerText || fragment.textContent || '';
+					}
+				}
+				if (markdown) insertMarkdown(markdown);
+				return;
+			}
+			const image = images[0];
+			if (image.size > 256 * 1024) {
+				toast(locale === 'zh' ? '图片超过 256 KB，暂不允许粘贴' : 'Images over 256 KB cannot be pasted yet');
+				return;
+			}
+			const reader = new FileReader();
+			reader.addEventListener('load', () => {
+				const markdownImage = `![${image.name || (locale === 'zh' ? '图片' : 'image')}](${String(reader.result)})`;
+				insertMarkdown(markdownImage);
+			});
+			reader.readAsDataURL(image);
+		},
+		{ capture: true },
+	);
 	root.querySelector('[data-note-export]')?.addEventListener('click', () => {
 		const objectUrl = URL.createObjectURL(new Blob([draftContent], { type: 'text/markdown;charset=utf-8' }));
 		const anchor = document.createElement('a');

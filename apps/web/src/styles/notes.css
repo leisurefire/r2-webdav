@@ -405,6 +405,11 @@
 	background: var(--surface);
 }
 
+.cm-live-inline-math {
+	font-size: 1em;
+	vertical-align: baseline;
+}
+
 .cm-task-checkbox {
 	vertical-align: -2px;
 	margin: 0 5px 0 0;
@@ -445,6 +450,35 @@
 .cm-live-details summary {
 	font-weight: 650;
 	cursor: pointer;
+}
+
+.cm-live-hr {
+	width: 100%;
+	margin: 14px 0;
+	border: 0;
+	border-top: 1px solid var(--line);
+}
+
+.cm-live-list-marker {
+	display: inline-block;
+	min-width: 1.1em;
+	color: var(--muted);
+	text-align: center;
+}
+
+.cm-live-blockquote {
+	padding-left: 12px;
+	border-left: 2px solid var(--line-strong, var(--line));
+	color: var(--muted);
+}
+
+.cm-live-image {
+	display: block;
+	max-width: 100%;
+	max-height: 70vh;
+	margin: 8px 0;
+	border-radius: 6px;
+	object-fit: contain;
 }
 
 .cm-live-table {

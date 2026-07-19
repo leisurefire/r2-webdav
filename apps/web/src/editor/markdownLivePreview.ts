@@ -1,55 +1,15 @@
 import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, Decoration, ViewPlugin, ViewUpdate, WidgetType } from '@codemirror/view';
 import { markdown } from '@codemirror/lang-markdown';
-import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
+import { syntaxHighlighting, defaultHighlightStyle, syntaxTree } from '@codemirror/language';
 import katex from 'katex';
-
-type Block = { from: number; to: number; kind: 'fence' | 'math' | 'details' | 'table' };
-
-function collectStructuralBlocks(text: string): Block[] {
-	const blocks: Block[] = [];
-	const lines = text.split(/\n/);
-	let offset = 0;
-	let fence: number | null = null;
-	let math: number | null = null;
-	let details: number | null = null;
-	let table: number | null = null;
-	for (const line of lines) {
-		const trimmed = line.trim();
-		if (/^```|^~~~/.test(trimmed)) {
-			if (fence === null) fence = offset;
-			else {
-				blocks.push({ from: fence, to: offset + line.length, kind: 'fence' });
-				fence = null;
-			}
-		} else if (/^\$\$/.test(trimmed)) {
-			if (math === null) math = offset;
-			else {
-				blocks.push({ from: math, to: offset + line.length, kind: 'math' });
-				math = null;
-			}
-		} else if (/^<details\b/i.test(trimmed)) details = details ?? offset;
-		else if (/^<\/details>/i.test(trimmed) && details !== null) {
-			blocks.push({ from: details, to: offset + line.length, kind: 'details' });
-			details = null;
-		} else if (
-			table === null &&
-			/^\s*\|.+\|\s*$/.test(line) &&
-			!/^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/.test(line)
-		)
-			table = offset;
-		else if (table !== null && !/^\s*\|.+\|\s*$/.test(line)) {
-			blocks.push({ from: table, to: offset, kind: 'table' });
-			table = null;
-		}
-		offset += line.length + 1;
-	}
-	if (fence !== null) blocks.push({ from: fence, to: text.length, kind: 'fence' });
-	if (math !== null) blocks.push({ from: math, to: text.length, kind: 'math' });
-	if (details !== null) blocks.push({ from: details, to: text.length, kind: 'details' });
-	if (table !== null) blocks.push({ from: table, to: text.length, kind: 'table' });
-	return blocks;
-}
+import {
+	collectInlineExcludedRanges,
+	collectStructuralBlocks,
+	serializeTableRows,
+	splitTableRow,
+	type StructuralBlock,
+} from './markdownStructure';
 
 class CheckboxWidget extends WidgetType {
 	constructor(
@@ -71,9 +31,65 @@ class CheckboxWidget extends WidgetType {
 	}
 }
 
+class InlineMathWidget extends WidgetType {
+	constructor(private readonly expression: string) {
+		super();
+	}
+	toDOM(): HTMLElement {
+		const node = document.createElement('span');
+		node.className = 'cm-live-inline-math';
+		try {
+			katex.render(this.expression, node, { displayMode: false, throwOnError: false });
+		} catch {
+			node.textContent = `$${this.expression}$`;
+		}
+		return node;
+	}
+}
+
+class HorizontalRuleWidget extends WidgetType {
+	toDOM(): HTMLElement {
+		const rule = document.createElement('hr');
+		rule.className = 'cm-live-hr';
+		return rule;
+	}
+}
+
+class ImageWidget extends WidgetType {
+	constructor(private readonly source: string) {
+		super();
+	}
+	toDOM(): HTMLElement {
+		const match = /^!\[([^\]]*)\]\((\S+?)(?:\s+["'].*["'])?\)$/.exec(this.source);
+		if (!match) {
+			const fallback = document.createElement('span');
+			fallback.textContent = this.source;
+			return fallback;
+		}
+		const image = document.createElement('img');
+		image.className = 'cm-live-image';
+		image.alt = match[1];
+		image.src = match[2].replace(/^<|>$/g, '');
+		image.loading = 'lazy';
+		return image;
+	}
+}
+
+class ListMarkerWidget extends WidgetType {
+	constructor(private readonly marker: string) {
+		super();
+	}
+	toDOM(): HTMLElement {
+		const node = document.createElement('span');
+		node.className = 'cm-live-list-marker';
+		node.textContent = /^\d/.test(this.marker) ? this.marker : '•';
+		return node;
+	}
+}
+
 class BlockWidget extends WidgetType {
 	constructor(
-		private readonly block: Block,
+		private readonly block: StructuralBlock,
 		private readonly source: string,
 	) {
 		super();
@@ -127,13 +143,7 @@ class BlockWidget extends WidgetType {
 		const table = document.createElement('table');
 		table.className = 'cm-live-table';
 		const lines = this.source.trimEnd().split('\n');
-		const rows = lines.map((line) =>
-			line
-				.trim()
-				.replace(/^\||\|$/g, '')
-				.split('|')
-				.map((cell) => cell.trim()),
-		);
+		const rows = lines.map(splitTableRow);
 		const separatorIndex = rows.findIndex((row) => row.every((cell) => /^:?-+:?$/.test(cell)));
 		rows.forEach((cells, rowIndex) => {
 			if (rowIndex === separatorIndex) return;
@@ -156,7 +166,7 @@ class BlockWidget extends WidgetType {
 									)
 								: items,
 						);
-						const markdown = updated.map((items) => `| ${items.join(' | ')} |`).join('\n');
+						const markdown = serializeTableRows(updated);
 						view.dispatch({ changes: { from: this.block.from, to: this.block.to, insert: markdown } });
 					};
 					input.addEventListener('blur', commit, { once: true });
@@ -218,66 +228,115 @@ function buildDecorations(view: EditorView) {
 				position = line.to + 1;
 			}
 		}
+		const inlineExclusions: Array<{ from: number; to: number }> = [];
 		for (const lineNo of visibleLines) {
 			const line = view.state.doc.line(lineNo);
 			const isActive = active.has(line.from);
 			const block = blocks.find((item) => line.from >= item.from && line.from < item.to);
 			if (block) continue;
 			const lineText = line.text;
-			const heading = /^(#{1,6})\s+/.exec(lineText);
-			if (heading) {
-				if (!isActive) add(line.from, line.from + heading[1].length + 1, Decoration.replace({}));
-				add(
-					line.from + heading[1].length + 1,
-					line.to,
-					Decoration.mark({ class: `cm-live-heading cm-live-h${heading[1].length}` }),
-				);
-				continue;
-			}
 			const task = /^(\s*-\s+)\[([ xX])\]\s+/.exec(lineText);
-			if (task && !isActive) {
+			if (task) {
 				const markerFrom = line.from + task[1].length;
 				const markerTo = markerFrom + 3;
+				inlineExclusions.push({ from: markerFrom, to: markerTo });
+				if (!isActive)
+					add(
+						markerFrom,
+						markerTo,
+						Decoration.replace({
+							widget: new CheckboxWidget(task[2].toLowerCase() === 'x', markerFrom + 1, markerTo - 1),
+						}),
+					);
+			}
+			const excludedRanges = collectInlineExcludedRanges(lineText);
+			for (const range of excludedRanges) {
+				if (range.kind === 'math') inlineExclusions.push({ from: line.from + range.from, to: line.from + range.to });
+				if (range.kind !== 'math' || isActive) continue;
 				add(
-					markerFrom,
-					markerTo,
-					Decoration.replace({
-						widget: new CheckboxWidget(task[2].toLowerCase() === 'x', markerFrom + 1, markerTo - 1),
-					}),
+					line.from + range.from,
+					line.from + range.to,
+					Decoration.replace({ widget: new InlineMathWidget(lineText.slice(range.from + 1, range.to - 1)) }),
 				);
 			}
-			for (const match of lineText.matchAll(/(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_([^_]+)_)/g)) {
-				const from = line.from + match.index!;
-				const raw = match[0];
-				if (raw.startsWith('`')) {
-					if (!isActive) {
-						add(from, from + 1, Decoration.replace({}));
-						add(from + raw.length - 1, from + raw.length, Decoration.replace({}));
+		}
+		const overlapsExcluded = (from: number, to: number) =>
+			inlineExclusions.some((range) => from < range.to && to > range.from);
+		const tree = syntaxTree(view.state);
+		for (const visibleRange of view.visibleRanges) {
+			tree.iterate({
+				from: visibleRange.from,
+				to: visibleRange.to,
+				enter: (node) => {
+					if (overlapsExcluded(node.from, node.to)) return;
+					const block = blocks.find((item) => node.from < item.to && node.to > item.from);
+					if (block) return;
+					const line = view.state.doc.lineAt(node.from);
+					const isActive = active.has(line.from);
+					if (node.name === 'HorizontalRule') {
+						if (!isActive) add(node.from, node.to, Decoration.replace({ widget: new HorizontalRuleWidget() }));
+						return;
 					}
-					add(from + 1, from + raw.length - 1, Decoration.mark({ class: 'cm-live-inline-code' }));
-				} else {
-					const marker = raw.startsWith('**') || raw.startsWith('__') ? 2 : 1;
-					if (!isActive) {
-						add(from, from + marker, Decoration.replace({}));
-						add(from + raw.length - marker, from + raw.length, Decoration.replace({}));
+					if (
+						node.name === 'ATXHeading1' ||
+						node.name === 'ATXHeading2' ||
+						node.name === 'ATXHeading3' ||
+						node.name === 'ATXHeading4' ||
+						node.name === 'ATXHeading5' ||
+						node.name === 'ATXHeading6'
+					) {
+						const level = node.name.at(-1);
+						add(node.from, node.to, Decoration.mark({ class: `cm-live-heading cm-live-h${level}` }));
+						return;
 					}
-					add(
-						from + marker,
-						from + raw.length - marker,
-						Decoration.mark({ class: marker === 2 ? 'cm-live-strong' : 'cm-live-em' }),
-					);
-				}
-			}
-			for (const match of lineText.matchAll(/!?\[([^\]]+)\]\(([^)]+)\)/g)) {
-				const from = line.from + match.index!;
-				const raw = match[0];
-				const labelStart = from + (raw.startsWith('!') ? 2 : 1);
-				if (!isActive) {
-					add(from, labelStart, Decoration.replace({}));
-					add(labelStart + match[1].length, from + raw.length, Decoration.replace({}));
-				}
-				add(labelStart, labelStart + match[1].length, Decoration.mark({ class: 'cm-live-link' }));
-			}
+					if (
+						node.name === 'StrongEmphasis' ||
+						node.name === 'Emphasis' ||
+						node.name === 'InlineCode' ||
+						node.name === 'Link' ||
+						node.name === 'Image'
+					) {
+						if (node.name === 'Image' && !isActive) {
+							add(
+								node.from,
+								node.to,
+								Decoration.replace({ widget: new ImageWidget(view.state.sliceDoc(node.from, node.to)) }),
+							);
+							return false;
+						}
+						const className =
+							node.name === 'StrongEmphasis'
+								? 'cm-live-strong'
+								: node.name === 'Emphasis'
+									? 'cm-live-em'
+									: node.name === 'InlineCode'
+										? 'cm-live-inline-code'
+										: 'cm-live-link';
+						add(node.from, node.to, Decoration.mark({ class: className }));
+						return;
+					}
+					if (
+						node.name === 'HeaderMark' ||
+						node.name === 'EmphasisMark' ||
+						node.name === 'CodeMark' ||
+						node.name === 'LinkMark' ||
+						node.name === 'URL' ||
+						node.name === 'QuoteMark' ||
+						node.name === 'ListMark'
+					) {
+						if (!isActive && node.name === 'QuoteMark') {
+							add(node.from, node.to, Decoration.replace({}));
+							add(node.from, node.from, Decoration.line({ class: 'cm-live-blockquote' }));
+						} else if (!isActive && node.name === 'ListMark') {
+							add(
+								node.from,
+								node.to,
+								Decoration.replace({ widget: new ListMarkerWidget(view.state.sliceDoc(node.from, node.to)) }),
+							);
+						} else if (!isActive) add(node.from, node.to, Decoration.replace({}));
+					}
+				},
+			});
 		}
 		return Decoration.set(
 			decorations.map((item) => item.value.range(item.from, item.to)),

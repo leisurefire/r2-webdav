@@ -1,0 +1,74 @@
+import { describe, expect, it } from 'vitest';
+import {
+	collectInlineExcludedRanges,
+	collectStructuralBlocks,
+	serializeTableRows,
+	splitTableRow,
+} from './markdownStructure';
+
+describe('collectStructuralBlocks', () => {
+	it('collects the reported mixed inline and block math example without changing source offsets', () => {
+		const source =
+			'包含变量 $x_1,x_2,\\cdots,x_n$ 的**线性方程**是形如\n\n$$\na_1x_1+a_2x_2+\\cdots+a_nx_n=b\n$$\n\n的方程.';
+		const blocks = collectStructuralBlocks(source);
+		expect(blocks).toHaveLength(1);
+		expect(source.slice(blocks[0].from, blocks[0].to)).toBe('$$\na_1x_1+a_2x_2+\\cdots+a_nx_n=b\n$$');
+	});
+
+	it('does not parse math or table syntax inside a fenced code block', () => {
+		const source = '````md\n$$\n| a | b |\n| - | - |\n$$\n``` still code\n````';
+		expect(collectStructuralBlocks(source)).toEqual([{ from: 0, to: source.length, kind: 'fence' }]);
+	});
+
+	it('supports single-line math and nested details blocks', () => {
+		const source = '$$x^2$$\n<details>\n<details>\nx\n</details>\n</details>';
+		const blocks = collectStructuralBlocks(source);
+		expect(blocks.map((block) => block.kind)).toEqual(['math', 'details']);
+		expect(source.slice(blocks[1].from, blocks[1].to)).toContain('<details>\nx\n</details>');
+	});
+
+	it('requires a delimiter row before treating pipes as a table', () => {
+		const source = 'not | a table\n\nName | Value\n--- | ---\na \\| b | 2\nafter';
+		const blocks = collectStructuralBlocks(source);
+		expect(blocks).toHaveLength(1);
+		expect(source.slice(blocks[0].from, blocks[0].to)).toBe('Name | Value\n--- | ---\na \\| b | 2');
+		expect(source[blocks[0].to]).toBe('\n');
+	});
+});
+
+describe('collectInlineExcludedRanges', () => {
+	it('finds code before math and ignores syntax inside code spans', () => {
+		const line = '`$not_math$ **not bold**` and $x_1+\\cdots+x_n$';
+		const ranges = collectInlineExcludedRanges(line);
+		expect(ranges.map((range) => [range.kind, line.slice(range.from, range.to)])).toEqual([
+			['code', '`$not_math$ **not bold**`'],
+			['math', '$x_1+\\cdots+x_n$'],
+		]);
+	});
+
+	it('supports multi-backtick code and escaped dollars', () => {
+		const line = '``code ` here`` and \\$5 and $x \\$ y$';
+		const ranges = collectInlineExcludedRanges(line);
+		expect(ranges.map((range) => range.kind)).toEqual(['code', 'math']);
+		expect(line.slice(ranges[1].from, ranges[1].to)).toBe('$x \\$ y$');
+	});
+
+	it('does not treat currency or whitespace-padded dollars as math', () => {
+		expect(collectInlineExcludedRanges('Price $5 and $10; text $ not math $')).toEqual([]);
+	});
+});
+
+describe('splitTableRow', () => {
+	it('keeps escaped pipes inside cells', () => {
+		expect(splitTableRow('| a \\| b | `c|d` |')).toEqual(['a | b', '`c|d`']);
+	});
+
+	it('serializes every cell without exposing pipe delimiters', () => {
+		expect(
+			serializeTableRows([
+				['a | b', '`c|d`'],
+				['next', 'line\nbreak'],
+			]),
+		).toBe('| a \\| b | `c\\|d` |\n| next | line break |');
+	});
+});
