@@ -1482,9 +1482,7 @@ function noteEditorMarkup(selected: Note, mobile = false): string {
 }
 
 function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobile: boolean): void {
-	const compose = root.querySelector<HTMLDivElement>('[data-note-compose]')!;
 	const source = root.querySelector<HTMLElement>('[data-note-source]')!;
-	const outline = root.querySelector<HTMLElement>('[data-note-outline]')!;
 	let draftContent = selected.content.replaceAll('\r', '');
 	const title = root.querySelector<HTMLInputElement>('[data-note-title]')!;
 	const status = root.querySelector<HTMLElement>('[data-note-save-status]');
@@ -1492,7 +1490,6 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 	const AUTOSAVE_EDITING_INTERVAL = 8_000;
 	let idleSaveTimer = 0;
 	let slowSaveTimer = 0;
-	let lastSavedAt = 0;
 	let pending: Partial<Pick<Note, 'title' | 'content'>> | null = null;
 	let activeSave: Promise<boolean> | null = null;
 	const paintSaveStatus = (value: string) => {
@@ -1514,7 +1511,6 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 				if (index >= 0) data.items[index] = updated;
 				invalidateNoteCaches();
 				cacheNotes(data);
-				lastSavedAt = Date.now();
 				paintSaveStatus(locale === 'zh' ? '已同步' : 'Synced');
 				const time = root.querySelector<HTMLTimeElement>('.note-editor-head > time');
 				if (time) time.textContent = new Date(updated.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en');
@@ -1531,6 +1527,19 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		})();
 		return activeSave;
 	};
+	const saveNow = async (): Promise<void> => {
+		window.clearTimeout(idleSaveTimer);
+		window.clearTimeout(slowSaveTimer);
+		idleSaveTimer = 0;
+		slowSaveTimer = 0;
+		while (activeSave || pending) {
+			if (activeSave) {
+				await activeSave;
+				continue;
+			}
+			if (!(await savePending())) break;
+		}
+	};
 	const scheduleAutosave = () => {
 		window.clearTimeout(idleSaveTimer);
 		if (!pending) return;
@@ -1543,14 +1552,7 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		}
 	};
 	const flushPending = async (): Promise<void> => {
-		window.clearTimeout(idleSaveTimer);
-		window.clearTimeout(slowSaveTimer);
-		while (activeSave || pending) {
-			const saved = await (activeSave ?? savePending());
-			window.clearTimeout(idleSaveTimer);
-			window.clearTimeout(slowSaveTimer);
-			if (!saved) break;
-		}
+		await saveNow();
 	};
 	const queueSave = (changes: Partial<Pick<Note, 'title' | 'content'>>) => {
 		pending = { ...pending, ...changes };
@@ -1562,19 +1564,28 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		if (locationTitle) locationTitle.textContent = title.value || (locale === 'zh' ? '无标题便签' : 'Untitled note');
 		queueSave({ title: title.value });
 	});
-	void import('./editor/markdownLivePreview').then(({ createMarkdownLivePreview }) => {
-		if (!source.isConnected) return;
-		createMarkdownLivePreview(source, draftContent, {
-			onChange: (value, immediate) => {
-				draftContent = value.replaceAll('\r', '');
-				queueSave({ content: draftContent });
-				if (immediate) void savePending();
-			},
-			onImageTooLarge: () =>
-				toast(locale === 'zh' ? '图片超过 256 KB，暂不允许粘贴' : 'Images over 256 KB cannot be pasted yet'),
-			onImageReadError: () => toast(locale === 'zh' ? '无法读取粘贴的图片' : 'Could not read the pasted image'),
+	void import('./editor/markdownLivePreview')
+		.then(({ createMarkdownLivePreview }) => {
+			if (!source.isConnected) return;
+			createMarkdownLivePreview(source, draftContent, {
+				onChange: (value, immediate) => {
+					draftContent = value.replaceAll('\r', '');
+					queueSave({ content: draftContent });
+					if (immediate) void saveNow();
+				},
+				onImageTooLarge: () =>
+					toast(locale === 'zh' ? '图片超过 256 KB，暂不允许粘贴' : 'Images over 256 KB cannot be pasted yet'),
+				onImageReadError: () => toast(locale === 'zh' ? '无法读取粘贴的图片' : 'Could not read the pasted image'),
+			});
+		})
+		.catch(() => {
+			paintSaveStatus(locale === 'zh' ? '编辑器加载失败' : 'Editor failed to load');
+			toast(locale === 'zh' ? '编辑器加载失败，无法同步修改' : 'Editor failed to load; changes cannot sync');
 		});
+	document.addEventListener('visibilitychange', () => {
+		if (document.visibilityState === 'hidden') void saveNow();
 	});
+	window.addEventListener('pagehide', () => void saveNow(), { once: true });
 	root.querySelector('[data-note-export]')?.addEventListener('click', () => {
 		const objectUrl = URL.createObjectURL(new Blob([draftContent], { type: 'text/markdown;charset=utf-8' }));
 		const anchor = document.createElement('a');
