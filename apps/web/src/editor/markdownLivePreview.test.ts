@@ -1,7 +1,7 @@
 import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { describe, expect, it } from 'vitest';
-import { livePreviewField } from './markdownLivePreview';
+import { livePreviewField, taskMarkerChange } from './markdownLivePreview';
 
 const REPORTED_SOURCE =
 	'包含变量 $x_1,x_2,\\cdots,x_n$ 的**线性方程**是形如\n\n$$\na_1x_1+a_2x_2+\\cdots+a_nx_n=b\n$$\n\n的方程. 其中 $b$ 与系数 $a_1,a_2,\\cdots,a_n$ 是实数或复数，通常是已知数. 下标 $n$ 则是任意正整数.';
@@ -39,5 +39,13 @@ describe('live preview block decorations', () => {
 
 	it('does not create a block replacement for an unfinished formula', () => {
 		expect(blockReplacements(createState('before\n\n$$\nx + y\nafter'))).toEqual([]);
+	});
+
+	it('replaces the complete task marker without nesting brackets', () => {
+		const initial = EditorState.create({ doc: '- [ ] done' });
+		const checked = initial.update({ changes: taskMarkerChange(2, 5, true) }).state;
+		const unchecked = checked.update({ changes: taskMarkerChange(2, 5, false) }).state;
+		expect(checked.doc.toString()).toBe('- [x] done');
+		expect(unchecked.doc.toString()).toBe('- [ ] done');
 	});
 });

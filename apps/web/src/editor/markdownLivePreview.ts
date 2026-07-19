@@ -6,11 +6,20 @@ import katex from 'katex';
 import {
 	collectInlineExcludedRanges,
 	collectStructuralBlocks,
+	parseTableBlock,
 	serializeTableRows,
-	splitTableRow,
 	type StructuralBlock,
 } from './markdownStructure';
 import { normalizeClipboardText, prepareClipboardText, readClipboardText } from './markdownClipboard';
+import { renderMarkdown, renderMarkdownInline } from './markdownRenderer';
+
+export function taskMarkerChange(
+	from: number,
+	to: number,
+	checked: boolean,
+): { from: number; to: number; insert: string } {
+	return { from, to, insert: checked ? '[x]' : '[ ]' };
+}
 
 class CheckboxWidget extends WidgetType {
 	constructor(
@@ -26,7 +35,7 @@ class CheckboxWidget extends WidgetType {
 		input.checked = this.checked;
 		input.className = 'cm-task-checkbox';
 		input.addEventListener('change', () =>
-			view.dispatch({ changes: { from: this.from, to: this.to, insert: input.checked ? '[x]' : '[ ]' } }),
+			view.dispatch({ changes: taskMarkerChange(this.from, this.to, input.checked) }),
 		);
 		return input;
 	}
@@ -61,16 +70,15 @@ class ImageWidget extends WidgetType {
 		super();
 	}
 	toDOM(): HTMLElement {
-		const match = /^!\[([^\]]*)\]\((\S+?)(?:\s+["'].*["'])?\)$/.exec(this.source);
-		if (!match) {
+		const container = document.createElement('span');
+		container.innerHTML = renderMarkdownInline(this.source);
+		const image = container.querySelector('img');
+		if (!image) {
 			const fallback = document.createElement('span');
 			fallback.textContent = this.source;
 			return fallback;
 		}
-		const image = document.createElement('img');
 		image.className = 'cm-live-image';
-		image.alt = match[1];
-		image.src = match[2].replace(/^<|>$/g, '');
 		image.loading = 'lazy';
 		return image;
 	}
@@ -101,22 +109,12 @@ class BlockWidget extends WidgetType {
 		wrapper.className = `cm-live-block cm-live-${this.block.kind}`;
 		if (this.block.kind === 'fence') {
 			const lines = this.source.split('\n');
-			const label = lines[0].replace(/^\s*(```|~~~)/, '').trim();
+			const label = /^\s*(?:`{3,}|~{3,})(.*)$/.exec(lines[0])?.[1].trim() ?? '';
 			const chrome = document.createElement('div');
 			chrome.className = 'cm-live-code-chrome';
 			chrome.textContent = label || 'code';
 			const code = document.createElement('code');
-			code.textContent = lines
-				.slice(
-					1,
-					lines
-						.at(-1)
-						?.trim()
-						.match(/^```|^~~~/)
-						? -1
-						: undefined,
-				)
-				.join('\n');
+			code.textContent = lines.slice(1, -1).join('\n');
 			const pre = document.createElement('pre');
 			pre.append(code);
 			wrapper.append(chrome, pre);
@@ -132,26 +130,36 @@ class BlockWidget extends WidgetType {
 		} else {
 			const summary = /<summary>([\s\S]*?)<\/summary>/i.exec(this.source)?.[1] ?? 'Details';
 			const summaryNode = document.createElement('summary');
-			summaryNode.textContent = summary.replace(/<[^>]+>/g, '');
+			summaryNode.innerHTML = renderMarkdownInline(summary);
 			const content = document.createElement('div');
-			content.textContent = this.source.replace(/<\/?details[^>]*>|<summary>[\s\S]*?<\/summary>/gi, '').trim();
+			content.innerHTML = renderMarkdown(
+				this.source.replace(/<\/?details[^>]*>|<summary>[\s\S]*?<\/summary>/gi, '').trim(),
+			);
 			wrapper.append(summaryNode, content);
 			(wrapper as HTMLDetailsElement).open = true;
 		}
 		return wrapper;
 	}
 	private tableDOM(view: EditorView): HTMLElement {
+		const parsed = parseTableBlock(this.source);
+		if (!parsed) {
+			const fallback = document.createElement('pre');
+			fallback.textContent = this.source;
+			return fallback;
+		}
 		const table = document.createElement('table');
 		table.className = 'cm-live-table';
-		const lines = this.source.trimEnd().split('\n');
-		const rows = lines.map(splitTableRow);
-		const separatorIndex = rows.findIndex((row) => row.every((cell) => /^:?-+:?$/.test(cell)));
+		const head = document.createElement('thead');
+		const body = document.createElement('tbody');
+		const rows = parsed.rows;
 		rows.forEach((cells, rowIndex) => {
-			if (rowIndex === separatorIndex) return;
+			if (rowIndex === parsed.separatorIndex) return;
 			const row = document.createElement('tr');
 			cells.forEach((value, columnIndex) => {
-				const cell = document.createElement(rowIndex < separatorIndex ? 'th' : 'td');
-				cell.textContent = value;
+				const cell = document.createElement(rowIndex < parsed.separatorIndex ? 'th' : 'td');
+				const alignment = parsed.alignments[columnIndex];
+				if (alignment) cell.style.textAlign = alignment;
+				cell.innerHTML = renderMarkdownInline(value);
 				cell.tabIndex = 0;
 				cell.addEventListener('dblclick', () => {
 					const input = document.createElement('textarea');
@@ -162,9 +170,7 @@ class BlockWidget extends WidgetType {
 					const commit = () => {
 						const updated = rows.map((items, index) =>
 							index === rowIndex
-								? items.map((item, column) =>
-										column === columnIndex ? input.value.replaceAll('|', '\\|').replaceAll('\n', ' ') : item,
-									)
+								? items.map((item, column) => (column === columnIndex ? input.value.replaceAll('\n', ' ') : item))
 								: items,
 						);
 						const markdown = serializeTableRows(updated);
@@ -180,8 +186,9 @@ class BlockWidget extends WidgetType {
 				});
 				row.append(cell);
 			});
-			table.append(row);
+			(rowIndex < parsed.separatorIndex ? head : body).append(row);
 		});
+		table.append(head, body);
 		return table;
 	}
 }
@@ -233,7 +240,7 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 						markerFrom,
 						markerTo,
 						Decoration.replace({
-							widget: new CheckboxWidget(task[2].toLowerCase() === 'x', markerFrom + 1, markerTo - 1),
+							widget: new CheckboxWidget(task[2].toLowerCase() === 'x', markerFrom, markerTo),
 						}),
 					);
 			}
@@ -336,7 +343,9 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 export const livePreviewField = StateField.define<DecorationSet>({
 	create: buildLivePreviewDecorations,
 	update(decorations, transaction) {
-		return transaction.docChanged || transaction.selection
+		return transaction.docChanged ||
+			transaction.selection ||
+			syntaxTree(transaction.startState) !== syntaxTree(transaction.state)
 			? buildLivePreviewDecorations(transaction.state)
 			: decorations;
 	},

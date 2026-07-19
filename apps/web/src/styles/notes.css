@@ -340,6 +340,11 @@
 	caret-color: var(--ink);
 }
 
+.note-source .cm-cursor,
+.note-source .cm-dropCursor {
+	border-left-color: var(--ink) !important;
+}
+
 .note-source,
 .note-source .cm-editor {
 	width: 100%;
@@ -494,6 +499,33 @@
 	padding: 7px 9px;
 	border: 1px solid var(--line);
 	text-align: left;
+	vertical-align: top;
+}
+
+.cm-live-table th {
+	background: var(--surface-strong);
+	font-weight: 650;
+}
+
+.cm-live-table code {
+	padding: 1px 4px;
+	border-radius: 4px;
+	background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.cm-live-table a {
+	color: var(--accent);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+.cm-live-table p {
+	margin: 0;
+}
+
+.cm-live-table img {
+	max-width: 100%;
+	height: auto;
 }
 
 .cm-live-table textarea {

@@ -15,11 +15,19 @@ function isTableLine(line: string): boolean {
 }
 
 function isTableSeparator(line: string): boolean {
-	const cells = line
-		.trim()
-		.replace(/^\||\|$/g, '')
-		.split('|');
-	return cells.length > 0 && cells.every((cell) => /^\s*:?-{1,}:?\s*$/.test(cell));
+	return parseTableSeparator(line) !== null;
+}
+
+function parseTableSeparator(line: string): TableAlignment[] | null {
+	const cells = splitTableRow(line);
+	if (cells.length === 0 || !cells.every((cell) => /^\s*:?-{3,}:?\s*$/.test(cell))) return null;
+	return cells.map((cell) => {
+		const value = cell.trim();
+		if (value.startsWith(':') && value.endsWith(':')) return 'center';
+		if (value.startsWith(':')) return 'left';
+		if (value.endsWith(':')) return 'right';
+		return null;
+	});
 }
 
 export function collectStructuralBlocks(text: string): StructuralBlock[] {
@@ -95,19 +103,30 @@ export function collectStructuralBlocks(text: string): StructuralBlock[] {
 			blocks.push({ ...table, kind: 'table' });
 			table = null;
 		}
-		if (table === null && isTableLine(line) && isTableSeparator(lines[lineIndex + 1] ?? ''))
+		if (
+			table === null &&
+			isTableLine(line) &&
+			isTableSeparator(lines[lineIndex + 1] ?? '') &&
+			splitTableRow(line).length === splitTableRow(lines[lineIndex + 1] ?? '').length
+		)
 			table = { from: offset, to: offset + line.length };
 		else if (table !== null && isTableLine(line)) table.to = offset + line.length;
 		offset += line.length + 1;
 	}
 
-	if (fence) blocks.push({ from: fence.from, to: text.length, kind: 'fence' });
-	if (details) blocks.push({ from: details.from, to: text.length, kind: 'details' });
 	if (table !== null) blocks.push({ ...table, kind: 'table' });
 	return blocks.sort((left, right) => left.from - right.from);
 }
 
 export type InlineRange = { from: number; to: number; kind: 'code' | 'math' };
+
+export type TableAlignment = 'left' | 'center' | 'right' | null;
+
+export type ParsedTable = {
+	rows: string[][];
+	separatorIndex: number;
+	alignments: TableAlignment[];
+};
 
 export function collectInlineExcludedRanges(line: string): InlineRange[] {
 	const ranges: InlineRange[] = [];
@@ -186,8 +205,37 @@ export function splitTableRow(line: string): string[] {
 	return cells;
 }
 
+export function parseTableBlock(source: string): ParsedTable | null {
+	const lines = source.trimEnd().split('\n');
+	if (lines.length < 2) return null;
+	const rows = lines.map(splitTableRow);
+	const alignments = parseTableSeparator(lines[1]);
+	if (!alignments || rows[0].length !== alignments.length) return null;
+	return {
+		rows: rows.map((row) => Array.from({ length: alignments.length }, (_, index) => row[index] ?? '')),
+		separatorIndex: 1,
+		alignments,
+	};
+}
+
 export function serializeTableRows(rows: string[][]): string {
 	return rows
-		.map((row) => `| ${row.map((cell) => cell.replaceAll('\n', ' ').replace(/(?<!\\)\|/g, '\\|')).join(' | ')} |`)
+		.map((row) => `| ${row.map((cell) => escapeTableCell(cell.replaceAll('\n', ' '))).join(' | ')} |`)
 		.join('\n');
+}
+
+function escapeTableCell(value: string): string {
+	let result = '';
+	let backslashes = 0;
+	for (const char of value) {
+		if (char === '\\') {
+			backslashes += 1;
+			result += char;
+			continue;
+		}
+		if (char === '|' && backslashes % 2 === 0) result += '\\';
+		result += char;
+		backslashes = 0;
+	}
+	return result;
 }

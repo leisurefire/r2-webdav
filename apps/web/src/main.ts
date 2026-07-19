@@ -39,9 +39,6 @@ import {
 	X,
 	createIcons,
 } from 'lucide';
-import { marked } from 'marked';
-import markedKatex from 'marked-katex-extension';
-import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import type {
 	BookmarkHub,
@@ -57,6 +54,7 @@ import type {
 import { Lunar, Solar } from 'lunar-typescript';
 import { API_BASE, ApiError, api, hasSession } from './api/client';
 import { bindBookmarkPreviews } from './bookmarks/previews';
+import { renderMarkdown, renderMarkdownDocument } from './editor/markdownRenderer';
 import './styles.css';
 import './styles/bookmarks.css';
 import './styles/notes.css';
@@ -64,7 +62,6 @@ import './styles/responsive.css';
 
 type Page = 'files' | 'calendar' | 'notes' | 'devices' | 'settings';
 const app = document.querySelector<HTMLDivElement>('#app')!;
-marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 type Locale = 'en' | 'zh';
 let locale: Locale =
 	(localStorage.getItem('r2_locale') as Locale | null) ??
@@ -1410,47 +1407,6 @@ async function loadNoteFolders(force = false): Promise<void> {
 	} catch (error) {
 		if (force) toast(errorMessage(error));
 	}
-}
-
-interface MarkdownHeading {
-	id: string;
-	level: number;
-	text: string;
-}
-
-function renderMarkdownDocument(value: string): { html: string; headings: MarkdownHeading[] } {
-	const parsed = marked.parse(value, { async: false, breaks: true, gfm: true });
-	const sanitized = DOMPurify.sanitize(parsed, {
-		ADD_ATTR: ['target'],
-		ALLOW_DATA_ATTR: false,
-	});
-	const documentNode = new DOMParser().parseFromString(`<body>${sanitized}</body>`, 'text/html');
-	const headings: MarkdownHeading[] = [];
-	const usedIds = new Set<string>();
-	documentNode.body.querySelectorAll<HTMLHeadingElement>('h1, h2, h3, h4, h5, h6').forEach((heading) => {
-		const level = Number(heading.tagName.slice(1));
-		const base =
-			heading.textContent
-				?.trim()
-				.toLowerCase()
-				.replace(/[^\p{L}\p{N}]+/gu, '-')
-				.replace(/^-|-$/g, '') || 'section';
-		let id = base;
-		let suffix = 2;
-		while (usedIds.has(id)) id = `${base}-${suffix++}`;
-		usedIds.add(id);
-		heading.id = id;
-		headings.push({ id, level, text: heading.textContent?.trim() ?? id });
-	});
-	documentNode.body.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((anchor) => {
-		anchor.target = '_blank';
-		anchor.rel = 'noopener noreferrer';
-	});
-	return { html: documentNode.body.innerHTML, headings };
-}
-
-function renderMarkdown(value: string): string {
-	return renderMarkdownDocument(value).html;
 }
 
 function noteFolderSelectMarkup(selectedFolderId: string | null | undefined): string {

@@ -16,6 +16,7 @@
 	--ink: #000000;
 	--muted: #666666;
 	--quiet: #8f8f8f;
+	--accent: #1d4ed8;
 	--line: #e5e7eb;
 	--soft-line: #e5e7eb;
 	--surface: #f1f1f1;
@@ -1975,6 +1976,7 @@ dialog::backdrop {
 		--ink: #f3f3f3;
 		--muted: #a3a3a3;
 		--quiet: #777777;
+		--accent: #93c5fd;
 		--line: #303030;
 		--soft-line: #292929;
 		--surface: #242424;

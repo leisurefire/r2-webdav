@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	collectInlineExcludedRanges,
 	collectStructuralBlocks,
+	parseTableBlock,
 	serializeTableRows,
 	splitTableRow,
 } from './markdownStructure';
@@ -18,6 +19,11 @@ describe('collectStructuralBlocks', () => {
 	it('leaves an unclosed display formula visible as source', () => {
 		const source = 'before\n\n$$\nx + y\nafter';
 		expect(collectStructuralBlocks(source)).toEqual([]);
+	});
+
+	it('leaves unclosed fences and details visible as source', () => {
+		expect(collectStructuralBlocks('before\n```ts\nconst value = 1')).toEqual([]);
+		expect(collectStructuralBlocks('before\n<details>\ncontent')).toEqual([]);
 	});
 
 	it('does not parse math or table syntax inside a fenced code block', () => {
@@ -75,5 +81,27 @@ describe('splitTableRow', () => {
 				['next', 'line\nbreak'],
 			]),
 		).toBe('| a \\| b | `c\\|d` |\n| next | line break |');
+	});
+
+	it('escapes pipes after an even number of backslashes', () => {
+		expect(serializeTableRows([['one \\\\| two', 'already \\| escaped']])).toBe(
+			String.raw`| one \\\| two | already \| escaped |`,
+		);
+	});
+
+	it('parses table alignment and pads short rows', () => {
+		expect(parseTableBlock('| Name | Value |\n| :--- | ---: |\n| **A** | 2')).toEqual({
+			rows: [
+				['Name', 'Value'],
+				[':---', '---:'],
+				['**A**', '2'],
+			],
+			separatorIndex: 1,
+			alignments: ['left', 'right'],
+		});
+	});
+
+	it('rejects a table whose header and separator have different column counts', () => {
+		expect(parseTableBlock('| Name | Value |\n| --- |')).toBeNull();
 	});
 });
