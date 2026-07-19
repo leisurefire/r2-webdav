@@ -1,4 +1,4 @@
-import { Compartment, EditorState } from '@codemirror/state';
+import { Compartment, EditorState, Transaction } from '@codemirror/state';
 import { EditorView, Decoration, ViewPlugin, ViewUpdate, WidgetType } from '@codemirror/view';
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, defaultHighlightStyle, syntaxTree } from '@codemirror/language';
@@ -361,19 +361,73 @@ const livePreviewPlugin = ViewPlugin.fromClass(
 	{ decorations: (value) => value.decorations },
 );
 
+type MarkdownLivePreviewOptions = {
+	onChange: (value: string, immediate: boolean) => void;
+	onImageTooLarge?: () => void;
+	onImageReadError?: () => void;
+};
+
+function readFileAsDataUrl(file: File): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.addEventListener('load', () => resolve(String(reader.result)));
+		reader.addEventListener('error', () => reject(reader.error));
+		reader.readAsDataURL(file);
+	});
+}
+
 export function createMarkdownLivePreview(
 	parent: HTMLElement,
 	value: string,
-	onChange: (value: string) => void,
+	options: MarkdownLivePreviewOptions,
 ): EditorView {
 	localStorage.setItem('wysiwygMode', 'true');
 	const livePreview = new Compartment();
+	const pendingImageRanges = new Map<number, { from: number; to: number; empty: boolean }>();
+	let nextImagePasteId = 0;
+	const clipboardHandlers = EditorView.domEventHandlers({
+		paste(event, view) {
+			if ((event.target as HTMLElement | null)?.closest('.cm-live-table textarea')) return false;
+			const image = [...(event.clipboardData?.files ?? [])].find((file) => file.type.startsWith('image/'));
+			if (!image) return false;
+			event.preventDefault();
+			if (image.size > 256 * 1024) {
+				options.onImageTooLarge?.();
+				return true;
+			}
+			const id = ++nextImagePasteId;
+			const selection = view.state.selection.main;
+			pendingImageRanges.set(id, { from: selection.from, to: selection.to, empty: selection.empty });
+			void readFileAsDataUrl(image)
+				.then((dataUrl) => {
+					const range = pendingImageRanges.get(id);
+					pendingImageRanges.delete(id);
+					if (!range || !view.dom.isConnected) return;
+					const alt = image.name || 'image';
+					const markdown = `![${alt.replaceAll(']', '\\]')}](${dataUrl})`;
+					view.dispatch({
+						changes: { from: range.from, to: range.to, insert: markdown },
+						selection: { anchor: range.from + markdown.length },
+						annotations: Transaction.userEvent.of('input.paste'),
+						scrollIntoView: true,
+					});
+					view.focus();
+				})
+				.catch(() => {
+					pendingImageRanges.delete(id);
+					options.onImageReadError?.();
+				});
+			return true;
+		},
+	});
 	const state = EditorState.create({
 		doc: value,
 		extensions: [
 			markdown(),
 			syntaxHighlighting(defaultHighlightStyle),
 			livePreview.of(livePreviewPlugin),
+			clipboardHandlers,
+			EditorView.clipboardInputFilter.of((text) => text.replaceAll('\r\n', '\n').replaceAll('\r', '\n')),
 			EditorView.lineWrapping,
 			EditorView.theme({
 				'&': { height: '100%' },
@@ -381,7 +435,19 @@ export function createMarkdownLivePreview(
 				'.cm-content': { padding: '22px 24px', minHeight: '100%', lineHeight: '1.75' },
 			}),
 			EditorView.updateListener.of((update) => {
-				if (update.docChanged) onChange(update.state.doc.toString());
+				if (!update.docChanged) return;
+				for (const [id, range] of pendingImageRanges) {
+					const mappedFrom = update.changes.mapPos(range.from, range.empty ? 1 : -1);
+					pendingImageRanges.set(id, {
+						from: mappedFrom,
+						to: range.empty ? mappedFrom : update.changes.mapPos(range.to, 1),
+						empty: range.empty,
+					});
+				}
+				const immediate = update.transactions.some(
+					(transaction) => transaction.isUserEvent('input.paste') || transaction.isUserEvent('delete.cut'),
+				);
+				options.onChange(update.state.doc.toString(), immediate);
 			}),
 		],
 	});
