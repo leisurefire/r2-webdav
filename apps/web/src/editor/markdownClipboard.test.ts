@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeClipboardText, readClipboardText } from './markdownClipboard';
+import { normalizeClipboardText, prepareClipboardText, readClipboardText } from './markdownClipboard';
 
 describe('Markdown clipboard text', () => {
 	it('prefers plain text and normalizes Windows line endings', () => {
@@ -20,5 +20,20 @@ describe('Markdown clipboard text', () => {
 
 	it('normalizes lone carriage returns', () => {
 		expect(normalizeClipboardText('one\rtwo')).toBe('one\ntwo');
+	});
+
+	it('normalizes multiline LaTeX display delimiters', () => {
+		expect(prepareClipboardText('\\[\r\n\\begin{aligned}\r\nx &= 1 \\\\\r\ny &= 2\r\n\\end{aligned}\r\n\\]')).toBe(
+			'$$\n\\begin{aligned}\nx &= 1 \\\\ny &= 2\n\\end{aligned}\n$$',
+		);
+	});
+
+	it('keeps display delimiter examples inside fenced code unchanged', () => {
+		expect(prepareClipboardText('```latex\n\\[\nx + y\n\\]\n```')).toBe('```latex\n\\[\nx + y\n\\]\n```');
+	});
+
+	it('separates a pasted display formula from adjacent line content', () => {
+		expect(prepareClipboardText('$$\nx + y\n$$', 'x', 'y')).toBe('\n$$\nx + y\n$$\n');
+		expect(prepareClipboardText('$$\nx + y\n$$', '\n', '\n')).toBe('$$\nx + y\n$$');
 	});
 });

@@ -10,7 +10,7 @@ import {
 	splitTableRow,
 	type StructuralBlock,
 } from './markdownStructure';
-import { normalizeClipboardText, readClipboardText } from './markdownClipboard';
+import { normalizeClipboardText, prepareClipboardText, readClipboardText } from './markdownClipboard';
 
 class CheckboxWidget extends WidgetType {
 	constructor(
@@ -443,9 +443,14 @@ export function createMarkdownLivePreview(
 			if (!text) return false;
 			event.preventDefault();
 			const selection = view.state.selection.main;
+			const insert = prepareClipboardText(
+				text,
+				selection.from > 0 ? view.state.sliceDoc(selection.from - 1, selection.from) : '',
+				selection.to < view.state.doc.length ? view.state.sliceDoc(selection.to, selection.to + 1) : '',
+			);
 			view.dispatch({
-				changes: { from: selection.from, to: selection.to, insert: text },
-				selection: { anchor: selection.from + text.length },
+				changes: { from: selection.from, to: selection.to, insert },
+				selection: { anchor: selection.from + insert.length },
 				annotations: Transaction.userEvent.of('input.paste'),
 				scrollIntoView: true,
 			});
