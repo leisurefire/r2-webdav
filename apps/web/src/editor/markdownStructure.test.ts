@@ -1,13 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import {
 	collectInlineExcludedRanges,
+	collectObsidianInlineRanges,
 	collectStructuralBlocks,
+	parseFrontmatterBlock,
 	parseTableBlock,
 	serializeTableRows,
 	splitTableRow,
 } from './markdownStructure';
 
 describe('collectStructuralBlocks', () => {
+	it('treats only a closed document-start frontmatter block as properties', () => {
+		const source = '---\ntags: [one, two]\ndescription: first\n  second\n---\n\n# Heading';
+		const frontmatter = parseFrontmatterBlock(source);
+		expect(frontmatter?.entries).toEqual([
+			{ key: 'tags', value: '[one, two]' },
+			{ key: 'description', value: 'first\nsecond' },
+		]);
+		expect(collectStructuralBlocks(source)).toContainEqual({
+			from: 0,
+			to: source.indexOf('---', 4) + 3,
+			kind: 'frontmatter',
+		});
+		expect(parseFrontmatterBlock('text\n---\na: b\n---')).toBeNull();
+	});
+
 	it('collects the reported mixed inline and block math example without changing source offsets', () => {
 		const source =
 			'包含变量 $x_1,x_2,\\cdots,x_n$ 的**线性方程**是形如\n\n$$\na_1x_1+a_2x_2+\\cdots+a_nx_n=b\n$$\n\n的方程. 其中 $b$ 与系数 $a_1,a_2,\\cdots,a_n$ 是实数或复数，通常是已知数. 下标 $n$ 则是任意正整数.';
@@ -66,6 +83,20 @@ describe('collectInlineExcludedRanges', () => {
 
 	it('does not treat currency or whitespace-padded dollars as math', () => {
 		expect(collectInlineExcludedRanges('Price $5 and $10; text $ not math $')).toEqual([]);
+	});
+});
+
+describe('collectObsidianInlineRanges', () => {
+	it('finds highlights and comments while ignoring code and math', () => {
+		const line = '`==code==` ==visible== $==math==$ %%hidden%%';
+		expect(collectObsidianInlineRanges(line).map((range) => [range.kind, line.slice(range.from, range.to)])).toEqual([
+			['highlight', '==visible=='],
+			['comment', '%%hidden%%'],
+		]);
+	});
+
+	it('does not treat whitespace-padded highlight delimiters as syntax', () => {
+		expect(collectObsidianInlineRanges('== not highlighted ==')).toEqual([]);
 	});
 });
 

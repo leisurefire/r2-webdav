@@ -1,4 +1,65 @@
-export type StructuralBlock = { from: number; to: number; kind: 'fence' | 'math' | 'details' | 'table' };
+export type StructuralBlock = {
+	from: number;
+	to: number;
+	kind: 'fence' | 'math' | 'details' | 'table' | 'quote' | 'frontmatter';
+};
+
+export type FrontmatterEntry = { key: string; value: string };
+
+export type FrontmatterBlock = {
+	from: number;
+	to: number;
+	entries: FrontmatterEntry[];
+};
+
+export function parseFrontmatterBlock(text: string): FrontmatterBlock | null {
+	const lineBreak = /\r\n|\r|\n/g;
+	const openingBreak = lineBreak.exec(text);
+	if (
+		!openingBreak ||
+		text
+			.slice(0, openingBreak.index)
+			.replace(/^\uFEFF/, '')
+			.trim() !== '---'
+	)
+		return null;
+	const contentFrom = openingBreak.index + openingBreak[0].length;
+	let lineFrom = contentFrom;
+	let closingFrom = -1;
+	let closingTo = -1;
+	while (lineFrom <= text.length) {
+		lineBreak.lastIndex = lineFrom;
+		const nextBreak = lineBreak.exec(text);
+		const lineTo = nextBreak?.index ?? text.length;
+		if (/^(?:---|\.\.\.)\s*$/.test(text.slice(lineFrom, lineTo))) {
+			closingFrom = lineFrom;
+			closingTo = lineTo;
+			break;
+		}
+		if (!nextBreak) break;
+		lineFrom = lineTo + nextBreak[0].length;
+	}
+	if (closingFrom < 0) return null;
+
+	const entries: FrontmatterEntry[] = [];
+	const content = text.slice(contentFrom, closingFrom).replace(/(?:\r\n|\r|\n)$/, '');
+	for (const line of content.split(/\r\n|\r|\n/)) {
+		const property = /^([\p{L}\p{N}_-]+)\s*:\s*(.*)$/u.exec(line);
+		if (property) {
+			entries.push({ key: property[1], value: property[2].trim() });
+			continue;
+		}
+		if (/^\s+(?:\S.*)?$/.test(line) && entries.length > 0) {
+			const continuation = line.trim();
+			if (continuation)
+				entries[entries.length - 1].value = [entries[entries.length - 1].value, continuation]
+					.filter(Boolean)
+					.join('\n');
+		}
+	}
+
+	return { from: 0, to: closingTo, entries };
+}
 
 function hasUnescapedPipe(line: string): boolean {
 	let escaped = false;
@@ -32,14 +93,17 @@ function parseTableSeparator(line: string): TableAlignment[] | null {
 
 export function collectStructuralBlocks(text: string): StructuralBlock[] {
 	const blocks: StructuralBlock[] = [];
-	let offset = 0;
+	const frontmatter = parseFrontmatterBlock(text);
+	if (frontmatter) blocks.push({ from: frontmatter.from, to: frontmatter.to, kind: 'frontmatter' });
+	let offset = frontmatter ? frontmatter.to + (text[frontmatter.to] === '\n' ? 1 : 0) : 0;
 	let fence: { from: number; marker: '`' | '~'; length: number } | null = null;
 	let math: number | null = null;
 	let details: { from: number; depth: number } | null = null;
 	let table: { from: number; to: number } | null = null;
 
 	const lines = text.split('\n');
-	for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+	const firstLine = frontmatter ? text.slice(0, frontmatter.to).split('\n').length : 0;
+	for (let lineIndex = firstLine; lineIndex < lines.length; lineIndex += 1) {
 		const line = lines[lineIndex];
 		const trimmed = line.trim();
 		const openingFence = /^ {0,3}(`{3,}|~{3,})(?:[^`~]*)$/.exec(line);
@@ -120,6 +184,8 @@ export function collectStructuralBlocks(text: string): StructuralBlock[] {
 
 export type InlineRange = { from: number; to: number; kind: 'code' | 'math' };
 
+export type ObsidianInlineRange = { from: number; to: number; kind: 'highlight' | 'comment' };
+
 export type TableAlignment = 'left' | 'center' | 'right' | null;
 
 export type ParsedTable = {
@@ -166,6 +232,54 @@ export function collectInlineExcludedRanges(line: string): InlineRange[] {
 			}
 		}
 		index += 1;
+	}
+	return ranges;
+}
+
+function closingDelimiter(line: string, delimiter: string, from: number): number {
+	let index = from;
+	while (index < line.length) {
+		if (line[index] === '\\') {
+			index += 2;
+			continue;
+		}
+		if (line.startsWith(delimiter, index)) return index;
+		index += 1;
+	}
+	return -1;
+}
+
+export function collectObsidianInlineRanges(line: string): ObsidianInlineRange[] {
+	const excluded = collectInlineExcludedRanges(line);
+	const ranges: ObsidianInlineRange[] = [];
+	let index = 0;
+	while (index < line.length) {
+		const excludedRange = excluded.find((range) => index >= range.from && index < range.to);
+		if (excludedRange) {
+			index = excludedRange.to;
+			continue;
+		}
+		if (line[index] === '\\') {
+			index += 2;
+			continue;
+		}
+		const delimiter = line.startsWith('%%', index) ? '%%' : line.startsWith('==', index) ? '==' : null;
+		if (!delimiter) {
+			index += 1;
+			continue;
+		}
+		const end = closingDelimiter(line, delimiter, index + delimiter.length);
+		const content = end < 0 ? '' : line.slice(index + delimiter.length, end);
+		const valid =
+			end >= 0 &&
+			content.length > 0 &&
+			(delimiter === '%%' || (!/^\s|\s$/.test(content) && !line.startsWith('=', end + delimiter.length)));
+		if (!valid) {
+			index += delimiter.length;
+			continue;
+		}
+		ranges.push({ from: index, to: end + delimiter.length, kind: delimiter === '%%' ? 'comment' : 'highlight' });
+		index = end + delimiter.length;
 	}
 	return ranges;
 }

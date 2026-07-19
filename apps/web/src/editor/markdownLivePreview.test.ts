@@ -81,6 +81,34 @@ describe('live preview block decorations', () => {
 		expect(hasHeading).toBe(true);
 	});
 
+	it('hides the ATX marker and separator whitespace in live headings', () => {
+		const source = '#   Heading\n\nbody';
+		const replacements: string[] = [];
+		const state = EditorState.create({
+			doc: source,
+			selection: { anchor: source.length },
+			extensions: [markdownLanguageSupport, livePreviewField],
+		});
+		state.field(livePreviewField).between(0, state.doc.length, (from, to, decoration) => {
+			if (!decoration.spec.class && !decoration.spec.widget) replacements.push(source.slice(from, to));
+		});
+		expect(replacements).toEqual(expect.arrayContaining(['#', '   ']));
+	});
+
+	it('keeps table blocks addressable from their own rendered region', () => {
+		const source = 'intro\n\n| Name | Value |\n| --- | --- |\n| A | 1 |';
+		const blocks = blockReplacements(createState(source));
+		expect(blocks).toHaveLength(1);
+		expect(source.slice(blocks[0].from, blocks[0].to)).toBe('| Name | Value |\n| --- | --- |\n| A | 1 |');
+	});
+
+	it('replaces a complete blockquote from its own source range', () => {
+		const source = 'intro\n\n> quoted text';
+		const blocks = blockReplacements(createState(source));
+		expect(blocks).toHaveLength(1);
+		expect(source.slice(blocks[0].from, blocks[0].to)).toBe('> quoted text');
+	});
+
 	it('resolves reference links and hides their definitions in preview mode', () => {
 		const source = 'intro\n\n[docs][guide]\n\n[guide]: https://example.com "Docs"';
 		const replacements = widgetReplacements(createState(source));
@@ -98,5 +126,13 @@ describe('live preview block decorations', () => {
 		const unchecked = checked.update({ changes: taskMarkerChange(2, 5, false) }).state;
 		expect(checked.doc.toString()).toBe('- [x] done');
 		expect(unchecked.doc.toString()).toBe('- [ ] done');
+	});
+
+	it('renders ordered task markers with the same source range behavior', () => {
+		const source = 'intro\n\n1. [ ] first task';
+		const replacements = widgetReplacements(createState(source));
+		expect(
+			replacements.some(({ name, from, to }) => name === 'CheckboxWidget' && source.slice(from, to) === '[ ]'),
+		).toBe(true);
 	});
 });

@@ -1,8 +1,58 @@
 import DOMPurify from 'dompurify';
-import { Marked } from 'marked';
+import { Marked, type Token } from 'marked';
 import markedKatex from 'marked-katex-extension';
+import { parseFrontmatterBlock, type FrontmatterEntry } from './markdownStructure';
+
+type ObsidianInlineToken = Token & {
+	type: 'obsidian-highlight' | 'obsidian-comment';
+	text: string;
+	tokens?: Token[];
+};
 
 const markdown = new Marked(markedKatex({ throwOnError: false, nonStandard: true }));
+markdown.use({
+	extensions: [
+		{
+			name: 'obsidian-highlight',
+			level: 'inline',
+			start(source) {
+				const position = source.indexOf('==');
+				return position < 0 ? undefined : position;
+			},
+			tokenizer(source) {
+				const match = /^==(?=\S)([\s\S]*?\S)==(?!=)/.exec(source);
+				if (!match) return undefined;
+				return {
+					type: 'obsidian-highlight',
+					raw: match[0],
+					text: match[1],
+					tokens: this.lexer.inlineTokens(match[1]),
+				} as ObsidianInlineToken;
+			},
+			renderer(token) {
+				const value = token as ObsidianInlineToken;
+				return `<mark>${this.parser.parseInline(value.tokens ?? [])}</mark>`;
+			},
+			childTokens: ['tokens'],
+		},
+		{
+			name: 'obsidian-comment',
+			level: 'inline',
+			start(source) {
+				const position = source.indexOf('%%');
+				return position < 0 ? undefined : position;
+			},
+			tokenizer(source) {
+				const match = /^%%([\s\S]*?)%%/.exec(source);
+				if (!match) return undefined;
+				return { type: 'obsidian-comment', raw: match[0], text: match[1] } as ObsidianInlineToken;
+			},
+			renderer() {
+				return '';
+			},
+		},
+	],
+});
 
 const EXTERNAL_LINK_SCHEME = /^(?:https?:)?\/\//i;
 
@@ -20,6 +70,63 @@ export function markdownLinkOpensNewTab(href: string): boolean {
 	return EXTERNAL_LINK_SCHEME.test(href.trim());
 }
 
+function calloutTitle(type: string): string {
+	return type.replace(/[-_]+/g, ' ').replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
+function appendFrontmatter(documentNode: Document, entries: FrontmatterEntry[]): void {
+	if (entries.length === 0) return;
+	const properties = documentNode.createElement('dl');
+	properties.className = 'markdown-frontmatter';
+	for (const entry of entries) {
+		const row = documentNode.createElement('div');
+		const key = documentNode.createElement('dt');
+		key.textContent = entry.key;
+		const value = documentNode.createElement('dd');
+		value.textContent = entry.value;
+		row.append(key, value);
+		properties.append(row);
+	}
+	documentNode.body.prepend(properties);
+}
+
+function decorateCallouts(documentNode: Document): void {
+	documentNode.body.querySelectorAll('blockquote').forEach((blockquote) => {
+		const paragraph = blockquote.firstElementChild;
+		const firstText = paragraph?.firstChild;
+		if (!paragraph || paragraph.tagName !== 'P' || firstText?.nodeType !== 3) return;
+		const match = /^\s*\[!([a-z0-9_-]+)\]([+-])?(?:[ \t]+([^\r\n]*))?/i.exec(firstText.textContent ?? '');
+		if (!match) return;
+		const type = match[1].toLowerCase();
+		firstText.textContent = (firstText.textContent ?? '').slice(match[0].length);
+		if (!firstText.textContent) firstText.remove();
+		if (paragraph.firstChild?.nodeName === 'BR') paragraph.firstChild.remove();
+		if (!paragraph.textContent?.trim() && paragraph.childElementCount === 0) paragraph.remove();
+
+		const callout = documentNode.createElement('aside');
+		callout.className = `markdown-callout markdown-callout-${type}`;
+		const title = documentNode.createElement('div');
+		title.className = 'markdown-callout-title';
+		title.textContent = match[3]?.trim() || calloutTitle(type);
+		if (match[2]) {
+			const details = documentNode.createElement('details');
+			details.className = callout.className;
+			details.open = match[2] === '+';
+			const summary = documentNode.createElement('summary');
+			summary.className = 'markdown-callout-title';
+			summary.textContent = title.textContent;
+			const content = documentNode.createElement('div');
+			while (blockquote.firstChild) content.append(blockquote.firstChild);
+			details.append(summary, content);
+			blockquote.replaceWith(details);
+			return;
+		}
+		callout.append(title);
+		while (blockquote.firstChild) callout.append(blockquote.firstChild);
+		blockquote.replaceWith(callout);
+	});
+}
+
 function sanitizedDocument(parsed: string): Document {
 	const sanitized = DOMPurify.sanitize(parsed, {
 		ADD_ATTR: ['target'],
@@ -35,6 +142,7 @@ function sanitizedDocument(parsed: string): Document {
 			anchor.removeAttribute('rel');
 		}
 	});
+	decorateCallouts(documentNode);
 	return documentNode;
 }
 
@@ -56,8 +164,12 @@ export function renderResolvedMarkdownLink(label: string, href: string, title?: 
 }
 
 export function renderMarkdownDocument(value: string): { html: string; headings: MarkdownHeading[] } {
-	const parsed = markdown.parse(value, { async: false, breaks: true, gfm: true });
+	const normalized = value.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+	const frontmatter = parseFrontmatterBlock(normalized);
+	const body = frontmatter ? normalized.slice(frontmatter.to) : normalized;
+	const parsed = markdown.parse(body, { async: false, breaks: true, gfm: true });
 	const documentNode = sanitizedDocument(parsed);
+	if (frontmatter) appendFrontmatter(documentNode, frontmatter.entries);
 	const headings: MarkdownHeading[] = [];
 	const usedIds = new Set<string>();
 	documentNode.body.querySelectorAll<HTMLHeadingElement>('h1, h2, h3, h4, h5, h6').forEach((heading) => {

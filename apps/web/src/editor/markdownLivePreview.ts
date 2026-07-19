@@ -1,12 +1,15 @@
 import { EditorState, StateField, Transaction } from '@codemirror/state';
 import { EditorView, Decoration, WidgetType, type DecorationSet } from '@codemirror/view';
 import { markdown } from '@codemirror/lang-markdown';
-import { syntaxHighlighting, defaultHighlightStyle, syntaxTree } from '@codemirror/language';
+import { HighlightStyle, defaultHighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language';
 import { GFM } from '@lezer/markdown';
+import { tags } from '@lezer/highlight';
 import katex from 'katex';
 import {
 	collectInlineExcludedRanges,
+	collectObsidianInlineRanges,
 	collectStructuralBlocks,
+	parseFrontmatterBlock,
 	parseTableBlock,
 	serializeTableRows,
 	type StructuralBlock,
@@ -20,6 +23,12 @@ import {
 } from './markdownRenderer';
 
 export const markdownLanguageSupport = markdown({ extensions: GFM });
+
+// The default CodeMirror style underlines headings, which is useful for source
+// editors but conflicts with the rendered live-preview treatment.
+const markdownLivePreviewHighlightOverrides = HighlightStyle.define([
+	{ tag: tags.heading, textDecoration: 'none', fontWeight: 'bold' },
+]);
 
 type LinkDefinition = { href: string; title?: string };
 type ResolvedLink = LinkDefinition & { label: string };
@@ -84,6 +93,30 @@ export function taskMarkerChange(
 	return { from, to, insert: checked ? '[x]' : '[ ]' };
 }
 
+function selectSource(view: EditorView, from: number, to = from): void {
+	const start = Math.max(0, Math.min(from, view.state.doc.length));
+	const end = Math.max(start, Math.min(to, view.state.doc.length));
+	view.dispatch({
+		selection: { anchor: start, head: end },
+		effects: EditorView.scrollIntoView(start, { y: 'center' }),
+	});
+	view.focus();
+}
+
+function hasInteractiveTarget(target: EventTarget | null): boolean {
+	return target instanceof Element && !!target.closest('a,button,input,textarea,select,summary');
+}
+
+function bindSourceNavigation(node: HTMLElement, view: EditorView, from: number, block = false): void {
+	node.addEventListener('mousedown', (event) => {
+		if (!(event instanceof MouseEvent) || event.button !== 0 || hasInteractiveTarget(event.target)) return;
+		event.preventDefault();
+		event.stopPropagation();
+		const position = block ? from : (view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? from);
+		selectSource(view, position);
+	});
+}
+
 class CheckboxWidget extends WidgetType {
 	constructor(
 		private readonly checked: boolean,
@@ -105,10 +138,13 @@ class CheckboxWidget extends WidgetType {
 }
 
 class InlineMathWidget extends WidgetType {
-	constructor(private readonly expression: string) {
+	constructor(
+		private readonly expression: string,
+		private readonly from: number,
+	) {
 		super();
 	}
-	toDOM(): HTMLElement {
+	toDOM(view: EditorView): HTMLElement {
 		const node = document.createElement('span');
 		node.className = 'cm-live-inline-math';
 		try {
@@ -116,6 +152,23 @@ class InlineMathWidget extends WidgetType {
 		} catch {
 			node.textContent = `$${this.expression}$`;
 		}
+		bindSourceNavigation(node, view, this.from);
+		return node;
+	}
+}
+
+class InlineMarkdownWidget extends WidgetType {
+	constructor(
+		private readonly source: string,
+		private readonly from: number,
+	) {
+		super();
+	}
+	toDOM(view: EditorView): HTMLElement {
+		const node = document.createElement('span');
+		node.className = 'cm-live-inline-rendered';
+		node.innerHTML = renderMarkdownInline(this.source);
+		bindSourceNavigation(node, view, this.from);
 		return node;
 	}
 }
@@ -123,6 +176,7 @@ class InlineMathWidget extends WidgetType {
 class LinkWidget extends WidgetType {
 	constructor(
 		private readonly source: string,
+		private readonly from: number,
 		private readonly resolved?: ResolvedLink,
 	) {
 		super();
@@ -136,6 +190,7 @@ class LinkWidget extends WidgetType {
 		if (!anchor) {
 			container.className = 'cm-live-link-disabled';
 			container.replaceChildren(document.createTextNode(container.textContent || this.source));
+			bindSourceNavigation(container, view, this.from);
 			return container;
 		}
 		anchor.classList.add('cm-live-link');
@@ -160,40 +215,53 @@ class LinkWidget extends WidgetType {
 }
 
 class HorizontalRuleWidget extends WidgetType {
-	toDOM(): HTMLElement {
+	constructor(private readonly from: number) {
+		super();
+	}
+	toDOM(view: EditorView): HTMLElement {
 		const rule = document.createElement('hr');
 		rule.className = 'cm-live-hr';
+		bindSourceNavigation(rule, view, this.from);
 		return rule;
 	}
 }
 
 class ImageWidget extends WidgetType {
-	constructor(private readonly source: string) {
+	constructor(
+		private readonly source: string,
+		private readonly from: number,
+	) {
 		super();
 	}
-	toDOM(): HTMLElement {
+	toDOM(view: EditorView): HTMLElement {
 		const container = document.createElement('span');
 		container.innerHTML = renderMarkdownInline(this.source);
 		const image = container.querySelector('img');
 		if (!image) {
 			const fallback = document.createElement('span');
 			fallback.textContent = this.source;
+			bindSourceNavigation(fallback, view, this.from);
 			return fallback;
 		}
 		image.className = 'cm-live-image';
 		image.loading = 'lazy';
+		bindSourceNavigation(image, view, this.from);
 		return image;
 	}
 }
 
 class ListMarkerWidget extends WidgetType {
-	constructor(private readonly marker: string) {
+	constructor(
+		private readonly marker: string,
+		private readonly from: number,
+	) {
 		super();
 	}
-	toDOM(): HTMLElement {
+	toDOM(view: EditorView): HTMLElement {
 		const node = document.createElement('span');
 		node.className = 'cm-live-list-marker';
 		node.textContent = /^\d/.test(this.marker) ? this.marker : '•';
+		bindSourceNavigation(node, view, this.from);
 		return node;
 	}
 }
@@ -229,7 +297,7 @@ class BlockWidget extends WidgetType {
 			} catch {
 				wrapper.textContent = this.source;
 			}
-		} else {
+		} else if (this.block.kind === 'details') {
 			const summary = /<summary>([\s\S]*?)<\/summary>/i.exec(this.source)?.[1] ?? 'Details';
 			const summaryNode = document.createElement('summary');
 			summaryNode.innerHTML = renderMarkdownInline(summary);
@@ -239,7 +307,25 @@ class BlockWidget extends WidgetType {
 			);
 			wrapper.append(summaryNode, content);
 			(wrapper as HTMLDetailsElement).open = true;
-		}
+		} else if (this.block.kind === 'frontmatter') {
+			const frontmatter = parseFrontmatterBlock(this.source);
+			if (!frontmatter || frontmatter.entries.length === 0) {
+				wrapper.textContent = this.source;
+			} else {
+				const properties = document.createElement('dl');
+				for (const entry of frontmatter.entries) {
+					const row = document.createElement('div');
+					const key = document.createElement('dt');
+					key.textContent = entry.key;
+					const value = document.createElement('dd');
+					value.textContent = entry.value;
+					row.append(key, value);
+					properties.append(row);
+				}
+				wrapper.append(properties);
+			}
+		} else wrapper.innerHTML = renderMarkdown(this.source);
+		bindSourceNavigation(wrapper, view, this.block.from, true);
 		return wrapper;
 	}
 	private tableDOM(view: EditorView): HTMLElement {
@@ -247,12 +333,19 @@ class BlockWidget extends WidgetType {
 		if (!parsed) {
 			const fallback = document.createElement('pre');
 			fallback.textContent = this.source;
+			bindSourceNavigation(fallback, view, this.block.from, true);
 			return fallback;
 		}
 		const table = document.createElement('table');
 		table.className = 'cm-live-table';
 		const head = document.createElement('thead');
 		const body = document.createElement('tbody');
+		let sourceClickTimer = 0;
+		table.addEventListener('click', (event) => {
+			if (event.detail > 1 || hasInteractiveTarget(event.target)) return;
+			window.clearTimeout(sourceClickTimer);
+			sourceClickTimer = window.setTimeout(() => selectSource(view, this.block.from), 220);
+		});
 		const rows = parsed.rows;
 		rows.forEach((cells, rowIndex) => {
 			if (rowIndex === parsed.separatorIndex) return;
@@ -264,6 +357,7 @@ class BlockWidget extends WidgetType {
 				cell.innerHTML = renderMarkdownInline(value);
 				cell.tabIndex = 0;
 				cell.addEventListener('dblclick', () => {
+					window.clearTimeout(sourceClickTimer);
 					const input = document.createElement('textarea');
 					input.value = value;
 					cell.replaceChildren(input);
@@ -298,8 +392,18 @@ class BlockWidget extends WidgetType {
 export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 	try {
 		const text = state.doc.toString();
-		const blocks = collectStructuralBlocks(text);
+		const structuralBlocks = collectStructuralBlocks(text);
 		const tree = syntaxTree(state);
+		const quoteBlocks: StructuralBlock[] = [];
+		tree.iterate({
+			enter(node) {
+				if (node.name !== 'Blockquote') return;
+				if (!structuralBlocks.some((block) => node.from < block.to && node.to > block.from))
+					quoteBlocks.push({ from: node.from, to: node.to, kind: 'quote' });
+				return false;
+			},
+		});
+		const blocks = [...structuralBlocks, ...quoteBlocks].sort((left, right) => left.from - right.from);
 		const renderedInlineRanges: Array<{ from: number; to: number }> = [];
 		tree.iterate({
 			enter(node) {
@@ -343,7 +447,7 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 			const block = blocks.find((item) => line.from >= item.from && line.from < item.to);
 			if (block) continue;
 			const lineText = line.text;
-			const task = /^(\s*-\s+)\[([ xX])\]\s+/.exec(lineText);
+			const task = /^(\s*(?:[-+*]|\d+[.)])\s+)\[([ xX])\]\s+/.exec(lineText);
 			if (task) {
 				const markerFrom = line.from + task[1].length;
 				const markerTo = markerFrom + 3;
@@ -368,7 +472,22 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 				add(
 					from,
 					to,
-					Decoration.replace({ widget: new InlineMathWidget(lineText.slice(range.from + 1, range.to - 1)) }),
+					Decoration.replace({ widget: new InlineMathWidget(lineText.slice(range.from + 1, range.to - 1), from) }),
+				);
+			}
+			for (const range of collectObsidianInlineRanges(lineText)) {
+				const from = line.from + range.from;
+				const to = line.from + range.to;
+				const renderedByParent = renderedInlineRanges.some((item) => from >= item.from && to <= item.to);
+				if (renderedByParent) continue;
+				inlineExclusions.push({ from, to });
+				if (isActive) continue;
+				add(
+					from,
+					to,
+					range.kind === 'comment'
+						? Decoration.replace({})
+						: Decoration.replace({ widget: new InlineMarkdownWidget(lineText.slice(range.from, range.to), from) }),
 				);
 			}
 		}
@@ -400,12 +519,21 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 				const line = state.doc.lineAt(node.from);
 				const isActive = active.has(line.from);
 				if (node.name === 'HorizontalRule') {
-					if (!isActive) add(node.from, node.to, Decoration.replace({ widget: new HorizontalRuleWidget() }));
+					if (!isActive) add(node.from, node.to, Decoration.replace({ widget: new HorizontalRuleWidget(node.from) }));
 					return;
 				}
 				if (isMarkdownHeading(node.name)) {
 					const level = node.name.at(-1);
 					add(node.from, node.to, Decoration.mark({ class: `cm-live-heading cm-live-h${level}` }));
+					if (!isActive) {
+						const headerMark = node.node.getChild('HeaderMark');
+						if (headerMark) {
+							let contentStart = headerMark.to;
+							while (contentStart < node.to && /\s/.test(state.sliceDoc(contentStart, contentStart + 1)))
+								contentStart += 1;
+							if (contentStart > headerMark.to) add(headerMark.to, contentStart, Decoration.replace({}));
+						}
+					}
 					return;
 				}
 				if (node.name === 'Link') {
@@ -427,14 +555,18 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 						add(
 							node.from,
 							node.to,
-							Decoration.replace({ widget: new LinkWidget(state.sliceDoc(node.from, node.to), resolved) }),
+							Decoration.replace({ widget: new LinkWidget(state.sliceDoc(node.from, node.to), node.from, resolved) }),
 						);
 					} else add(node.from, node.to, Decoration.mark({ class: 'cm-live-link' }));
 					return false;
 				}
 				if (node.name === 'Autolink') {
 					if (!isActive)
-						add(node.from, node.to, Decoration.replace({ widget: new LinkWidget(state.sliceDoc(node.from, node.to)) }));
+						add(
+							node.from,
+							node.to,
+							Decoration.replace({ widget: new LinkWidget(state.sliceDoc(node.from, node.to), node.from) }),
+						);
 					else add(node.from, node.to, Decoration.mark({ class: 'cm-live-link' }));
 					return false;
 				}
@@ -444,7 +576,11 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 				}
 				if (node.name === 'URL') {
 					if (!isActive)
-						add(node.from, node.to, Decoration.replace({ widget: new LinkWidget(state.sliceDoc(node.from, node.to)) }));
+						add(
+							node.from,
+							node.to,
+							Decoration.replace({ widget: new LinkWidget(state.sliceDoc(node.from, node.to), node.from) }),
+						);
 					else add(node.from, node.to, Decoration.mark({ class: 'cm-live-link' }));
 					return false;
 				}
@@ -462,7 +598,7 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 						add(
 							node.from,
 							node.to,
-							Decoration.replace({ widget: new ImageWidget(state.sliceDoc(node.from, node.to)) }),
+							Decoration.replace({ widget: new ImageWidget(state.sliceDoc(node.from, node.to), node.from) }),
 						);
 						return false;
 					}
@@ -488,12 +624,11 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 				) {
 					if (!isActive && node.name === 'QuoteMark') {
 						add(node.from, node.to, Decoration.replace({}));
-						add(node.from, node.from, Decoration.line({ class: 'cm-live-blockquote' }));
 					} else if (!isActive && node.name === 'ListMark') {
 						add(
 							node.from,
 							node.to,
-							Decoration.replace({ widget: new ListMarkerWidget(state.sliceDoc(node.from, node.to)) }),
+							Decoration.replace({ widget: new ListMarkerWidget(state.sliceDoc(node.from, node.to), node.from) }),
 						);
 					} else if (!isActive) add(node.from, node.to, Decoration.replace({}));
 				}
@@ -616,6 +751,7 @@ export function createMarkdownLivePreview(
 		extensions: [
 			markdownLanguageSupport,
 			syntaxHighlighting(defaultHighlightStyle),
+			syntaxHighlighting(markdownLivePreviewHighlightOverrides),
 			livePreviewField,
 			clipboardHandlers,
 			EditorView.clipboardInputFilter.of(normalizeClipboardText),

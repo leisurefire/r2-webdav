@@ -18,4 +18,10 @@ describe('parseMarkdownInline', () => {
 		expect(markdownLinkOpensNewTab('/notes/readme.md')).toBe(false);
 		expect(markdownLinkOpensNewTab('mailto:test@example.com')).toBe(false);
 	});
+
+	it('renders Obsidian highlight and hides inline comments', () => {
+		const html = parseMarkdownInline('==important== %%private%%');
+		expect(html).toContain('<mark>important</mark>');
+		expect(html).not.toContain('private');
+	});
 });
