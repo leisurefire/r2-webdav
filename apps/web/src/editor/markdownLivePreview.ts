@@ -377,12 +377,16 @@ function sourcePositionAtPointer(
 	y: number,
 	mode: SourcePointerMode,
 ): number {
+	let position: number;
 	if (mode === 'text') {
 		const visible = node.textContent ?? '';
 		const visibleOffset = textOffsetAtPoint(node, x, y);
-		if (visible && visibleOffset !== null) return from + visibleSourcePosition(source, visible, visibleOffset);
+		if (visible && visibleOffset !== null) position = from + visibleSourcePosition(source, visible, visibleOffset);
+		else position = from + geometricSourcePosition(source, x, y, node.getBoundingClientRect());
+	} else {
+		position = from + geometricSourcePosition(source, x, y, node.getBoundingClientRect());
 	}
-	return from + geometricSourcePosition(source, x, y, node.getBoundingClientRect());
+	return Math.max(from, Math.min(from + source.length, position));
 }
 
 function bindSourceNavigation(
@@ -393,6 +397,9 @@ function bindSourceNavigation(
 	mode: SourcePointerMode = 'text',
 	interactive = false,
 ): void {
+	node.classList.add('cm-live-source-target');
+	node.dataset.sourceFrom = String(from);
+	node.dataset.sourceTo = String(from + source.length);
 	node.addEventListener('mousedown', (event) => {
 		if (!(event instanceof MouseEvent) || event.button !== 0) return;
 		if (interactive && (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)) return;
@@ -434,7 +441,7 @@ class InlineMathWidget extends WidgetType {
 	}
 	toDOM(view: EditorView): HTMLElement {
 		const node = document.createElement('span');
-		node.className = 'cm-live-inline-math';
+		node.className = 'cm-live-inline-block cm-live-inline-math';
 		try {
 			katex.render(this.expression, node, { displayMode: false, throwOnError: false });
 		} catch {
@@ -450,20 +457,15 @@ class InlineMarkdownWidget extends WidgetType {
 		private readonly source: string,
 		private readonly from: number,
 		private readonly to: number,
+		private readonly kind = 'format',
 	) {
 		super();
 	}
 	toDOM(view: EditorView): HTMLElement {
 		const node = document.createElement('span');
-		node.className = 'cm-live-inline-rendered';
+		node.className = `cm-live-inline-block cm-live-inline-${this.kind}`;
 		node.innerHTML = renderMarkdownInline(this.source);
-		const delimiter = this.source.startsWith('==') && this.source.endsWith('==') ? 2 : 0;
-		bindSourceNavigation(
-			node,
-			view,
-			this.from + delimiter,
-			this.source.slice(delimiter, this.source.length - delimiter),
-		);
+		bindSourceNavigation(node, view, this.from, this.source);
 		return node;
 	}
 }
@@ -490,6 +492,7 @@ class LinkWidget extends WidgetType {
 			return container;
 		}
 		anchor.classList.add('cm-live-link');
+		anchor.classList.add('cm-live-inline-block');
 		const content = parsedWidgetContent(this.source, 'LinkWidget');
 		const contentFrom = content?.from ?? 0;
 		const contentTo = content?.to ?? this.source.length;
@@ -503,18 +506,11 @@ class LinkWidget extends WidgetType {
 		);
 		anchor.addEventListener('click', (event) => {
 			const href = anchor.getAttribute('href') ?? '';
-			if (
-				!href.startsWith('#') ||
-				event.button !== 0 ||
-				event.ctrlKey ||
-				event.metaKey ||
-				event.shiftKey ||
-				event.altKey
-			)
-				return;
+			if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+			event.preventDefault();
+			if (!href.startsWith('#')) return;
 			const position = headingPositionForHash(view, href);
 			if (position === null) return;
-			event.preventDefault();
 			view.dispatch({ effects: EditorView.scrollIntoView(position, { y: 'start' }) });
 		});
 		return anchor;
@@ -555,6 +551,7 @@ class ImageWidget extends WidgetType {
 			return fallback;
 		}
 		image.className = 'cm-live-image';
+		image.classList.add('cm-live-inline-block');
 		image.loading = 'lazy';
 		bindSourceNavigation(image, view, this.from, this.source, 'geometry');
 		return image;
@@ -738,6 +735,119 @@ class BlockWidget extends WidgetType {
 	}
 }
 
+type InlineFormatKind = 'format' | 'code' | 'math' | 'highlight' | 'link' | 'image' | 'comment';
+
+type InlineFormatBlock = {
+	from: number;
+	to: number;
+	kind: InlineFormatKind;
+	name?: string;
+};
+
+const inlineFormatNodeNames = new Set([
+	'StrongEmphasis',
+	'Emphasis',
+	'Strikethrough',
+	'InlineCode',
+	'Link',
+	'Image',
+	'Autolink',
+	'URL',
+]);
+
+function inlineFormatKind(nodeName: string): InlineFormatKind {
+	if (nodeName === 'InlineCode') return 'code';
+	if (nodeName === 'Link' || nodeName === 'Autolink' || nodeName === 'URL') return 'link';
+	if (nodeName === 'Image') return 'image';
+	return 'format';
+}
+
+function isInsideStructuralBlock(from: number, to: number, blocks: StructuralBlock[]): boolean {
+	return blocks.some((block) => from >= block.from && to <= block.to);
+}
+
+/**
+ * Collect complete inline syntax units. Live preview must operate on these ranges,
+ * rather than on lines: a click expands only the formatting unit it lands in.
+ */
+function collectInlineFormatBlocks(state: EditorState, structuralBlocks: StructuralBlock[]): InlineFormatBlock[] {
+	const candidates: InlineFormatBlock[] = [];
+	const add = (candidate: InlineFormatBlock) => {
+		if (candidate.to <= candidate.from || isInsideStructuralBlock(candidate.from, candidate.to, structuralBlocks)) return;
+		candidates.push(candidate);
+	};
+	const tree = syntaxTree(state);
+	tree.iterate({
+		enter(node) {
+			if (node.name === 'LinkReference') return false;
+			if (inlineFormatNodeNames.has(node.name))
+				add({ from: node.from, to: node.to, kind: inlineFormatKind(node.name), name: node.name });
+		},
+	});
+
+	let lineOffset = 0;
+	for (const line of state.doc.toString().split('\n')) {
+		for (const range of collectInlineExcludedRanges(line))
+			add({
+				from: lineOffset + range.from,
+				to: lineOffset + range.to,
+				kind: range.kind,
+			});
+		for (const range of collectObsidianInlineRanges(line))
+			add({
+				from: lineOffset + range.from,
+				to: lineOffset + range.to,
+				kind: range.kind,
+			});
+		lineOffset += line.length + 1;
+	}
+
+	// Prefer one outer range for nested syntax. Rendering the outer source lets the
+	// Markdown renderer handle nested emphasis and prevents overlapping replacements.
+	const priority: Record<InlineFormatKind, number> = {
+		link: 6,
+		image: 5,
+		math: 4,
+		code: 3,
+		highlight: 2,
+		format: 1,
+		comment: 0,
+	};
+	const byRange = new Map<string, InlineFormatBlock>();
+	for (const candidate of candidates) {
+		const key = `${candidate.from}:${candidate.to}`;
+		const previous = byRange.get(key);
+		if (!previous || priority[candidate.kind] > priority[previous.kind]) byRange.set(key, candidate);
+	}
+	const unique = [...byRange.values()];
+	return unique
+		.filter(
+			(candidate) =>
+				!unique.some(
+					(parent) =>
+						parent !== candidate &&
+						parent.from <= candidate.from &&
+						parent.to >= candidate.to &&
+						(parent.from < candidate.from || parent.to > candidate.to),
+				),
+		)
+		.sort((left, right) => left.from - right.from || right.to - left.to);
+}
+
+function selectionTouchesRange(state: EditorState, from: number, to: number): boolean {
+	return state.selection.ranges.some((selection) =>
+		selection.empty
+			? selection.from >= from && selection.from <= to
+			: selection.from < to && selection.to > from,
+	);
+}
+
+function containingRange(ranges: Array<{ from: number; to: number }>, from: number, to: number) {
+	return ranges
+		.filter((range) => range.from <= from && range.to >= to)
+		.sort((left, right) => left.to - left.from - (right.to - right.from))[0];
+}
+
 export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 	try {
 		const text = state.doc.toString();
@@ -753,26 +863,52 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 			},
 		});
 		const blocks = [...structuralBlocks, ...quoteBlocks].sort((left, right) => left.from - right.from);
-		const renderedInlineRanges: Array<{ from: number; to: number }> = [];
+		const inlineBlocks = collectInlineFormatBlocks(state, blocks);
+		const inlineExclusions = inlineBlocks.map(({ from, to }) => ({ from, to }));
+		const listItems: Array<{ from: number; to: number }> = [];
+		const headings: Array<{ from: number; to: number }> = [];
 		tree.iterate({
 			enter(node) {
-				if (node.name === 'Link' || node.name === 'Image' || node.name === 'Autolink' || node.name === 'URL') {
-					renderedInlineRanges.push({ from: node.from, to: node.to });
-					return false;
+				if (node.name === 'ListItem') listItems.push({ from: node.from, to: node.to });
+				if (isMarkdownHeading(node.name)) headings.push({ from: node.from, to: node.to });
+			},
+		});
+		const references = new Map<string, LinkDefinition>();
+		tree.iterate({
+			enter(node) {
+				if (node.name !== 'LinkReference') return;
+				const label = node.node.getChild('LinkLabel');
+				const destination = node.node.getChild('URL');
+				if (label && destination) {
+					const title = node.node.getChild('LinkTitle');
+					references.set(normalizeReferenceLabel(state.sliceDoc(label.from + 1, label.to - 1)), {
+						href: markdownDestination(state.sliceDoc(destination.from, destination.to)),
+						...(title ? { title: markdownLinkTitle(state.sliceDoc(title.from, title.to)) } : {}),
+					});
 				}
-				if (node.name === 'LinkReference') return false;
+				return false;
+			},
+		});
+		const resolvedLinks = new Map<string, ResolvedLink>();
+		tree.iterate({
+			enter(node) {
+				if (node.name !== 'Link' || node.node.getChild('URL')) return;
+				const marks = node.node.getChildren('LinkMark');
+				const labelStart = marks[0]?.to ?? node.from + 1;
+				const labelEnd = marks[1]?.from ?? labelStart;
+				const label = state.sliceDoc(labelStart, labelEnd);
+				const referenceLabel = node.node.getChild('LinkLabel');
+				const key = normalizeReferenceLabel(
+					referenceLabel ? state.sliceDoc(referenceLabel.from + 1, referenceLabel.to - 1) || label : label,
+				);
+				const definition = references.get(key);
+				if (definition) resolvedLinks.set(`${node.from}:${node.to}`, { ...definition, label });
 			},
 		});
 		const decorations: { from: number; to: number; value: Decoration }[] = [];
 		const add = (from: number, to: number, value: Decoration) => decorations.push({ from, to, value });
-		const active = new Set<number>();
-		for (const range of state.selection.ranges) {
-			const line = state.doc.lineAt(range.from);
-			active.add(line.from);
-			active.add(state.doc.lineAt(range.to).from);
-		}
 		for (const block of blocks) {
-			const touched = state.selection.ranges.some((range) => range.from <= block.to && range.to >= block.from);
+			const touched = selectionTouchesRange(state, block.from, block.to);
 			if (!touched)
 				add(
 					block.from,
@@ -789,10 +925,44 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 				}
 			}
 		}
-		const inlineExclusions: Array<{ from: number; to: number }> = [];
+		for (const inline of inlineBlocks) {
+			if (selectionTouchesRange(state, inline.from, inline.to)) continue;
+			const source = text.slice(inline.from, inline.to);
+			if (inline.kind === 'comment') add(inline.from, inline.to, Decoration.replace({}));
+			else if (inline.kind === 'math') {
+				add(
+					inline.from,
+					inline.to,
+					Decoration.replace({ widget: new InlineMathWidget(source.slice(1, -1), inline.from, inline.to) }),
+				);
+			} else if (inline.kind === 'link') {
+				add(
+					inline.from,
+					inline.to,
+					Decoration.replace({
+						widget: new LinkWidget(
+							source,
+							inline.from,
+							inline.to,
+							resolvedLinks.get(`${inline.from}:${inline.to}`),
+						),
+					}),
+				);
+			} else if (inline.kind === 'image')
+				add(
+					inline.from,
+					inline.to,
+					Decoration.replace({ widget: new ImageWidget(source, inline.from, inline.to) }),
+				);
+			else
+				add(
+					inline.from,
+					inline.to,
+					Decoration.replace({ widget: new InlineMarkdownWidget(source, inline.from, inline.to, inline.kind) }),
+				);
+		}
 		for (let lineNo = 1; lineNo <= state.doc.lines; lineNo += 1) {
 			const line = state.doc.line(lineNo);
-			const isActive = active.has(line.from);
 			const block = blocks.find((item) => line.from >= item.from && line.from < item.to);
 			if (block) continue;
 			const lineText = line.text;
@@ -800,8 +970,11 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 			if (task) {
 				const markerFrom = line.from + task[1].length;
 				const markerTo = markerFrom + 3;
-				inlineExclusions.push({ from: markerFrom, to: markerTo });
-				if (!isActive)
+				const itemRange = containingRange(listItems, markerFrom, Math.min(line.to, markerTo + 1)) ?? {
+					from: line.from,
+					to: line.to,
+				};
+				if (!selectionTouchesRange(state, itemRange.from, itemRange.to))
 					add(
 						markerFrom,
 						markerTo,
@@ -810,67 +983,17 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 						}),
 					);
 			}
-			const excludedRanges = collectInlineExcludedRanges(lineText);
-			for (const range of excludedRanges) {
-				const from = line.from + range.from;
-				const to = line.from + range.to;
-				const renderedByParent = renderedInlineRanges.some((item) => from >= item.from && to <= item.to);
-				if (range.kind !== 'math' || renderedByParent) continue;
-				inlineExclusions.push({ from, to });
-				if (isActive) continue;
-				add(
-					from,
-					to,
-					Decoration.replace({
-						widget: new InlineMathWidget(lineText.slice(range.from + 1, range.to - 1), from, to),
-					}),
-				);
-			}
-			for (const range of collectObsidianInlineRanges(lineText)) {
-				const from = line.from + range.from;
-				const to = line.from + range.to;
-				const renderedByParent = renderedInlineRanges.some((item) => from >= item.from && to <= item.to);
-				if (renderedByParent) continue;
-				inlineExclusions.push({ from, to });
-				if (isActive) continue;
-				add(
-					from,
-					to,
-					range.kind === 'comment'
-						? Decoration.replace({})
-						: Decoration.replace({
-								widget: new InlineMarkdownWidget(lineText.slice(range.from, range.to), from, to),
-							}),
-				);
-			}
 		}
-		const overlapsExcluded = (from: number, to: number) =>
-			inlineExclusions.some((range) => from < range.to && to > range.from);
-		const references = new Map<string, LinkDefinition>();
-		tree.iterate({
-			enter: (node) => {
-				if (node.name !== 'LinkReference') return;
-				const label = node.node.getChild('LinkLabel');
-				const destination = node.node.getChild('URL');
-				if (label && destination) {
-					const title = node.node.getChild('LinkTitle');
-					references.set(normalizeReferenceLabel(state.sliceDoc(label.from + 1, label.to - 1)), {
-						href: markdownDestination(state.sliceDoc(destination.from, destination.to)),
-						...(title ? { title: markdownLinkTitle(state.sliceDoc(title.from, title.to)) } : {}),
-					});
-				}
-				return false;
-			},
-		});
+		const isInsideInlineBlock = (from: number, to: number) =>
+			inlineExclusions.some((range) => from >= range.from && to <= range.to);
 		tree.iterate({
 			from: 0,
 			to: state.doc.length,
 			enter: (node) => {
-				if (overlapsExcluded(node.from, node.to)) return;
+				if (isInsideInlineBlock(node.from, node.to)) return;
 				const block = blocks.find((item) => node.from < item.to && node.to > item.from);
 				if (block) return;
-				const line = state.doc.lineAt(node.from);
-				const isActive = active.has(line.from);
+				const isActive = selectionTouchesRange(state, node.from, node.to);
 				if (node.name === 'HorizontalRule') {
 					if (!isActive)
 						add(node.from, node.to, Decoration.replace({ widget: new HorizontalRuleWidget(node.from, node.to) }));
@@ -890,90 +1013,9 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 					}
 					return;
 				}
-				if (node.name === 'Link') {
-					if (!isActive) {
-						const destination = node.node.getChild('URL');
-						let resolved: ResolvedLink | undefined;
-						if (!destination) {
-							const marks = node.node.getChildren('LinkMark');
-							const labelStart = marks[0]?.to ?? node.from + 1;
-							const labelEnd = marks[1]?.from ?? labelStart;
-							const label = state.sliceDoc(labelStart, labelEnd);
-							const referenceLabel = node.node.getChild('LinkLabel');
-							const key = normalizeReferenceLabel(
-								referenceLabel ? state.sliceDoc(referenceLabel.from + 1, referenceLabel.to - 1) || label : label,
-							);
-							const definition = references.get(key);
-							if (definition) resolved = { ...definition, label };
-						}
-						add(
-							node.from,
-							node.to,
-							Decoration.replace({
-								widget: new LinkWidget(state.sliceDoc(node.from, node.to), node.from, node.to, resolved),
-							}),
-						);
-					} else add(node.from, node.to, Decoration.mark({ class: 'cm-live-link' }));
-					return false;
-				}
-				if (node.name === 'Autolink') {
-					if (!isActive)
-						add(
-							node.from,
-							node.to,
-							Decoration.replace({
-								widget: new LinkWidget(state.sliceDoc(node.from, node.to), node.from, node.to),
-							}),
-						);
-					else add(node.from, node.to, Decoration.mark({ class: 'cm-live-link' }));
-					return false;
-				}
 				if (node.name === 'LinkReference') {
 					if (!isActive) add(node.from, node.to, Decoration.replace({}));
 					return false;
-				}
-				if (node.name === 'URL') {
-					if (!isActive)
-						add(
-							node.from,
-							node.to,
-							Decoration.replace({
-								widget: new LinkWidget(state.sliceDoc(node.from, node.to), node.from, node.to),
-							}),
-						);
-					else add(node.from, node.to, Decoration.mark({ class: 'cm-live-link' }));
-					return false;
-				}
-				if (node.name === 'Strikethrough') {
-					add(node.from, node.to, Decoration.mark({ class: 'cm-live-strike' }));
-					return;
-				}
-				if (
-					node.name === 'StrongEmphasis' ||
-					node.name === 'Emphasis' ||
-					node.name === 'InlineCode' ||
-					node.name === 'Image'
-				) {
-					if (node.name === 'Image' && !isActive) {
-						add(
-							node.from,
-							node.to,
-							Decoration.replace({
-								widget: new ImageWidget(state.sliceDoc(node.from, node.to), node.from, node.to),
-							}),
-						);
-						return false;
-					}
-					const className =
-						node.name === 'StrongEmphasis'
-							? 'cm-live-strong'
-							: node.name === 'Emphasis'
-								? 'cm-live-em'
-								: node.name === 'InlineCode'
-									? 'cm-live-inline-code'
-									: 'cm-live-link';
-					add(node.from, node.to, Decoration.mark({ class: className }));
-					return;
 				}
 				if (
 					node.name === 'HeaderMark' ||
@@ -984,9 +1026,18 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 					node.name === 'QuoteMark' ||
 					node.name === 'ListMark'
 				) {
-					if (!isActive && node.name === 'QuoteMark') {
+					const activationRange =
+						node.name === 'HeaderMark'
+							? containingRange(headings, node.from, node.to)
+							: node.name === 'ListMark'
+								? containingRange(listItems, node.from, node.to)
+								: undefined;
+					const markerActive = activationRange
+						? selectionTouchesRange(state, activationRange.from, activationRange.to)
+						: isActive;
+					if (!markerActive && node.name === 'QuoteMark') {
 						add(node.from, node.to, Decoration.replace({}));
-					} else if (!isActive && node.name === 'ListMark') {
+					} else if (!markerActive && node.name === 'ListMark') {
 						add(
 							node.from,
 							node.to,
@@ -994,7 +1045,7 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 								widget: new ListMarkerWidget(state.sliceDoc(node.from, node.to), node.from, node.to),
 							}),
 						);
-					} else if (!isActive) add(node.from, node.to, Decoration.replace({}));
+					} else if (!markerActive) add(node.from, node.to, Decoration.replace({}));
 				}
 			},
 		});

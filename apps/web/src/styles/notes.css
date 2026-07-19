@@ -480,12 +480,18 @@
 	vertical-align: baseline;
 }
 
+.cm-live-inline-highlight mark,
 .cm-live-inline-rendered mark,
 .note-render mark,
 .file-markdown-preview mark {
 	padding: 0 2px;
 	background: color-mix(in srgb, #facc15 38%, transparent);
 	color: inherit;
+}
+
+.cm-live-inline-block {
+	position: relative;
+	cursor: text;
 }
 
 .cm-task-checkbox {

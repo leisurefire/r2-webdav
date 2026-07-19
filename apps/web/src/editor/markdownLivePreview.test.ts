@@ -102,6 +102,51 @@ describe('live preview block decorations', () => {
 		]);
 	});
 
+	it('renders complete inline format blocks instead of activating an entire line', () => {
+		const source = 'left **first** middle *second* then `code` and ~~strike~~';
+		const replacements = widgetReplacements(createState(source)).filter(
+			({ name }) => name === 'InlineMarkdownWidget',
+		);
+		expect(replacements.map(({ from, to }) => source.slice(from, to))).toEqual([
+			'**first**',
+			'*second*',
+			'`code`',
+			'~~strike~~',
+		]);
+	});
+
+	it('expands only the inline format block containing the cursor', () => {
+		const source = 'left **first** middle **second** right';
+		const firstContent = source.indexOf('first') + 2;
+		const state = EditorState.create({
+			doc: source,
+			selection: { anchor: firstContent },
+			extensions: [markdownLanguageSupport, livePreviewField],
+		});
+		const replacements = widgetReplacements(state).filter(({ name }) => name === 'InlineMarkdownWidget');
+		expect(replacements.map(({ from, to }) => source.slice(from, to))).toEqual(['**second**']);
+	});
+
+	it('keeps formatted neighbors rendered when the cursor is in plain text on the same line', () => {
+		const source = 'left **first** middle **second** right';
+		const state = EditorState.create({
+			doc: source,
+			selection: { anchor: source.indexOf('middle') + 3 },
+			extensions: [markdownLanguageSupport, livePreviewField],
+		});
+		const replacements = widgetReplacements(state).filter(({ name }) => name === 'InlineMarkdownWidget');
+		expect(replacements.map(({ from, to }) => source.slice(from, to))).toEqual(['**first**', '**second**']);
+	});
+
+	it('uses one outer replacement for nested inline formatting', () => {
+		const source = 'before **outer *inner* text** after';
+		const replacements = widgetReplacements(createState(source)).filter(
+			({ name }) => name === 'InlineMarkdownWidget',
+		);
+		expect(replacements).toHaveLength(1);
+		expect(source.slice(replacements[0].from, replacements[0].to)).toBe('**outer *inner* text**');
+	});
+
 	it('styles Setext headings through the same heading decoration path', () => {
 		const source = 'intro\n\nSection\n===';
 		const state = createState(source);
