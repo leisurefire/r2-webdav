@@ -1483,7 +1483,7 @@ function sortNotes(items: Note[]): void {
 function syncNoteTitle(note: Note, source?: HTMLInputElement): void {
 	document.querySelectorAll<HTMLElement>('[data-note-card-id]').forEach((card) => {
 		if (card.dataset.noteCardId === note.id) {
-			const title = card.querySelector<HTMLElement>('.note-card-title strong');
+			const title = card.querySelector<HTMLElement>('.note-card-label');
 			if (title) title.textContent = note.title;
 		}
 	});
@@ -1606,6 +1606,7 @@ async function savePendingNote(state: NoteCommitState): Promise<boolean> {
 				if (notesData === state.data && pageFromPath() === 'notes') {
 					replaceNotesSidebar(state.data, currentSelectedNoteId());
 				}
+				if (archiveExpanded) await loadArchivedNotes(true);
 			}
 			return true;
 		} catch (error) {
@@ -1864,7 +1865,7 @@ function notesTabsMarkup(): string {
 
 function noteCardMarkup(note: Note, selected?: Note): string {
 	return `<article class="note-card ${note.id === selected?.id ? 'active' : ''}" draggable="true" data-note-card-id="${html(note.id)}"><button class="note-card-open" data-note="${html(note.id)}">
-		<div class="note-card-title">${note.pinned ? '<i data-lucide="pin"></i>' : ''}<strong>${html(note.title)}</strong></div>
+		<div class="note-card-title"><span class="note-card-leading" aria-hidden="true">${note.pinned ? '<i data-lucide="pin"></i>' : ''}</span><span class="note-card-label">${html(note.title)}</span></div>
 	</button>
 		<div class="note-card-actions">
 			<button class="row-action" data-note-card-pin="${html(note.id)}" title="${note.pinned ? t('unpin') : t('pin')}" aria-label="${note.pinned ? t('unpin') : t('pin')}"><i data-lucide="${note.pinned ? 'pin-off' : 'pin'}"></i></button>

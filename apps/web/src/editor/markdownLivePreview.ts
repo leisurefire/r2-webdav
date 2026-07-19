@@ -309,11 +309,12 @@ export function blockClickPosition(measured: number | null, from: number, to: nu
 }
 
 function selectBlockSourceAtCoords(view: EditorView, from: number, to: number, x: number, y: number): void {
-	selectSource(view, from);
+	const start = Math.max(0, Math.min(from, view.state.doc.length));
+	view.dispatch({ selection: { anchor: start } });
 	view.requestMeasure({
 		read: () => view.posAtCoords({ x, y }),
 		write: (measured) => {
-			if (view.state.selection.main.anchor !== from) return;
+			if (view.state.selection.main.anchor !== start) return;
 			const position = blockClickPosition(measured, from, to);
 			view.dispatch({
 				selection: { anchor: position },
@@ -328,13 +329,21 @@ function hasInteractiveTarget(target: EventTarget | null): boolean {
 	return target instanceof Element && !!target.closest('a,button,input,textarea,select,summary');
 }
 
-function bindSourceNavigation(node: HTMLElement, view: EditorView, from: number, blockTo?: number): void {
+function lineHasRenderedReplacement(view: EditorView, from: number, to: number): boolean {
+	let rendered = false;
+	view.state.field(livePreviewField).between(from, to, (_start, _end, decoration) => {
+		if (decoration.spec.widget || decoration.spec.replace) rendered = true;
+	});
+	return rendered;
+}
+
+function bindSourceNavigation(node: HTMLElement, view: EditorView, from: number, sourceTo?: number): void {
 	node.addEventListener('mousedown', (event) => {
 		if (!(event instanceof MouseEvent) || event.button !== 0 || hasInteractiveTarget(event.target)) return;
 		event.preventDefault();
 		event.stopPropagation();
-		if (blockTo !== undefined) {
-			selectBlockSourceAtCoords(view, from, blockTo, event.clientX, event.clientY);
+		if (sourceTo !== undefined) {
+			selectBlockSourceAtCoords(view, from, sourceTo, event.clientX, event.clientY);
 			return;
 		}
 		selectSource(view, view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? from);
@@ -365,6 +374,7 @@ class InlineMathWidget extends WidgetType {
 	constructor(
 		private readonly expression: string,
 		private readonly from: number,
+		private readonly to: number,
 	) {
 		super();
 	}
@@ -376,7 +386,7 @@ class InlineMathWidget extends WidgetType {
 		} catch {
 			node.textContent = `$${this.expression}$`;
 		}
-		bindSourceNavigation(node, view, this.from);
+		bindSourceNavigation(node, view, this.from, this.to);
 		return node;
 	}
 }
@@ -385,6 +395,7 @@ class InlineMarkdownWidget extends WidgetType {
 	constructor(
 		private readonly source: string,
 		private readonly from: number,
+		private readonly to: number,
 	) {
 		super();
 	}
@@ -392,7 +403,7 @@ class InlineMarkdownWidget extends WidgetType {
 		const node = document.createElement('span');
 		node.className = 'cm-live-inline-rendered';
 		node.innerHTML = renderMarkdownInline(this.source);
-		bindSourceNavigation(node, view, this.from);
+		bindSourceNavigation(node, view, this.from, this.to);
 		return node;
 	}
 }
@@ -401,6 +412,7 @@ class LinkWidget extends WidgetType {
 	constructor(
 		private readonly source: string,
 		private readonly from: number,
+		private readonly to: number,
 		private readonly resolved?: ResolvedLink,
 	) {
 		super();
@@ -414,7 +426,7 @@ class LinkWidget extends WidgetType {
 		if (!anchor) {
 			container.className = 'cm-live-link-disabled';
 			container.replaceChildren(document.createTextNode(container.textContent || this.source));
-			bindSourceNavigation(container, view, this.from);
+			bindSourceNavigation(container, view, this.from, this.to);
 			return container;
 		}
 		anchor.classList.add('cm-live-link');
@@ -439,13 +451,16 @@ class LinkWidget extends WidgetType {
 }
 
 class HorizontalRuleWidget extends WidgetType {
-	constructor(private readonly from: number) {
+	constructor(
+		private readonly from: number,
+		private readonly to: number,
+	) {
 		super();
 	}
 	toDOM(view: EditorView): HTMLElement {
 		const rule = document.createElement('hr');
 		rule.className = 'cm-live-hr';
-		bindSourceNavigation(rule, view, this.from);
+		bindSourceNavigation(rule, view, this.from, this.to);
 		return rule;
 	}
 }
@@ -454,6 +469,7 @@ class ImageWidget extends WidgetType {
 	constructor(
 		private readonly source: string,
 		private readonly from: number,
+		private readonly to: number,
 	) {
 		super();
 	}
@@ -464,12 +480,12 @@ class ImageWidget extends WidgetType {
 		if (!image) {
 			const fallback = document.createElement('span');
 			fallback.textContent = this.source;
-			bindSourceNavigation(fallback, view, this.from);
+			bindSourceNavigation(fallback, view, this.from, this.to);
 			return fallback;
 		}
 		image.className = 'cm-live-image';
 		image.loading = 'lazy';
-		bindSourceNavigation(image, view, this.from);
+		bindSourceNavigation(image, view, this.from, this.to);
 		return image;
 	}
 }
@@ -478,6 +494,7 @@ class ListMarkerWidget extends WidgetType {
 	constructor(
 		private readonly marker: string,
 		private readonly from: number,
+		private readonly to: number,
 	) {
 		super();
 	}
@@ -485,7 +502,7 @@ class ListMarkerWidget extends WidgetType {
 		const node = document.createElement('span');
 		node.className = 'cm-live-list-marker';
 		node.textContent = /^\d/.test(this.marker) ? this.marker : '•';
-		bindSourceNavigation(node, view, this.from);
+		bindSourceNavigation(node, view, this.from, this.to);
 		return node;
 	}
 }
@@ -700,7 +717,9 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 				add(
 					from,
 					to,
-					Decoration.replace({ widget: new InlineMathWidget(lineText.slice(range.from + 1, range.to - 1), from) }),
+					Decoration.replace({
+						widget: new InlineMathWidget(lineText.slice(range.from + 1, range.to - 1), from, to),
+					}),
 				);
 			}
 			for (const range of collectObsidianInlineRanges(lineText)) {
@@ -715,7 +734,9 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 					to,
 					range.kind === 'comment'
 						? Decoration.replace({})
-						: Decoration.replace({ widget: new InlineMarkdownWidget(lineText.slice(range.from, range.to), from) }),
+						: Decoration.replace({
+								widget: new InlineMarkdownWidget(lineText.slice(range.from, range.to), from, to),
+							}),
 				);
 			}
 		}
@@ -747,7 +768,8 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 				const line = state.doc.lineAt(node.from);
 				const isActive = active.has(line.from);
 				if (node.name === 'HorizontalRule') {
-					if (!isActive) add(node.from, node.to, Decoration.replace({ widget: new HorizontalRuleWidget(node.from) }));
+					if (!isActive)
+						add(node.from, node.to, Decoration.replace({ widget: new HorizontalRuleWidget(node.from, node.to) }));
 					return;
 				}
 				if (isMarkdownHeading(node.name)) {
@@ -783,7 +805,9 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 						add(
 							node.from,
 							node.to,
-							Decoration.replace({ widget: new LinkWidget(state.sliceDoc(node.from, node.to), node.from, resolved) }),
+							Decoration.replace({
+								widget: new LinkWidget(state.sliceDoc(node.from, node.to), node.from, node.to, resolved),
+							}),
 						);
 					} else add(node.from, node.to, Decoration.mark({ class: 'cm-live-link' }));
 					return false;
@@ -793,7 +817,9 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 						add(
 							node.from,
 							node.to,
-							Decoration.replace({ widget: new LinkWidget(state.sliceDoc(node.from, node.to), node.from) }),
+							Decoration.replace({
+								widget: new LinkWidget(state.sliceDoc(node.from, node.to), node.from, node.to),
+							}),
 						);
 					else add(node.from, node.to, Decoration.mark({ class: 'cm-live-link' }));
 					return false;
@@ -807,7 +833,9 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 						add(
 							node.from,
 							node.to,
-							Decoration.replace({ widget: new LinkWidget(state.sliceDoc(node.from, node.to), node.from) }),
+							Decoration.replace({
+								widget: new LinkWidget(state.sliceDoc(node.from, node.to), node.from, node.to),
+							}),
 						);
 					else add(node.from, node.to, Decoration.mark({ class: 'cm-live-link' }));
 					return false;
@@ -826,7 +854,9 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 						add(
 							node.from,
 							node.to,
-							Decoration.replace({ widget: new ImageWidget(state.sliceDoc(node.from, node.to), node.from) }),
+							Decoration.replace({
+								widget: new ImageWidget(state.sliceDoc(node.from, node.to), node.from, node.to),
+							}),
 						);
 						return false;
 					}
@@ -856,7 +886,9 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 						add(
 							node.from,
 							node.to,
-							Decoration.replace({ widget: new ListMarkerWidget(state.sliceDoc(node.from, node.to), node.from) }),
+							Decoration.replace({
+								widget: new ListMarkerWidget(state.sliceDoc(node.from, node.to), node.from, node.to),
+							}),
 						);
 					} else if (!isActive) add(node.from, node.to, Decoration.replace({}));
 				}
@@ -942,6 +974,19 @@ export function createMarkdownLivePreview(
 		...historyKeymap,
 	]);
 	const clipboardHandlers = EditorView.domEventHandlers({
+		mousedown(event, view) {
+			if (!(event instanceof MouseEvent) || event.button !== 0 || hasInteractiveTarget(event.target)) return false;
+			const lineElement = (event.target as Element | null)?.closest('.cm-line');
+			if (!(lineElement instanceof HTMLElement)) return false;
+			const position = view.posAtDOM(lineElement, 0);
+			if (position === null) return false;
+			const line = view.state.doc.lineAt(position);
+			if (!lineHasRenderedReplacement(view, line.from, line.to)) return false;
+			event.preventDefault();
+			event.stopPropagation();
+			selectBlockSourceAtCoords(view, line.from, line.to, event.clientX, event.clientY);
+			return true;
+		},
 		paste(event, view) {
 			if ((event.target as HTMLElement | null)?.closest('.cm-live-table textarea')) return false;
 			const image = [...(event.clipboardData?.files ?? [])].find((file) => file.type.startsWith('image/'));
