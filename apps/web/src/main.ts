@@ -11,7 +11,6 @@ import {
 	Copy,
 	Database,
 	Download,
-	Eye,
 	File,
 	FileDown,
 	Film,
@@ -26,7 +25,6 @@ import {
 	Music,
 	PanelLeftClose,
 	PanelLeftOpen,
-	Pencil,
 	Pin,
 	PinOff,
 	Plus,
@@ -234,7 +232,6 @@ function refreshIcons(): void {
 			Copy,
 			Database,
 			Download,
-			Eye,
 			File,
 			FileDown,
 			Film,
@@ -249,7 +246,6 @@ function refreshIcons(): void {
 			Music,
 			PanelLeftClose,
 			PanelLeftOpen,
-			Pencil,
 			Pin,
 			PinOff,
 			Plus,
@@ -1475,22 +1471,19 @@ function noteEditorMarkup(selected: Note, mobile = false): string {
 	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'}">
 		<form data-note-form>
 			<div class="note-editor-head">${mobile ? `<button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>` : ''}<div class="note-heading"><div class="note-location-wrap">${noteLocationMarkup(selected)}</div><input data-note-title value="${html(selected.title)}" aria-label="Title"></div><span class="note-save-status" data-note-save-status aria-live="polite"></span>${noteFolderSelectMarkup(selected.folderId)}<time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
-				<button type="button" class="row-action note-mode active" data-note-mode="preview" title="${t('preview')}" aria-label="${t('preview')}"><i data-lucide="eye"></i></button>
-				<button type="button" class="row-action note-mode" data-note-mode="edit" title="${locale === 'zh' ? '编辑' : 'Edit'}" aria-label="${locale === 'zh' ? '编辑' : 'Edit'}"><i data-lucide="pencil"></i></button>
 				<button type="button" class="row-action" data-note-export title="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}" aria-label="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}"><i data-lucide="file-down"></i></button>
 				<button type="button" class="row-action" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
 				<button type="button" class="row-action" data-note-archive title="${selected.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
 				<button type="button" class="row-action danger" data-note-delete title="${t('delete')}"><i data-lucide="trash-2"></i></button>
 			</div></div>
-			<div class="note-compose previewing" data-note-compose><div class="note-document"><textarea class="note-source" data-note-source spellcheck="true" aria-label="${t('markdown')}">${html(selected.content)}</textarea><article class="note-render" data-note-render aria-label="${t('preview')}" title="${locale === 'zh' ? '点击进入编辑' : 'Click to edit'}"></article></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
+			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-source" data-note-source aria-label="${t('markdown')}"></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
 		</form>
 	</section>`;
 }
 
 function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobile: boolean): void {
 	const compose = root.querySelector<HTMLDivElement>('[data-note-compose]')!;
-	const noteRender = root.querySelector<HTMLElement>('[data-note-render]')!;
-	const source = root.querySelector<HTMLTextAreaElement>('[data-note-source]')!;
+	const source = root.querySelector<HTMLElement>('[data-note-source]')!;
 	const outline = root.querySelector<HTMLElement>('[data-note-outline]')!;
 	let draftContent = selected.content.replaceAll('\r', '');
 	const title = root.querySelector<HTMLInputElement>('[data-note-title]')!;
@@ -1569,61 +1562,16 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		if (locationTitle) locationTitle.textContent = title.value || (locale === 'zh' ? '无标题便签' : 'Untitled note');
 		queueSave({ title: title.value });
 	});
-	const paintPreview = () => {
-		const rendered = renderMarkdownDocument(draftContent);
-		noteRender.innerHTML = rendered.html || `<p class="muted">${locale === 'zh' ? '空便签' : 'Empty note'}</p>`;
-		outline.innerHTML = rendered.headings.length
-			? rendered.headings
-					.map(
-						(heading) =>
-							`<button type="button" data-outline-target="${html(heading.id)}" aria-label="${html(heading.text)}" title="${html(heading.text)}" style="--outline-level:${heading.level}"><span></span></button>`,
-					)
-					.join('')
-			: '';
-		outline.classList.toggle('empty', rendered.headings.length === 0);
-		compose.classList.toggle('has-outline', rendered.headings.length > 0);
-		outline.querySelectorAll<HTMLElement>('[data-outline-target]').forEach((button) =>
-			button.addEventListener('click', () => {
-				noteRender
-					.querySelector(`#${CSS.escape(button.dataset.outlineTarget!)}`)
-					?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-			}),
-		);
-		updateOutlineActive();
-	};
-	const updateOutlineActive = () => {
-		const headings = [...noteRender.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')];
-		let active = headings[0];
-		for (const heading of headings) {
-			if (heading.offsetTop - noteRender.scrollTop <= 72) active = heading;
-		}
-		outline
-			.querySelectorAll<HTMLElement>('[data-outline-target]')
-			.forEach((button) => button.classList.toggle('active', button.dataset.outlineTarget === active?.id));
-	};
-	const setMode = (mode: 'edit' | 'preview') => {
-		compose.classList.toggle('previewing', mode === 'preview');
-		root
-			.querySelectorAll<HTMLElement>('[data-note-mode]')
-			.forEach((button) => button.classList.toggle('active', button.dataset.noteMode === mode));
-		if (mode === 'preview') paintPreview();
-		else source.focus();
-	};
-	root
-		.querySelectorAll<HTMLElement>('[data-note-mode]')
-		.forEach((button) =>
-			button.addEventListener('click', () => setMode(button.dataset.noteMode as 'edit' | 'preview')),
-		);
-	noteRender.addEventListener('click', (event) => {
-		if ((event.target as HTMLElement).closest('a')) return;
-		setMode('edit');
-	});
-	noteRender.addEventListener('scroll', updateOutlineActive, { passive: true });
-	source.addEventListener('input', () => {
-		draftContent = source.value.replaceAll('\r', '');
-		queueSave({ content: draftContent });
+	let editor: import('@codemirror/view').EditorView | null = null;
+	void import('./editor/markdownLivePreview').then(({ createMarkdownLivePreview }) => {
+		if (!source.isConnected) return;
+		editor = createMarkdownLivePreview(source, draftContent, (value) => {
+			draftContent = value.replaceAll('\r', '');
+			queueSave({ content: draftContent });
+		});
 	});
 	source.addEventListener('paste', (event) => {
+		if (!editor) return;
 		const images = event.clipboardData
 			? [...event.clipboardData.files].filter((file) => file.type.startsWith('image/'))
 			: [];
@@ -1636,10 +1584,10 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		}
 		const reader = new FileReader();
 		reader.addEventListener('load', () => {
-			const start = source.selectionStart;
+			if (!editor) return;
+			const start = editor.state.selection.main.head;
 			const markdownImage = `![${image.name || (locale === 'zh' ? '图片' : 'image')}](${String(reader.result)})`;
-			source.setRangeText(markdownImage, start, source.selectionEnd, 'end');
-			source.dispatchEvent(new Event('input', { bubbles: true }));
+			editor.dispatch({ changes: { from: start, to: editor.state.selection.main.to, insert: markdownImage } });
 		});
 		reader.readAsDataURL(image);
 	});
@@ -1651,7 +1599,6 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		anchor.click();
 		URL.revokeObjectURL(objectUrl);
 	});
-	paintPreview();
 	const update = async (changes: Partial<Pick<Note, 'title' | 'content' | 'pinned' | 'archived' | 'folderId'>>) => {
 		try {
 			const updated = await api.updateNote(selected.id, changes);
