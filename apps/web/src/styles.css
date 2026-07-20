@@ -25,7 +25,7 @@
 	--card-radius: 6.08px;
 	--pill-radius: 9999px;
 	--page-gutter-x: 28px;
-	--page-gutter-y: 22px;
+	--page-gutter-y: 14px;
 	--toolbar-gap: 8px;
 	--toolbar-spacing: 14px;
 }
@@ -432,7 +432,7 @@ select:focus-visible {
 
 .toolbar,
 .calendar-toolbar {
-	min-height: 42px;
+	min-height: 40px;
 	display: flex;
 	align-items: center;
 	gap: 8px;
@@ -2719,7 +2719,7 @@ dialog {
 	display: flex;
 	align-items: center;
 	gap: var(--toolbar-gap);
-	min-height: 42px;
+	min-height: 40px;
 	padding: 0;
 	margin-bottom: var(--toolbar-spacing);
 }
@@ -3045,11 +3045,47 @@ body:has(.app-shell) {
 
 .toolbar,
 .calendar-toolbar,
-.notes-toolbar {
-	min-height: 42px;
+.notes-toolbar,
+.notes-inner-toolbar {
+	min-height: 40px;
+	display: flex;
+	align-items: center;
 	gap: var(--toolbar-gap);
 	margin-bottom: var(--toolbar-spacing);
 	flex: none;
+}
+
+/* Match the sidebar toggle row: sidebar pad-top 14px + head 40px */
+.sidebar-context-tools,
+.page-context-tools,
+.notes-folder-tools {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex: none;
+}
+
+.sidebar-context-head {
+	min-height: 34px;
+	gap: 8px;
+}
+
+.sidebar-context-tools .row-action,
+.page-context-tools .row-action {
+	width: 28px;
+	height: 28px;
+}
+
+.mobile-only-tools {
+	display: none;
+}
+
+.desktop-only-toolbar {
+	display: flex;
+}
+
+.desktop-only-action {
+	display: flex;
 }
 
 .button:disabled {
@@ -3415,6 +3451,30 @@ body:has(.app-shell) {
 
 	.notes-inner-toolbar {
 		padding: 0;
+	}
+
+	.mobile-only-tools {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		margin-left: auto;
+	}
+
+	.desktop-only-toolbar {
+		display: none !important;
+	}
+
+	.desktop-only-action {
+		display: none !important;
+	}
+
+	.notes-layout > .notes-inner-toolbar.desktop-only-toolbar {
+		display: none !important;
+	}
+
+	/* Keep page top controls vertically aligned with the top bar toggle row */
+	.content {
+		padding-top: 12px;
 	}
 
 	.calendar-toolbar h2 {

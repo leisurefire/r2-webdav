@@ -77,29 +77,74 @@ function authHeaders(headers?: HeadersInit): Headers {
 	return result;
 }
 
+function networkErrorMessage(error: unknown): string {
+	const message = error instanceof Error ? error.message : String(error ?? '');
+	if (/failed to fetch|networkerror|load failed|network request failed/i.test(message)) {
+		return 'Network request failed. Check your connection and try again.';
+	}
+	return message || 'Request failed';
+}
+
 async function requestFrom<T>(base: string, path: string, init: RequestInit = {}): Promise<T> {
-	const response = await fetch(`${base}/api/v1${path}`, {
-		...init,
-		headers: authHeaders(init.headers),
-		credentials: 'include',
-	});
-	let payload: ApiResponse<T> | null = null;
-	try {
-		payload = (await response.json()) as ApiResponse<T>;
-	} catch {
-		throw new ApiError(
-			response.status >= 500
-				? `TrueSpace is temporarily unavailable (${response.status}). Please try again shortly.`
-				: response.statusText || 'Request failed',
-			response.status,
-		);
+	const method = (init.method ?? 'GET').toUpperCase();
+	const retryable = method === 'GET' || method === 'HEAD';
+	const attempts = retryable ? 3 : 1;
+	let lastError: unknown;
+	for (let attempt = 0; attempt < attempts; attempt += 1) {
+		try {
+			const controller = new AbortController();
+			const timeout = window.setTimeout(() => controller.abort(), 25_000);
+			const onExternalAbort = () => controller.abort();
+			if (init.signal) {
+				if (init.signal.aborted) controller.abort();
+				else init.signal.addEventListener('abort', onExternalAbort, { once: true });
+			}
+			let response: Response;
+			try {
+				response = await fetch(`${base}/api/v1${path}`, {
+					...init,
+					headers: authHeaders(init.headers),
+					credentials: 'include',
+					signal: controller.signal,
+				});
+			} finally {
+				window.clearTimeout(timeout);
+				init.signal?.removeEventListener('abort', onExternalAbort);
+			}
+			let payload: ApiResponse<T> | null = null;
+			try {
+				payload = (await response.json()) as ApiResponse<T>;
+			} catch {
+				throw new ApiError(
+					response.status >= 500
+						? `TrueSpace is temporarily unavailable (${response.status}). Please try again shortly.`
+						: response.statusText || 'Request failed',
+					response.status,
+				);
+			}
+			if (!response.ok || !payload.ok) {
+				const error = payload.ok ? null : payload.error;
+				if (response.status === 401) localStorage.removeItem(TOKEN_KEY);
+				throw new ApiError(error?.message ?? 'Request failed', response.status, error?.code);
+			}
+			return payload.data;
+		} catch (error) {
+			lastError = error;
+			const aborted = error instanceof DOMException && error.name === 'AbortError';
+			const network =
+				aborted ||
+				(error instanceof TypeError) ||
+				(error instanceof Error && /failed to fetch|networkerror|load failed/i.test(error.message));
+			if (!network || attempt === attempts - 1) {
+				if (error instanceof ApiError) throw error;
+				throw new ApiError(networkErrorMessage(error), 0, 'NETWORK_ERROR');
+			}
+			await new Promise((resolve) => window.setTimeout(resolve, 350 * (attempt + 1)));
+		}
 	}
-	if (!response.ok || !payload.ok) {
-		const error = payload.ok ? null : payload.error;
-		if (response.status === 401) localStorage.removeItem(TOKEN_KEY);
-		throw new ApiError(error?.message ?? 'Request failed', response.status, error?.code);
-	}
-	return payload.data;
+	throw lastError instanceof ApiError
+		? lastError
+		: new ApiError(networkErrorMessage(lastError), 0, 'NETWORK_ERROR');
 }
 
 function request<T>(path: string, init: RequestInit = {}): Promise<T> {

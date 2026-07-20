@@ -72,4 +72,20 @@
 	.notes-layout > .note-editor {
 		display: none;
 	}
+
+	.mobile-only-tools {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.links-layout .notes-inner-toolbar.mobile-only-tools {
+		margin-bottom: 10px;
+	}
+
+	.desktop-only-toolbar,
+	.desktop-only-action {
+		display: none !important;
+	}
 }
+

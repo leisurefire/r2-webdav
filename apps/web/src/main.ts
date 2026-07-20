@@ -323,7 +323,16 @@ function errorMessage(error: unknown): string {
 		localStorage.removeItem('r2_session_token');
 		navigate('/login');
 	}
-	return error instanceof Error ? error.message : 'Something went wrong';
+	const message = error instanceof Error ? error.message : 'Something went wrong';
+	if (
+		(error instanceof ApiError && error.code === 'NETWORK_ERROR') ||
+		/failed to fetch|network request failed|networkerror|load failed/i.test(message)
+	) {
+		return locale === 'zh'
+			? '网络请求失败，请检查网络后重试（文件/日历服务跨域访问在弱网下更容易失败）。'
+			: 'Network request failed. Check your connection and try again.';
+	}
+	return message;
 }
 
 function loadingMarkup(compact = false): string {
@@ -502,7 +511,15 @@ function fileSidebarMarkup(listing: FileListing): string {
 			`<button class="context-tree-row" data-file-tree-path="${html(entry.path)}" style="--tree-depth:${childDepth}"><i data-lucide="folder"></i><span>${html(entry.name)}</span></button>`,
 		);
 	}
-	return `<div class="sidebar-context-head"><strong>${locale === 'zh' ? '存储库结构' : 'Storage structure'}</strong></div><nav class="context-tree" aria-label="${locale === 'zh' ? '存储库结构' : 'Storage structure'}">${pathRows.join('')}</nav>`;
+	const uploadLabel = locale === 'zh' ? '上传' : 'Upload';
+	const mkdirLabel = locale === 'zh' ? '新建文件夹' : 'New folder';
+	const syncLabel = locale === 'zh' ? '同步文件' : 'Sync files';
+	const tools = `<div class="sidebar-context-tools">
+		<button type="button" class="row-action" data-files-upload title="${uploadLabel}" aria-label="${uploadLabel}"><i data-lucide="upload"></i></button>
+		<button type="button" class="row-action" data-files-mkdir title="${mkdirLabel}" aria-label="${mkdirLabel}"><i data-lucide="folder-plus"></i></button>
+		<button type="button" class="row-action" data-files-refresh title="${syncLabel}" aria-label="${syncLabel}"><i data-lucide="refresh-cw"></i></button>
+	</div>`;
+	return `<div class="sidebar-context-head"><strong>${locale === 'zh' ? '存储库结构' : 'Storage structure'}</strong>${tools}</div><nav class="context-tree" aria-label="${locale === 'zh' ? '存储库结构' : 'Storage structure'}">${pathRows.join('')}</nav>`;
 }
 
 function openFileDirectory(path: string, highlight = false): void {
@@ -756,10 +773,16 @@ function paintFiles(listing: FileListing): void {
 			</article>`,
 		)
 		.join('');
+	const uploadLabel = locale === 'zh' ? '上传' : 'Upload';
+	const mkdirLabel = locale === 'zh' ? '新建文件夹' : 'New folder';
+	const syncLabel = locale === 'zh' ? '同步文件' : 'Sync files';
+	const mobileTools = `<div class="page-context-tools mobile-only-tools">
+			<button type="button" class="row-action" data-files-upload title="${uploadLabel}" aria-label="${uploadLabel}"><i data-lucide="upload"></i></button>
+			<button type="button" class="row-action" data-files-mkdir title="${mkdirLabel}" aria-label="${mkdirLabel}"><i data-lucide="folder-plus"></i></button>
+			<button type="button" class="row-action" data-files-refresh title="${syncLabel}" aria-label="${syncLabel}"><i data-lucide="refresh-cw"></i></button>
+		</div>`;
 	content.innerHTML = `<div class="toolbar"><div class="breadcrumbs">${breadcrumbMarkup(listing.path)}</div>
-			<button class="button" id="upload" title="${locale === 'zh' ? '上传' : 'Upload'}" aria-label="${locale === 'zh' ? '上传' : 'Upload'}"><i data-lucide="upload"></i><span>${locale === 'zh' ? '上传' : 'Upload'}</span></button>
-			<button class="button" id="mkdir"><i data-lucide="folder-plus"></i><span>${locale === 'zh' ? '新建文件夹' : 'New folder'}</span></button>
-			<button class="button icon-button" id="files-refresh" title="${locale === 'zh' ? '同步文件' : 'Sync files'}" aria-label="${locale === 'zh' ? '同步文件' : 'Sync files'}"><i data-lucide="refresh-cw"></i></button>
+			${mobileTools}
 			<input type="file" id="file-input" hidden multiple>
 		</div><div id="upload-status"></div>
 		${rows ? `<div class="file-grid">${rows}</div>` : `<div class="empty-state"><div><i data-lucide="folder-open"></i><div>${locale === 'zh' ? '此文件夹为空' : 'This folder is empty'}</div></div></div>`}`;
@@ -832,7 +855,13 @@ function paintFiles(listing: FileListing): void {
 			}
 		}),
 	);
-	content.querySelector('#mkdir')?.addEventListener('click', async () => {
+	const roots = [content, context].filter((node): node is HTMLElement => Boolean(node));
+	const bindAll = (selector: string, handler: (event: Event) => void) => {
+		for (const root of roots) {
+			root.querySelectorAll(selector).forEach((node) => node.addEventListener('click', handler));
+		}
+	};
+	bindAll('[data-files-mkdir]', async () => {
 		const name = await openTextDialog(
 			locale === 'zh' ? '新建文件夹' : 'New folder',
 			locale === 'zh' ? '文件夹名称' : 'Folder name',
@@ -845,9 +874,7 @@ function paintFiles(listing: FileListing): void {
 			toast(errorMessage(error));
 		}
 	});
-	content
-		.querySelector('#upload')
-		?.addEventListener('click', () => content.querySelector<HTMLInputElement>('#file-input')?.click());
+	bindAll('[data-files-upload]', () => content.querySelector<HTMLInputElement>('#file-input')?.click());
 	content.querySelector<HTMLInputElement>('#file-input')?.addEventListener('change', async (event) => {
 		const files = [...((event.target as HTMLInputElement).files ?? [])];
 		const status = content.querySelector<HTMLDivElement>('#upload-status')!;
@@ -866,7 +893,7 @@ function paintFiles(listing: FileListing): void {
 		status.innerHTML = '';
 		await renderFiles(true);
 	});
-	content.querySelector('#files-refresh')?.addEventListener('click', () => void renderFiles(true));
+	bindAll('[data-files-refresh]', () => void renderFiles(true));
 }
 
 async function renderFiles(forceSync = false): Promise<void> {
@@ -1270,7 +1297,13 @@ function paintCalendarSidebar(calendar: CalendarSummary): void {
 	const recent = (
 		upcoming.length ? upcoming : events.sort((left, right) => Date.parse(right.start) - Date.parse(left.start))
 	).slice(0, 8);
-	context.innerHTML = `<div class="sidebar-context-head"><strong>${locale === 'zh' ? '最近日程' : 'Recent schedule'}</strong></div><div class="recent-events">${
+	const newEventLabel = locale === 'zh' ? '新建日程' : 'New event';
+	const syncLabel = locale === 'zh' ? '同步日历' : 'Sync calendar';
+	const tools = `<div class="sidebar-context-tools">
+		<button type="button" class="row-action" data-cal-new title="${newEventLabel}" aria-label="${newEventLabel}"><i data-lucide="plus"></i></button>
+		<button type="button" class="row-action" data-cal-refresh title="${syncLabel}" aria-label="${syncLabel}"><i data-lucide="refresh-cw"></i></button>
+	</div>`;
+	context.innerHTML = `<div class="sidebar-context-head"><strong>${locale === 'zh' ? '最近日程' : 'Recent schedule'}</strong>${tools}</div><div class="recent-events">${
 		recent.length
 			? recent
 					.map(
@@ -1289,6 +1322,20 @@ function paintCalendarSidebar(calendar: CalendarSummary): void {
 			}
 		}),
 	);
+	context.querySelectorAll<HTMLElement>('[data-cal-new]').forEach((item) =>
+		item.addEventListener('click', async () => {
+			if (await eventDialog(calendar)) {
+				invalidateCalendarCache();
+				await renderCalendar(true);
+			}
+		}),
+	);
+	context.querySelectorAll<HTMLElement>('[data-cal-refresh]').forEach((item) =>
+		item.addEventListener('click', () => {
+			invalidateCalendarCache();
+			void renderCalendar(true);
+		}),
+	);
 	refreshIcons();
 }
 
@@ -1303,7 +1350,9 @@ async function renderCalendar(forceSync = false): Promise<void> {
 		}
 		const calendar = calendarCache.calendars[0];
 		if (!content.querySelector('#calendar-view')) {
-			content.innerHTML = `<div class="calendar-toolbar"><h2 id="calendar-title"></h2><button class="button icon-button" id="cal-prev"><i data-lucide="chevron-left"></i></button><button class="button" id="cal-today">${locale === 'zh' ? '今天' : 'Today'}</button><button class="button icon-button" id="cal-next"><i data-lucide="chevron-right"></i></button><span class="sync-status" id="calendar-sync"><span class="status-dot"></span>${locale === 'zh' ? '已缓存' : 'Cached'}</span><button class="button" id="new-event" title="${locale === 'zh' ? '新建日程' : 'New event'}" aria-label="${locale === 'zh' ? '新建日程' : 'New event'}"><i data-lucide="plus"></i><span>${locale === 'zh' ? '新建日程' : 'New event'}</span></button><button class="button icon-button" id="cal-refresh" title="${locale === 'zh' ? '同步日历' : 'Sync calendar'}" aria-label="${locale === 'zh' ? '同步日历' : 'Sync calendar'}"><i data-lucide="refresh-cw"></i></button></div><div class="calendar" id="calendar-view"><div class="weekday-row">${(locale === 'zh' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).map((day) => `<div class="weekday">${day}</div>`).join('')}</div><div class="month-grid" id="month-grid"></div></div>`;
+			const newEventLabel = locale === 'zh' ? '新建日程' : 'New event';
+			const syncLabel = locale === 'zh' ? '同步日历' : 'Sync calendar';
+			content.innerHTML = `<div class="calendar-toolbar"><h2 id="calendar-title"></h2><button class="button icon-button" id="cal-prev"><i data-lucide="chevron-left"></i></button><button class="button" id="cal-today">${locale === 'zh' ? '今天' : 'Today'}</button><button class="button icon-button" id="cal-next"><i data-lucide="chevron-right"></i></button><span class="sync-status" id="calendar-sync"><span class="status-dot"></span>${locale === 'zh' ? '已缓存' : 'Cached'}</span><div class="page-context-tools mobile-only-tools"><button type="button" class="row-action" id="new-event" title="${newEventLabel}" aria-label="${newEventLabel}"><i data-lucide="plus"></i></button><button type="button" class="row-action" id="cal-refresh" title="${syncLabel}" aria-label="${syncLabel}"><i data-lucide="refresh-cw"></i></button></div></div><div class="calendar" id="calendar-view"><div class="weekday-row">${(locale === 'zh' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).map((day) => `<div class="weekday">${day}</div>`).join('')}</div><div class="month-grid" id="month-grid"></div></div>`;
 			content.querySelector('#cal-prev')?.addEventListener('click', () => {
 				calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
 				void renderCalendar();
@@ -1554,7 +1603,7 @@ function bookmarkFolderTreeMarkup(root: BookmarkFolder, selectedKey: string): st
 			const hasChildren = folder.folders.length > 0;
 			const active = folder.key === selectedKey && !hasChildren;
 			const expanded = hasChildren && bookmarkExpandedFolders.has(folder.key);
-			return `<div class="bookmark-tree-node note-tree-node note-tree-special ${expanded ? 'expanded' : ''}" style="--tree-depth:${depth}"><button class="bookmark-folder collection-tree-row ${active ? 'active' : ''}" data-bookmark-folder="${html(folder.key)}" data-bookmark-has-children="${hasChildren}">${caret(expanded)}<span>${html(folder.name)}</span><small>${folder.links.length}</small></button>${expanded && children ? `<div class="bookmark-tree-children notes-tree-children">${children}</div>` : ''}</div>`;
+			return `<div class="bookmark-tree-node note-tree-node note-tree-special ${expanded ? 'expanded' : ''}" style="--tree-depth:${depth}"><button class="bookmark-folder collection-tree-row ${active ? 'active' : ''}" data-bookmark-folder="${html(folder.key)}" data-bookmark-has-children="${hasChildren}">${caret(expanded)}<span>${html(folder.name)}</span></button>${expanded && children ? `<div class="bookmark-tree-children notes-tree-children">${children}</div>` : ''}</div>`;
 		},
 	);
 }
@@ -1732,7 +1781,7 @@ function noteActionControlsMarkup(selected: Note, includeRefresh = false): strin
 		<div class="action-menu note-action-more" data-action-menu>
 			<button type="button" class="row-action" data-menu-toggle title="${moreLabel}" aria-label="${moreLabel}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
 			<div class="action-menu-popover" data-menu-popover role="menu">
-				<button type="button" data-note-full-width role="menuitemcheckbox" aria-checked="${preferences.fullWidth}"><i data-lucide="maximize-2"></i><span>${fullWidthLabel}</span><i class="note-menu-check" data-lucide="check" aria-hidden="true"></i></button>
+				<button type="button" class="desktop-only-action" data-note-full-width role="menuitemcheckbox" aria-checked="${preferences.fullWidth}"><i data-lucide="maximize-2"></i><span>${fullWidthLabel}</span><i class="note-menu-check" data-lucide="check" aria-hidden="true"></i></button>
 				<button type="button" data-note-export role="menuitem"><i data-lucide="file-down"></i><span>${exportLabel}</span></button>
 				<button type="button" data-note-move role="menuitem"><i data-lucide="folder-input"></i><span>${moveLabel}</span></button>
 				<button type="button" data-note-archive role="menuitem"><i data-lucide="archive"></i><span>${selected.archived ? t('restore') : t('archive')}</span></button>
@@ -1744,7 +1793,7 @@ function noteActionControlsMarkup(selected: Note, includeRefresh = false): strin
 }
 
 function noteToolbarMarkup(selected: Note): string {
-	return `<div class="notes-inner-toolbar">${notePathMarkup(selected)}${noteActionControlsMarkup(selected, true)}</div>`;
+	return `<div class="notes-inner-toolbar desktop-only-toolbar">${notePathMarkup(selected)}${noteActionControlsMarkup(selected, false)}</div>`;
 }
 
 function noteEditorMarkup(selected: Note, mobile = false): string {
@@ -2098,8 +2147,6 @@ function optimisticallyUpdateNote(data: NotePage, note: Note, changes: NoteChang
 		}
 	}
 	sortNotes(data.items);
-	const count = document.querySelector<HTMLElement>('.notes-inner-toolbar .note-count');
-	if (count) count.textContent = String(data.total);
 	invalidateNoteCaches();
 	if (notesData === data) cacheNotes(data, false);
 	else if (archivedNotesData === data) cacheNotes(data, true, undefined);
@@ -2611,7 +2658,7 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 	const folderMarkup = renderFolderish(folderTree);
 	const archiveMarkup = renderFolderish(archiveTree);
 	return `<aside class="notes-folders" aria-label="${locale === 'zh' ? '便签目录' : 'Note folders'}">
-		<div class="notes-folders-head"><strong>${locale === 'zh' ? '便签目录' : 'Note folders'}</strong><div class="notes-folder-tools"><button class="row-action" data-new-note title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button><button class="row-action" data-new-note-folder title="${locale === 'zh' ? '新建目录' : 'New folder'}" aria-label="${locale === 'zh' ? '新建目录' : 'New folder'}"><i data-lucide="folder-plus"></i></button>${noteSortMenuMarkup()}</div></div>
+		<div class="notes-folders-head"><strong>${locale === 'zh' ? '便签目录' : 'Note folders'}</strong><div class="notes-folder-tools"><button class="row-action" data-new-note title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button><button class="row-action" data-new-note-folder title="${locale === 'zh' ? '新建目录' : 'New folder'}" aria-label="${locale === 'zh' ? '新建目录' : 'New folder'}"><i data-lucide="folder-plus"></i></button>${noteSortMenuMarkup()}<button type="button" class="row-action" data-notes-refresh title="${locale === 'zh' ? '同步便签' : 'Sync notes'}" aria-label="${locale === 'zh' ? '同步便签' : 'Sync notes'}"><i data-lucide="refresh-cw"></i></button></div></div>
 		<div class="notes-tree" data-notes-tree>
 			${pinnedRootMarkup}${folderMarkup}${unpinnedRootMarkup}${archiveMarkup}
 		</div>
@@ -2863,13 +2910,14 @@ function paintBookmarkView(): void {
 		)
 		.join('');
 	const folderTree = bookmarkFolderTreeMarkup(root, selectedFolderKey);
+	const refreshLabel = locale === 'zh' ? '拉取链接' : 'Refresh links';
 	content.innerHTML = `<div class="links-layout">
-		<div class="notes-inner-toolbar"><div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择链接目录' : 'Choose link folder'}">${folderOptions}</select></div><span class="note-count">${cards.length}</span><button class="button icon-button" id="links-refresh" title="${locale === 'zh' ? '拉取链接' : 'Refresh links'}" aria-label="${locale === 'zh' ? '拉取链接' : 'Refresh links'}"><i data-lucide="refresh-cw"></i></button></div>
+		<div class="notes-inner-toolbar mobile-only-tools"><div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择链接目录' : 'Choose link folder'}">${folderOptions}</select></div><button type="button" class="row-action" data-links-refresh title="${refreshLabel}" aria-label="${refreshLabel}"><i data-lucide="refresh-cw"></i></button></div>
 		<div class="bookmarks-main">${bookmarkPathMarkup(bookmarkFolderPath)}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无保存链接' : 'No saved links'}</span></div>`}</div></div>
 	</div>`;
 	const context = sidebarContext();
 	if (context)
-		context.innerHTML = `<div class="sidebar-context-head"><strong>${locale === 'zh' ? '链接目录' : 'Link folders'}</strong></div><div class="notes-tree bookmark-folder-tree"><div class="bookmark-tree-node note-tree-node note-tree-special expanded"><button class="bookmark-folder collection-tree-row bookmark-folder-root ${folder === root && root.folders.length === 0 ? 'active' : ''}" data-bookmark-folder="" data-bookmark-has-children="${root.folders.length > 0}" style="--tree-depth:0"><i class="tree-caret-icon" data-lucide="chevron-down" aria-hidden="true"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderTree || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</div></div>`;
+		context.innerHTML = `<div class="sidebar-context-head"><strong>${locale === 'zh' ? '链接目录' : 'Link folders'}</strong><div class="sidebar-context-tools"><button type="button" class="row-action" data-links-refresh title="${refreshLabel}" aria-label="${refreshLabel}"><i data-lucide="refresh-cw"></i></button></div></div><div class="notes-tree bookmark-folder-tree"><div class="bookmark-tree-node note-tree-node note-tree-special expanded"><button class="bookmark-folder collection-tree-row bookmark-folder-root ${folder === root && root.folders.length === 0 ? 'active' : ''}" data-bookmark-folder="" data-bookmark-has-children="${root.folders.length > 0}" style="--tree-depth:0"><i class="tree-caret-icon" data-lucide="chevron-down" aria-hidden="true"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span></button>${folderTree || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</div></div>`;
 	refreshIcons();
 	bindBookmarkPreviews(content);
 	const path = content.querySelector<HTMLElement>('.bookmark-path');
@@ -2898,10 +2946,16 @@ function paintBookmarkView(): void {
 		bookmarkFolderPath = key ? key.split('\u001f') : [];
 		paintBookmarkView();
 	});
-	content.querySelector('#links-refresh')?.addEventListener('click', async () => {
+	const refreshLinks = async () => {
 		await pullBookmarks(true);
 		paintBookmarkView();
-	});
+	};
+	content.querySelectorAll('[data-links-refresh]').forEach((node) =>
+		node.addEventListener('click', () => void refreshLinks()),
+	);
+	context?.querySelectorAll('[data-links-refresh]').forEach((node) =>
+		node.addEventListener('click', () => void refreshLinks()),
+	);
 }
 
 function bindNotesNavigation(content: HTMLElement): void {
@@ -3087,6 +3141,11 @@ function replaceNotesSidebar(data: NotePage, selectedId?: string): void {
 		current.replaceWith(next);
 		bindNotesNavigation(next);
 		bindNoteSidebar(next, data, selected);
+		next.querySelectorAll('[data-notes-refresh]').forEach((node) =>
+			node.addEventListener('click', () => {
+				void flushAllNoteCommits().then(() => renderNotes(selectedId, true));
+			}),
+		);
 		const list = next.querySelector<HTMLElement>('[data-notes-tree]');
 		if (list) list.scrollTop = scrollTop;
 	}
@@ -3125,10 +3184,16 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 		bindNoteSidebar(mobileSidebar, data, selected);
 	}
 	restoreNotesTreeScroll();
-	content.querySelector('#notes-refresh')?.addEventListener('click', async () => {
+	const refreshNotes = async () => {
 		await flushAllNoteCommits();
 		await renderNotes(selected?.id, true);
-	});
+	};
+	content.querySelectorAll('[data-notes-refresh], #notes-refresh').forEach((node) =>
+		node.addEventListener('click', () => void refreshNotes()),
+	);
+	context?.querySelectorAll('[data-notes-refresh], #notes-refresh').forEach((node) =>
+		node.addEventListener('click', () => void refreshNotes()),
+	);
 	if (!selected) return;
 	const desktopEditor = content.querySelector<HTMLElement>('.note-editor-desktop');
 	if (desktopEditor) bindNoteEditor(desktopEditor, selectedData, selected, false, content);

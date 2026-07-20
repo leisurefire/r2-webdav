@@ -1887,3 +1887,15 @@ details.markdown-callout > .markdown-callout-title::marker {
 		flex-basis: auto;
 	}
 }
+
+
+/* Desktop note path/actions live in the content toolbar; hide on phone. */
+@media (max-width: 760px) {
+	.notes-layout > .notes-inner-toolbar.desktop-only-toolbar {
+		display: none !important;
+	}
+
+	.note-action-more .desktop-only-action {
+		display: none !important;
+	}
+}

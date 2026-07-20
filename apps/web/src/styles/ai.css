@@ -59,10 +59,10 @@
 
 .ai-panel {
 	position: fixed;
+	z-index: 80;
 	left: 12px;
 	bottom: 18px;
 	width: min(640px, calc(100% - 24px));
-	z-index: 80;
 	pointer-events: auto;
 }
 
@@ -364,6 +364,7 @@
 @media (max-width: 720px) {
 	.ai-selection-menu {
 		position: fixed;
+		z-index: 60;
 		left: 8px !important;
 		right: 8px;
 		top: auto !important;
@@ -372,6 +373,10 @@
 		row-gap: 4px;
 		padding: 8px;
 		border-radius: 14px;
+	}
+
+	body:has(.ai-panel) .ai-selection-menu {
+		display: none !important;
 	}
 
 	.ai-panel {

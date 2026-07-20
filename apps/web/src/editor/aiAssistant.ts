@@ -561,7 +561,7 @@ export function bindMarkdownAiAssistant(
 		// While the AI panel is open, keep the soft selection hold and skip the floating menu.
 		if (panel) return removeToolbar();
 		const range = view.state.selection.main;
-		if (range.empty) {
+		if (range.empty || !view.hasFocus) {
 			trackedSelection = null;
 			if (!panel) clearSelectionHold(view);
 			return removeToolbar();
@@ -574,7 +574,21 @@ export function bindMarkdownAiAssistant(
 		};
 		holdSelectionHighlight(view, range.from, range.to);
 		const coords = view.coordsAtPos(range.from);
-		removeToolbar();
+		// Reuse an existing menu when possible so mobile bottom bar does not flash.
+		const existing = toolbar;
+		if (existing) {
+			existing.querySelectorAll<HTMLButtonElement>('[data-format]').forEach((button) => {
+				const marker = button.dataset.marker ?? '**';
+				const active = markerCoverage(view, range.from, range.to, marker) === 'full';
+				button.classList.toggle('active', active);
+				button.setAttribute('aria-pressed', String(active));
+			});
+			if (coords && !window.matchMedia('(max-width: 720px)').matches) {
+				existing.style.left = `${Math.max(8, Math.min(coords.left, innerWidth - 340))}px`;
+				existing.style.top = `${Math.max(8, coords.top - 48)}px`;
+			}
+			return;
+		}
 		toolbar = document.createElement('div');
 		toolbar.className = 'ai-selection-menu';
 		const formatButtons = FORMAT_BUTTONS.map(
@@ -685,10 +699,23 @@ export function bindMarkdownAiAssistant(
 
 	const scheduleToolbar = () => requestAnimationFrame(showToolbar);
 	view.dom.addEventListener('mouseup', scheduleToolbar);
+	view.dom.addEventListener('touchend', scheduleToolbar, { passive: true });
 	view.dom.addEventListener('keyup', scheduleToolbar);
+	// Keep the menu in sync with selection changes (mobile soft keyboard / caret moves).
+	const selectionPoll = view.dom.ownerDocument;
+	const onSelectionChange = () => {
+		if (!host.isConnected) return;
+		if (panel) return removeToolbar();
+		const range = view.state.selection.main;
+		if (range.empty || !view.hasFocus) removeToolbar();
+		else scheduleToolbar();
+	};
+	selectionPoll.addEventListener('selectionchange', onSelectionChange);
 	view.dom.addEventListener('blur', () =>
 		window.setTimeout(() => {
-			if (!toolbar?.matches(':hover') && !toolbar?.contains(document.activeElement)) removeToolbar();
+			if (panel) return removeToolbar();
+			if (!view.hasFocus && !toolbar?.matches(':hover') && !toolbar?.contains(document.activeElement))
+				removeToolbar();
 		}, 120),
 	);
 	window.addEventListener('scroll', removeToolbar, { capture: true, passive: true });
@@ -721,5 +748,10 @@ export function bindMarkdownAiAssistant(
 		// Context for blank-line generate is the full note; the space itself is not inserted.
 		openPanel('generate', '', { from: head, to: head });
 	});
-	return () => syncEmptyPrompt();
+	return () => {
+		syncEmptyPrompt();
+		selectionPoll.removeEventListener('selectionchange', onSelectionChange);
+		removeToolbar();
+		removePanel();
+	};
 }
