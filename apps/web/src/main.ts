@@ -15,6 +15,7 @@ import {
 	FileDown,
 	Film,
 	Folder,
+	FolderInput,
 	FolderOpen,
 	FolderPlus,
 	Image,
@@ -66,6 +67,13 @@ import {
 } from './api/client';
 import { bindBookmarkPreviews } from './bookmarks/previews';
 import { renderMarkdown, renderMarkdownDocument } from './editor/markdownRenderer';
+import {
+	buildNoteFolderTree,
+	canMoveNoteFolder,
+	flattenNoteFolderTree,
+	noteFolderDescendantIds,
+	noteFolderPath,
+} from './notes/folderTree';
 import './styles.css';
 import './styles/bookmarks.css';
 import './styles/notes.css';
@@ -263,6 +271,7 @@ function refreshIcons(): void {
 			FileDown,
 			Film,
 			Folder,
+			FolderInput,
 			FolderOpen,
 			FolderPlus,
 			Image,
@@ -439,6 +448,39 @@ function openTextDialog(title: string, label: string, initial = ''): Promise<str
 		});
 		dialog.showModal();
 		dialog.querySelector<HTMLInputElement>('input')?.select();
+	});
+}
+
+function openFolderDialog(
+	title: string,
+	folders: NoteFolder[],
+	currentId: string | null,
+	excluded = new Set<string>(),
+): Promise<string | null | undefined> {
+	return new Promise((resolve) => {
+		const rootLabel = locale === 'zh' ? '根目录' : 'Root';
+		const options = [
+			`<option value="" ${currentId === null ? 'selected' : ''}>${rootLabel}</option>`,
+			...flattenNoteFolderTree(buildNoteFolderTree(folders))
+				.filter(({ folder }) => !excluded.has(folder.id))
+				.map(({ folder }) => {
+					const label = noteFolderPath(folders, folder.id)
+						.map((item) => item.name)
+						.join(' / ');
+					return `<option value="${html(folder.id)}" ${folder.id === currentId ? 'selected' : ''}>${html(label)}</option>`;
+				}),
+		].join('');
+		const dialog = document.createElement('dialog');
+		dialog.innerHTML = `<form method="dialog" class="dialog-body"><h2>${html(title)}</h2><div class="field"><label for="dialog-folder">${locale === 'zh' ? '目标目录' : 'Destination'}</label><select class="input" id="dialog-folder">${options}</select></div><div class="dialog-actions"><button class="button" value="cancel">${locale === 'zh' ? '取消' : 'Cancel'}</button><button class="button primary" value="confirm">${locale === 'zh' ? '移动' : 'Move'}</button></div></form>`;
+		document.body.append(dialog);
+		dialog.addEventListener('close', () => {
+			const value = dialog.querySelector<HTMLSelectElement>('#dialog-folder')?.value ?? '';
+			const destination = dialog.returnValue === 'confirm' ? value || null : undefined;
+			dialog.remove();
+			resolve(destination);
+		});
+		dialog.showModal();
+		dialog.querySelector<HTMLSelectElement>('select')?.focus();
 	});
 }
 
@@ -1236,6 +1278,7 @@ let noteFoldersLoaded = false;
 let selectedNoteFolderId: string | null | undefined;
 /** Obsidian-style folder expand state; folders start collapsed and only open on user click. */
 const noteExpandedFolders = new Set<string>();
+let draggingNoteFolderId: string | null = null;
 let mobileNoteDialogOpen = false;
 let flushMobileNote: (() => Promise<void>) | null = null;
 let mobileNoteId: string | undefined;
@@ -1448,12 +1491,11 @@ async function loadNoteFolders(force = false): Promise<void> {
 
 function notePathMarkup(note: Note): string {
 	const rootLabel = locale === 'zh' ? '根目录' : 'Root';
-	const folder = note.folderId ? noteFolders.find((item) => item.id === note.folderId) : undefined;
 	const title = note.title.trim() || (locale === 'zh' ? '无标题便签' : 'Untitled note');
 	const crumbs = [
 		`<button type="button" class="note-path-item" data-note-path-folder="root" title="${rootLabel}">${rootLabel}</button>`,
 	];
-	if (folder) {
+	for (const folder of noteFolderPath(noteFolders, note.folderId)) {
 		crumbs.push('<span class="note-path-separator" aria-hidden="true">/</span>');
 		crumbs.push(
 			`<button type="button" class="note-path-item" data-note-path-folder="${html(folder.id)}" title="${html(folder.name)}">${html(folder.name)}</button>`,
@@ -1467,7 +1509,7 @@ function notePathMarkup(note: Note): string {
 function revealNoteFolderInTree(folderId: string | null): void {
 	notesView = 'active';
 	if (folderId) {
-		noteExpandedFolders.add(folderId);
+		for (const folder of noteFolderPath(noteFolders, folderId)) noteExpandedFolders.add(folder.id);
 		selectedNoteFolderId = folderId;
 	} else {
 		selectedNoteFolderId = null;
@@ -1479,7 +1521,9 @@ function revealNoteFolderInTree(folderId: string | null): void {
 		if (!tree) return;
 		const target = folderId
 			? tree.querySelector<HTMLElement>(`[data-note-folder-drop="${CSS.escape(folderId)}"]`)
-			: tree.querySelector<HTMLElement>('.notes-tree-root-pinned, .notes-tree-root-unpinned, [data-note-folder-drop="root"]');
+			: tree.querySelector<HTMLElement>(
+					'.notes-tree-root-pinned, .notes-tree-root-unpinned, [data-note-folder-drop="root"]',
+				);
 		target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 	});
 }
@@ -1489,6 +1533,7 @@ function noteEditorMarkup(selected: Note, mobile = false): string {
 		<form data-note-form>
 			<div class="note-editor-head">${mobile ? `<button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>` : ''}${notePathMarkup(selected)}<span class="note-save-status" data-note-save-status aria-live="polite"></span><time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
 				<button type="button" class="row-action" data-note-export title="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}" aria-label="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}"><i data-lucide="file-down"></i></button>
+				<button type="button" class="row-action" data-note-move title="${locale === 'zh' ? '移动到目录' : 'Move to folder'}" aria-label="${locale === 'zh' ? '移动到目录' : 'Move to folder'}"><i data-lucide="folder-input"></i></button>
 				<button type="button" class="row-action ${selected.pinned ? 'active' : ''}" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}" aria-label="${selected.pinned ? t('unpin') : t('pin')}" aria-pressed="${selected.pinned}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
 				<button type="button" class="row-action" data-note-archive title="${selected.archived ? t('restore') : t('archive')}" aria-label="${selected.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
 				<button type="button" class="row-action danger" data-note-delete title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button>
@@ -1531,7 +1576,14 @@ function trackNoteNetworkOp<T>(work: Promise<T>): Promise<T> {
 function hasUnsyncedNoteChanges(): boolean {
 	if (pendingNoteNetworkOps > 0) return true;
 	for (const state of noteCommitStates.values()) {
-		if (state.pending || state.inflight || state.active || state.status === 'pending' || state.status === 'syncing' || state.status === 'failed')
+		if (
+			state.pending ||
+			state.inflight ||
+			state.active ||
+			state.status === 'pending' ||
+			state.status === 'syncing' ||
+			state.status === 'failed'
+		)
 			return true;
 	}
 	return false;
@@ -1590,8 +1642,8 @@ function syncNoteTitle(note: Note, source?: HTMLInputElement): void {
 			locationTitle.title = title;
 		}
 		if (location) {
-			const folder = note.folderId ? noteFolders.find((item) => item.id === note.folderId)?.name : undefined;
-			location.title = [folder, title].filter(Boolean).join(' / ');
+			const path = noteFolderPath(noteFolders, note.folderId).map((item) => item.name);
+			location.title = [...path, title].join(' / ');
 		}
 	});
 }
@@ -1900,162 +1952,162 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 				onHeadingsChange: (headings) => {
 					if (!outline || !compose) return;
 					try {
-					const hasOutline = headings.length > 0;
-					compose.classList.toggle('has-outline', hasOutline);
-					outline.classList.toggle('empty', !hasOutline);
-					compose.classList.remove('outline-collapsed');
-					outline.classList.remove('collapsed', 'open');
-					if (!hasOutline) {
-						outline.replaceChildren();
-						return;
-					}
-
-					const scroller = view.scrollDOM;
-					const rail = document.createElement('div');
-					rail.className = 'note-outline-rail';
-					rail.setAttribute('role', 'navigation');
-					rail.setAttribute('aria-label', locale === 'zh' ? '章节位置' : 'Section positions');
-
-					const panel = document.createElement('div');
-					panel.className = 'note-outline-panel';
-					panel.setAttribute('role', 'menu');
-
-					const markButtons: HTMLButtonElement[] = [];
-					const itemButtons: HTMLButtonElement[] = [];
-					const anchors = headings
-						.map((heading) => {
-							const from = markdownHeadingPosition(view, heading.id);
-							return from === null ? null : { id: heading.id, from };
-						})
-						.filter((item): item is { id: string; from: number } => item !== null);
-
-					const centerInScrollable = (container: HTMLElement, target: HTMLElement | null | undefined) => {
-						if (!target || container.scrollHeight <= container.clientHeight + 1) return;
-						const containerRect = container.getBoundingClientRect();
-						const targetRect = target.getBoundingClientRect();
-						const top =
-							container.scrollTop +
-							(targetRect.top - containerRect.top) -
-							(container.clientHeight - targetRect.height) / 2;
-						container.scrollTop = Math.max(0, Math.min(top, container.scrollHeight - container.clientHeight));
-					};
-
-					let lastActiveId: string | null = null;
-					const setActive = (activeId: string | null) => {
-						for (const button of markButtons) {
-							button.classList.toggle('active', button.dataset.headingId === activeId);
-						}
-						for (const button of itemButtons) {
-							button.classList.toggle('active', button.dataset.headingId === activeId);
-						}
-						if (activeId === lastActiveId) return;
-						lastActiveId = activeId;
-						// Keep the current section visible/centered when the rail or panel overflows.
-						const activeMark = markButtons.find((button) => button.dataset.headingId === activeId);
-						const activeItem = itemButtons.find((button) => button.dataset.headingId === activeId);
-						centerInScrollable(rail, activeMark);
-						centerInScrollable(panel, activeItem);
-					};
-
-					const refreshActive = () => {
-						if (!anchors.length) {
-							setActive(null);
+						const hasOutline = headings.length > 0;
+						compose.classList.toggle('has-outline', hasOutline);
+						outline.classList.toggle('empty', !hasOutline);
+						compose.classList.remove('outline-collapsed');
+						outline.classList.remove('collapsed', 'open');
+						if (!hasOutline) {
+							outline.replaceChildren();
 							return;
 						}
-						const top = scroller.scrollTop + 36;
-						let activeId = anchors[0]!.id;
-						for (const anchor of anchors) {
-							// lineBlockAt is document-relative and stays valid while off-screen.
-							const offset = view.lineBlockAt(anchor.from).top;
-							if (offset <= top) activeId = anchor.id;
-							else break;
+
+						const scroller = view.scrollDOM;
+						const rail = document.createElement('div');
+						rail.className = 'note-outline-rail';
+						rail.setAttribute('role', 'navigation');
+						rail.setAttribute('aria-label', locale === 'zh' ? '章节位置' : 'Section positions');
+
+						const panel = document.createElement('div');
+						panel.className = 'note-outline-panel';
+						panel.setAttribute('role', 'menu');
+
+						const markButtons: HTMLButtonElement[] = [];
+						const itemButtons: HTMLButtonElement[] = [];
+						const anchors = headings
+							.map((heading) => {
+								const from = markdownHeadingPosition(view, heading.id);
+								return from === null ? null : { id: heading.id, from };
+							})
+							.filter((item): item is { id: string; from: number } => item !== null);
+
+						const centerInScrollable = (container: HTMLElement, target: HTMLElement | null | undefined) => {
+							if (!target || container.scrollHeight <= container.clientHeight + 1) return;
+							const containerRect = container.getBoundingClientRect();
+							const targetRect = target.getBoundingClientRect();
+							const top =
+								container.scrollTop +
+								(targetRect.top - containerRect.top) -
+								(container.clientHeight - targetRect.height) / 2;
+							container.scrollTop = Math.max(0, Math.min(top, container.scrollHeight - container.clientHeight));
+						};
+
+						let lastActiveId: string | null = null;
+						const setActive = (activeId: string | null) => {
+							for (const button of markButtons) {
+								button.classList.toggle('active', button.dataset.headingId === activeId);
+							}
+							for (const button of itemButtons) {
+								button.classList.toggle('active', button.dataset.headingId === activeId);
+							}
+							if (activeId === lastActiveId) return;
+							lastActiveId = activeId;
+							// Keep the current section visible/centered when the rail or panel overflows.
+							const activeMark = markButtons.find((button) => button.dataset.headingId === activeId);
+							const activeItem = itemButtons.find((button) => button.dataset.headingId === activeId);
+							centerInScrollable(rail, activeMark);
+							centerInScrollable(panel, activeItem);
+						};
+
+						const refreshActive = () => {
+							if (!anchors.length) {
+								setActive(null);
+								return;
+							}
+							const top = scroller.scrollTop + 36;
+							let activeId = anchors[0]!.id;
+							for (const anchor of anchors) {
+								// lineBlockAt is document-relative and stays valid while off-screen.
+								const offset = view.lineBlockAt(anchor.from).top;
+								if (offset <= top) activeId = anchor.id;
+								else break;
+							}
+							setActive(activeId);
+						};
+
+						for (const heading of headings) {
+							const mark = document.createElement('button');
+							mark.type = 'button';
+							mark.className = 'note-outline-mark';
+							mark.dataset.headingId = heading.id;
+							mark.style.setProperty('--outline-level', String(heading.level));
+							mark.title = heading.text;
+							mark.setAttribute('aria-label', heading.text);
+							mark.addEventListener('click', (event) => {
+								event.stopPropagation();
+								scrollToMarkdownHeading(view, heading.id);
+								// Mobile: first tap expands the panel; second tap (or any mark) jumps.
+								if (matchMedia('(hover: none)').matches) outline.classList.add('open');
+								refreshActive();
+							});
+							markButtons.push(mark);
+							rail.append(mark);
+
+							const item = document.createElement('button');
+							item.type = 'button';
+							item.className = 'note-outline-item';
+							item.dataset.headingId = heading.id;
+							item.style.setProperty('--outline-level', String(heading.level));
+							item.setAttribute('role', 'menuitem');
+							const label = document.createElement('span');
+							label.textContent = heading.text;
+							item.append(label);
+							item.addEventListener('click', (event) => {
+								event.stopPropagation();
+								scrollToMarkdownHeading(view, heading.id);
+								outline.classList.remove('open');
+								refreshActive();
+							});
+							itemButtons.push(item);
+							panel.append(item);
 						}
-						setActive(activeId);
-					};
 
-					for (const heading of headings) {
-						const mark = document.createElement('button');
-						mark.type = 'button';
-						mark.className = 'note-outline-mark';
-						mark.dataset.headingId = heading.id;
-						mark.style.setProperty('--outline-level', String(heading.level));
-						mark.title = heading.text;
-						mark.setAttribute('aria-label', heading.text);
-						mark.addEventListener('click', (event) => {
-							event.stopPropagation();
-							scrollToMarkdownHeading(view, heading.id);
-							// Mobile: first tap expands the panel; second tap (or any mark) jumps.
-							if (matchMedia('(hover: none)').matches) outline.classList.add('open');
-							refreshActive();
+						outline.replaceChildren(rail, panel);
+
+						const syncOutlineScroll = () => {
+							const activeMark = markButtons.find((button) => button.classList.contains('active'));
+							const activeItem = itemButtons.find((button) => button.classList.contains('active'));
+							centerInScrollable(rail, activeMark);
+							centerInScrollable(panel, activeItem);
+						};
+						const openPanel = () => {
+							outline.classList.add('open');
+							// Panel may have been hidden; re-center after it participates in layout.
+							requestAnimationFrame(syncOutlineScroll);
+						};
+						const closePanel = () => {
+							if (!outline.matches(':hover') && !outline.contains(document.activeElement))
+								outline.classList.remove('open');
+						};
+						outline.addEventListener('mouseenter', openPanel);
+						outline.addEventListener('mouseleave', () => {
+							if (!matchMedia('(hover: none)').matches) outline.classList.remove('open');
 						});
-						markButtons.push(mark);
-						rail.append(mark);
-
-						const item = document.createElement('button');
-						item.type = 'button';
-						item.className = 'note-outline-item';
-						item.dataset.headingId = heading.id;
-						item.style.setProperty('--outline-level', String(heading.level));
-						item.setAttribute('role', 'menuitem');
-						const label = document.createElement('span');
-						label.textContent = heading.text;
-						item.append(label);
-						item.addEventListener('click', (event) => {
-							event.stopPropagation();
-							scrollToMarkdownHeading(view, heading.id);
-							outline.classList.remove('open');
-							refreshActive();
+						rail.addEventListener('focusin', openPanel);
+						panel.addEventListener('focusout', () => closePanel());
+						// Touch: tapping the rail area toggles the floating list.
+						rail.addEventListener('click', (event) => {
+							if (!(event.target instanceof Element)) return;
+							if (event.target.closest('.note-outline-mark')) return;
+							if (matchMedia('(hover: none)').matches) outline.classList.toggle('open');
 						});
-						itemButtons.push(item);
-						panel.append(item);
-					}
 
-					outline.replaceChildren(rail, panel);
-
-					const syncOutlineScroll = () => {
-						const activeMark = markButtons.find((button) => button.classList.contains('active'));
-						const activeItem = itemButtons.find((button) => button.classList.contains('active'));
-						centerInScrollable(rail, activeMark);
-						centerInScrollable(panel, activeItem);
-					};
-					const openPanel = () => {
-						outline.classList.add('open');
-						// Panel may have been hidden; re-center after it participates in layout.
-						requestAnimationFrame(syncOutlineScroll);
-					};
-					const closePanel = () => {
-						if (!outline.matches(':hover') && !outline.contains(document.activeElement))
+						const previous = outline as HTMLElement & {
+							_outlineScroll?: () => void;
+							_outlineOutside?: (event: Event) => void;
+						};
+						if (previous._outlineScroll) scroller.removeEventListener('scroll', previous._outlineScroll);
+						if (previous._outlineOutside) document.removeEventListener('pointerdown', previous._outlineOutside);
+						const onScroll = () => refreshActive();
+						const onOutside = (event: Event) => {
+							if (!(event.target instanceof Node) || outline.contains(event.target)) return;
 							outline.classList.remove('open');
-					};
-					outline.addEventListener('mouseenter', openPanel);
-					outline.addEventListener('mouseleave', () => {
-						if (!matchMedia('(hover: none)').matches) outline.classList.remove('open');
-					});
-					rail.addEventListener('focusin', openPanel);
-					panel.addEventListener('focusout', () => closePanel());
-					// Touch: tapping the rail area toggles the floating list.
-					rail.addEventListener('click', (event) => {
-						if (!(event.target instanceof Element)) return;
-						if (event.target.closest('.note-outline-mark')) return;
-						if (matchMedia('(hover: none)').matches) outline.classList.toggle('open');
-					});
-
-					const previous = outline as HTMLElement & {
-						_outlineScroll?: () => void;
-						_outlineOutside?: (event: Event) => void;
-					};
-					if (previous._outlineScroll) scroller.removeEventListener('scroll', previous._outlineScroll);
-					if (previous._outlineOutside) document.removeEventListener('pointerdown', previous._outlineOutside);
-					const onScroll = () => refreshActive();
-					const onOutside = (event: Event) => {
-						if (!(event.target instanceof Node) || outline.contains(event.target)) return;
-						outline.classList.remove('open');
-					};
-					previous._outlineScroll = onScroll;
-					previous._outlineOutside = onOutside;
-					scroller.addEventListener('scroll', onScroll, { passive: true });
-					document.addEventListener('pointerdown', onOutside);
-					refreshActive();
+						};
+						previous._outlineScroll = onScroll;
+						previous._outlineOutside = onOutside;
+						scroller.addEventListener('scroll', onScroll, { passive: true });
+						document.addEventListener('pointerdown', onOutside);
+						refreshActive();
 					} catch (error) {
 						console.error('Note outline failed', error);
 					}
@@ -2093,6 +2145,9 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 	});
 	const updateStructure = (changes: NoteChanges) => {
 		const leftCurrentView = optimisticallyUpdateNote(data, selected, changes);
+		if (typeof changes.folderId === 'string') {
+			for (const folder of noteFolderPath(noteFolders, changes.folderId)) noteExpandedFolders.add(folder.id);
+		}
 		if (leftCurrentView) {
 			if (mobile && mobileNoteDialogOpen) history.back();
 			else if (notesData) paintNotes(notesData);
@@ -2101,6 +2156,15 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		syncNoteMetadata(selected);
 		if (notesData) replaceNotesSidebar(notesData, selected.id);
 	};
+	root.querySelector('[data-note-move]')?.addEventListener('click', async () => {
+		const destination = await openFolderDialog(
+			locale === 'zh' ? '移动便签' : 'Move note',
+			noteFolders,
+			selected.folderId ?? null,
+		);
+		if (destination === undefined || (!selected.archived && destination === (selected.folderId ?? null))) return;
+		updateStructure({ archived: false, folderId: destination });
+	});
 	bindNotePath(root, selected);
 	root
 		.querySelector<HTMLFormElement>('[data-note-form]')
@@ -2172,7 +2236,8 @@ function noteCardMarkup(note: Note, selected?: Note): string {
 	return `<article class="note-card ${note.id === selected?.id ? 'active' : ''}" draggable="true" data-note-card-id="${html(note.id)}"><button class="note-card-open" data-note="${html(note.id)}">
 		<div class="note-card-title"><span class="note-card-leading" aria-hidden="true">${note.pinned ? '<i data-lucide="pin"></i>' : ''}</span><span class="note-card-label">${html(note.title)}</span></div>
 	</button>
-		<div class="note-card-actions">
+	<div class="note-card-actions">
+			<button class="row-action" data-note-card-move="${html(note.id)}" title="${locale === 'zh' ? '移动到目录' : 'Move to folder'}" aria-label="${locale === 'zh' ? '移动到目录' : 'Move to folder'}"><i data-lucide="folder-input"></i></button>
 			<button class="row-action" data-note-card-pin="${html(note.id)}" title="${note.pinned ? t('unpin') : t('pin')}" aria-label="${note.pinned ? t('unpin') : t('pin')}"><i data-lucide="${note.pinned ? 'pin-off' : 'pin'}"></i></button>
 			<button class="row-action" data-note-card-archive="${html(note.id)}" title="${note.archived ? t('restore') : t('archive')}" aria-label="${note.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
 		</div>
@@ -2187,7 +2252,6 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 		kind: 'folder' | 'note' | 'archive';
 		key: string;
 		name: string;
-		count: number | string;
 		expanded: boolean;
 		active: boolean;
 		children: NoteTreeNode[];
@@ -2198,7 +2262,6 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 			kind: 'note',
 			key: note.id,
 			name: note.title,
-			count: '',
 			expanded: false,
 			active: note.id === selected?.id,
 			children: [],
@@ -2208,22 +2271,20 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 	// Pinned root notes stay above folders; unpinned root notes stay below folders.
 	const pinnedRootNotes = rootNotes.filter((note) => note.pinned);
 	const unpinnedRootNotes = rootNotes.filter((note) => !note.pinned);
-	const folderTree: NoteTreeNode[] = noteFolders.map((folder) => ({
-		kind: 'folder' as const,
-		key: folder.id,
-		name: folder.name,
-		count: folder.noteCount,
-		expanded: noteExpandedFolders.has(folder.id),
-		// Folders themselves are never "selected" like a note; only expanded/collapsed.
+	const folderNode = (node: ReturnType<typeof buildNoteFolderTree>[number]): NoteTreeNode => ({
+		kind: 'folder',
+		key: node.folder.id,
+		name: node.folder.name,
+		expanded: noteExpandedFolders.has(node.folder.id),
 		active: false,
-		children: noteNodes(notesFor(folder.id)),
-	}));
+		children: [...node.children.map(folderNode), ...noteNodes(notesFor(node.folder.id))],
+	});
+	const folderTree = buildNoteFolderTree(noteFolders).map(folderNode);
 	const archiveTree: NoteTreeNode[] = [
 		{
 			kind: 'archive',
 			key: 'archive',
 			name: t('archived'),
-			count: archivedNotesData?.total ?? '',
 			expanded: archiveExpanded,
 			active: false,
 			children: archiveExpanded ? noteNodes(archivedNotesData?.items ?? []) : [],
@@ -2233,16 +2294,17 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 		renderTreeNodes(
 			nodes,
 			(node) => node.children,
-			(node, depth, children) => {
+			(node, _depth, children) => {
 				if (node.kind === 'note') return node.note ? noteCardMarkup(node.note, selected) : '';
 				const folder = node.kind === 'folder';
 				const icon = caret(node.expanded);
 				const actions = folder
-					? `<div class="note-folder-actions"><button class="row-action" data-rename-note-folder="${html(node.key)}" title="${locale === 'zh' ? '重命名' : 'Rename'}" aria-label="${locale === 'zh' ? '重命名' : 'Rename'}"><i data-lucide="pencil"></i></button><button class="row-action danger" data-delete-note-folder="${html(node.key)}" title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button></div>`
+					? `<div class="note-folder-actions"><button class="row-action" data-move-note-folder="${html(node.key)}" title="${locale === 'zh' ? '移动目录' : 'Move folder'}" aria-label="${locale === 'zh' ? '移动目录' : 'Move folder'}"><i data-lucide="folder-input"></i></button><button class="row-action" data-rename-note-folder="${html(node.key)}" title="${locale === 'zh' ? '重命名' : 'Rename'}" aria-label="${locale === 'zh' ? '重命名' : 'Rename'}"><i data-lucide="pencil"></i></button><button class="row-action danger" data-delete-note-folder="${html(node.key)}" title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button></div>`
 					: '';
 				const filter = node.kind === 'archive' ? 'data-note-archived' : `data-note-folder-filter="${html(node.key)}"`;
 				const drop = node.kind === 'archive' ? 'archive' : node.key;
-				return `<div class="note-tree-node ${folder ? 'note-folder-card' : 'note-tree-special'} ${node.kind === 'archive' ? 'archive-tree-item' : ''} ${node.active ? 'active' : ''} ${node.expanded ? 'expanded' : ''}" data-note-folder-drop="${html(drop)}" style="--tree-depth:${depth}"><button type="button" class="collection-tree-row" ${filter}>${icon}<span>${html(node.name)}</span><small>${node.count || ''}</small></button>${actions}${node.expanded && children ? `<div class="notes-tree-children">${children}</div>` : ''}</div>`;
+				const draggable = folder ? ` draggable="true" data-note-folder-id="${html(node.key)}"` : '';
+				return `<div class="note-tree-node ${folder ? 'note-folder-card' : 'note-tree-special'} ${node.kind === 'archive' ? 'archive-tree-item' : ''} ${node.active ? 'active' : ''} ${node.expanded ? 'expanded' : ''}" data-note-folder-drop="${html(drop)}"${draggable}><button type="button" class="collection-tree-row" ${filter}>${icon}<span>${html(node.name)}</span></button>${actions}${node.expanded && children ? `<div class="notes-tree-children">${children}</div>` : ''}</div>`;
 			},
 		);
 	const pinnedRootMarkup = pinnedRootNotes.length
@@ -2295,9 +2357,11 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 		);
 		if (!name) return;
 		try {
-			const created = await api.createNoteFolder(name);
+			const parentId = typeof selectedNoteFolderId === 'string' ? selectedNoteFolderId : null;
+			const created = await api.createNoteFolder(name, parentId);
 			noteFolders.push(created);
 			noteFoldersLoaded = true;
+			if (parentId) noteExpandedFolders.add(parentId);
 			// Stay in the current view instead of jumping into the empty folder,
 			// which made the note list look like it was wiped.
 			if (notesData) paintNotes(notesData, currentSelectedNoteId());
@@ -2317,7 +2381,7 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 			);
 			if (!name || name === folder.name) return;
 			try {
-				const updated = await api.updateNoteFolder(folder.id, name);
+				const updated = await api.updateNoteFolder(folder.id, { name });
 				Object.assign(folder, updated);
 				if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
 			} catch (error) {
@@ -2334,8 +2398,8 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 				!(await confirmAction(
 					locale === 'zh' ? '删除便签目录？' : 'Delete note folder?',
 					locale === 'zh'
-						? '目录中的便签会移到根目录，不会被删除。'
-						: 'Notes in this folder will move to the root and will not be deleted.',
+						? '目录中的便签和子目录会移到上一级，不会被删除。'
+						: 'Notes and subfolders will move up one level and will not be deleted.',
 					t('delete'),
 				))
 			)
@@ -2347,6 +2411,29 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 				if (selectedNoteFolderId === folder.id) selectedNoteFolderId = undefined;
 				invalidateNoteCaches();
 				await renderNotes(undefined, true);
+			} catch (error) {
+				toast(errorMessage(error));
+			}
+		}),
+	);
+	content.querySelectorAll<HTMLElement>('[data-move-note-folder]').forEach((button) =>
+		button.addEventListener('click', async (event) => {
+			event.stopPropagation();
+			const folder = noteFolders.find((item) => item.id === button.dataset.moveNoteFolder);
+			if (!folder) return;
+			const destination = await openFolderDialog(
+				locale === 'zh' ? '移动目录' : 'Move folder',
+				noteFolders,
+				folder.parentId ?? null,
+				new Set([folder.id, ...noteFolderDescendantIds(noteFolders, folder.id)]),
+			);
+			if (destination === undefined || destination === (folder.parentId ?? null)) return;
+			try {
+				const updated = await trackNoteNetworkOp(api.updateNoteFolder(folder.id, { parentId: destination }));
+				Object.assign(folder, updated);
+				for (const ancestor of noteFolderPath(noteFolders, destination)) noteExpandedFolders.add(ancestor.id);
+				noteExpandedFolders.add(folder.id);
+				if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
 			} catch (error) {
 				toast(errorMessage(error));
 			}
@@ -2370,12 +2457,55 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 				: { archived: false, folderId: destination === 'root' ? null : destination };
 		// optimisticallyUpdateNote bumps updatedAt so the note sorts by edit time in the target folder.
 		const leftCurrentView = optimisticallyUpdateNote(source ?? data, note, changes);
+		if (typeof changes.folderId === 'string') {
+			for (const folder of noteFolderPath(noteFolders, changes.folderId)) noteExpandedFolders.add(folder.id);
+		}
 		const selectedId = currentSelectedNoteId();
 		if (leftCurrentView && selectedId === note.id && notesData) paintNotes(notesData);
-		else if (notesData) replaceNotesSidebar(notesData, selectedId);
+		else {
+			if (notesData) replaceNotesSidebar(notesData, selectedId);
+			if (selectedId === note.id) syncNoteMetadata(note);
+		}
 	};
+	const moveFolder = (folderId: string, destination: string) => {
+		const folder = noteFolders.find((item) => item.id === folderId);
+		if (!folder || destination === 'archive') return;
+		const parentId = destination === 'root' ? null : destination;
+		if (parentId === (folder.parentId ?? null) || !canMoveNoteFolder(noteFolders, folderId, parentId)) return;
+		void trackNoteNetworkOp(api.updateNoteFolder(folderId, { parentId }))
+			.then((updated) => {
+				Object.assign(folder, updated);
+				for (const ancestor of noteFolderPath(noteFolders, parentId)) noteExpandedFolders.add(ancestor.id);
+				noteExpandedFolders.add(folder.id);
+				if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
+			})
+			.catch((error) => toast(errorMessage(error)));
+	};
+	content.querySelectorAll<HTMLElement>('[data-note-folder-id]').forEach((folderNode) => {
+		folderNode.addEventListener('dragstart', (event) => {
+			if ((event.target as HTMLElement).closest('[data-note-folder-id]') !== folderNode) return;
+			if ((event.target as HTMLElement).closest('[data-note-card-id]')) return;
+			draggingNoteFolderId = folderNode.dataset.noteFolderId ?? null;
+			event.dataTransfer?.setData('text/x-truespace-note-folder', draggingNoteFolderId ?? '');
+			if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+			folderNode.classList.add('dragging');
+		});
+		folderNode.addEventListener('dragend', () => {
+			if (!folderNode.classList.contains('dragging')) return;
+			draggingNoteFolderId = null;
+			folderNode.classList.remove('dragging');
+		});
+	});
 	content.querySelectorAll<HTMLElement>('[data-note-folder-drop]').forEach((target) => {
 		target.addEventListener('dragover', (event) => {
+			const destination = target.dataset.noteFolderDrop;
+			if (
+				draggingNoteFolderId &&
+				(!destination ||
+					destination === 'archive' ||
+					(destination !== 'root' && !canMoveNoteFolder(noteFolders, draggingNoteFolderId, destination)))
+			)
+				return;
 			event.preventDefault();
 			event.stopPropagation();
 			target.classList.add('drag-over');
@@ -2385,8 +2515,13 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 			event.preventDefault();
 			event.stopPropagation();
 			target.classList.remove('drag-over');
-			const noteId = event.dataTransfer?.getData('text/x-truespace-note');
 			const destination = target.dataset.noteFolderDrop;
+			const folderId = event.dataTransfer?.getData('text/x-truespace-note-folder') || draggingNoteFolderId;
+			if (folderId && destination && destination !== 'archive') {
+				moveFolder(folderId, destination);
+				return;
+			}
+			const noteId = event.dataTransfer?.getData('text/x-truespace-note');
 			if (noteId && destination) moveNote(noteId, destination);
 		});
 	});
@@ -2403,8 +2538,12 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 		if ((event.target as HTMLElement).closest('[data-note-folder-drop]')) return;
 		event.preventDefault();
 		tree.classList.remove('root-drag-over');
-		const noteId = event.dataTransfer?.getData('text/x-truespace-note');
-		if (noteId) moveNote(noteId, 'root');
+		const folderId = event.dataTransfer?.getData('text/x-truespace-note-folder') || draggingNoteFolderId;
+		if (folderId) moveFolder(folderId, 'root');
+		else {
+			const noteId = event.dataTransfer?.getData('text/x-truespace-note');
+			if (noteId) moveNote(noteId, 'root');
+		}
 	});
 }
 
@@ -2509,7 +2648,7 @@ function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?: Note):
 			// Only a note click switches the open document; also reveal its folder.
 			if (note) {
 				if (note.folderId) {
-					noteExpandedFolders.add(note.folderId);
+					for (const folder of noteFolderPath(noteFolders, note.folderId)) noteExpandedFolders.add(folder.id);
 					selectedNoteFolderId = note.folderId;
 				} else {
 					selectedNoteFolderId = null;
@@ -2532,11 +2671,16 @@ function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?: Note):
 		const note = source?.items.find((item) => item.id === noteId);
 		if (!note) return;
 		const leftCurrentView = optimisticallyUpdateNote(source ?? data, note, changes);
+		if (typeof changes.folderId === 'string') {
+			for (const folder of noteFolderPath(noteFolders, changes.folderId)) noteExpandedFolders.add(folder.id);
+		}
 		const selectedId = currentSelectedNoteId();
 		if (leftCurrentView && selectedId === note.id && notesData) paintNotes(notesData);
 		else {
 			if (notesData) replaceNotesSidebar(notesData, selectedId);
 			if (changes.pinned !== undefined && selectedId === note.id) syncNotePinControls(note);
+			if ((changes.folderId !== undefined || changes.archived !== undefined) && selectedId === note.id)
+				syncNoteMetadata(note);
 		}
 	};
 	content.querySelectorAll<HTMLElement>('[data-note-card-pin]').forEach((button) =>
@@ -2544,6 +2688,20 @@ function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?: Note):
 			event.stopPropagation();
 			const note = noteFor(button.dataset.noteCardPin);
 			if (note) updateFromCard(note.id, { pinned: !note.pinned });
+		}),
+	);
+	content.querySelectorAll<HTMLElement>('[data-note-card-move]').forEach((button) =>
+		button.addEventListener('click', async (event) => {
+			event.stopPropagation();
+			const note = noteFor(button.dataset.noteCardMove);
+			if (!note) return;
+			const destination = await openFolderDialog(
+				locale === 'zh' ? '移动便签' : 'Move note',
+				noteFolders,
+				note.folderId ?? null,
+			);
+			if (destination === undefined || (!note.archived && destination === (note.folderId ?? null))) return;
+			updateFromCard(note.id, { archived: false, folderId: destination });
 		}),
 	);
 	content.querySelectorAll<HTMLElement>('[data-note-card-archive]').forEach((button) =>

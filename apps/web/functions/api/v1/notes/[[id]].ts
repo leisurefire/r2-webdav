@@ -19,6 +19,7 @@ interface NoteRow {
 interface FolderRow {
 	id: string;
 	name: string;
+	parent_id: string | null;
 	note_count: number;
 	created_at: string;
 	updated_at: string;
@@ -86,6 +87,7 @@ function folder(row: FolderRow): NoteFolder {
 	return {
 		id: row.id,
 		name: row.name,
+		parentId: row.parent_id,
 		noteCount: Number(row.note_count),
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
@@ -96,6 +98,44 @@ async function folderExists(env: Env, owner: string, id: string): Promise<boolea
 	return Boolean(
 		await env.NOTES_DB.prepare('SELECT id FROM r2_webdav_note_folders WHERE id = ? AND user_id = ?')
 			.bind(id, owner)
+			.first(),
+	);
+}
+
+async function validFolderParent(env: Env, owner: string, folderId: string, parentId: string | null): Promise<boolean> {
+	if (!parentId) return true;
+	const visited = new Set([folderId]);
+	let currentId: string | null = parentId;
+	while (currentId) {
+		if (visited.has(currentId)) return false;
+		visited.add(currentId);
+		const current: { parent_id: string | null } | null = await env.NOTES_DB.prepare(
+			'SELECT parent_id FROM r2_webdav_note_folders WHERE id = ? AND user_id = ?',
+		)
+			.bind(currentId, owner)
+			.first<{ parent_id: string | null }>();
+		if (!current) return false;
+		currentId = current.parent_id;
+	}
+	return true;
+}
+
+async function siblingFolderExists(
+	env: Env,
+	owner: string,
+	name: string,
+	parentId: string | null,
+	excludingId?: string,
+): Promise<boolean> {
+	let query = 'SELECT id FROM r2_webdav_note_folders WHERE user_id = ? AND parent_id IS ? AND name = ? COLLATE NOCASE';
+	const values: unknown[] = [owner, parentId, name];
+	if (excludingId) {
+		query += ' AND id != ?';
+		values.push(excludingId);
+	}
+	return Boolean(
+		await env.NOTES_DB.prepare(query)
+			.bind(...values)
 			.first(),
 	);
 }
@@ -149,8 +189,7 @@ async function createNote(request: Request, env: Env, owner: string): Promise<Re
 		return error('BAD_REQUEST', 'Folder not found', 400);
 	}
 	// Prefer a client-generated UUID so the UI can open the note before the network returns.
-	const id =
-		input.id && /^[0-9a-f-]{36}$/i.test(input.id) ? input.id.toLowerCase() : crypto.randomUUID();
+	const id = input.id && /^[0-9a-f-]{36}$/i.test(input.id) ? input.id.toLowerCase() : crypto.randomUUID();
 	const now = new Date().toISOString();
 	await env.NOTES_DB.prepare(
 		`INSERT INTO r2_webdav_notes
@@ -176,7 +215,13 @@ async function createNote(request: Request, env: Env, owner: string): Promise<Re
 }
 
 async function updateNote(request: Request, env: Env, owner: string, id: string): Promise<Response> {
-	const input = await readJson<{ title?: string; content?: string; pinned?: boolean; archived?: boolean; folderId?: string | null }>(request);
+	const input = await readJson<{
+		title?: string;
+		content?: string;
+		pinned?: boolean;
+		archived?: boolean;
+		folderId?: string | null;
+	}>(request);
 	if (!input) return error('BAD_REQUEST', 'Invalid note body', 400);
 	if (input.title !== undefined && (!input.title.trim() || input.title.trim().length > 200)) {
 		return error('BAD_REQUEST', 'A title between 1 and 200 characters is required', 400);
@@ -200,7 +245,10 @@ async function updateNote(request: Request, env: Env, owner: string, id: string)
 		values.push(input.archived ? 1 : 0);
 	}
 	if (input.folderId !== undefined) {
-		if (input.folderId && (!/^[0-9a-f-]{36}$/i.test(input.folderId) || !(await folderExists(env, owner, input.folderId)))) {
+		if (
+			input.folderId &&
+			(!/^[0-9a-f-]{36}$/i.test(input.folderId) || !(await folderExists(env, owner, input.folderId)))
+		) {
 			return error('BAD_REQUEST', 'Folder not found', 400);
 		}
 		updates.push('folder_id = ?');
@@ -226,12 +274,12 @@ async function updateNote(request: Request, env: Env, owner: string, id: string)
 
 async function listFolders(env: Env, owner: string): Promise<Response> {
 	const rows = await env.NOTES_DB.prepare(
-		`SELECT f.id, f.name, f.created_at, f.updated_at, COUNT(n.id) AS note_count
+		`SELECT f.id, f.name, f.parent_id, f.created_at, f.updated_at, COUNT(n.id) AS note_count
 		 FROM r2_webdav_note_folders f
 		 LEFT JOIN r2_webdav_notes n ON n.folder_id = f.id AND n.user_id = f.user_id AND n.is_archived = 0
 		 WHERE f.user_id = ?
-		 GROUP BY f.id, f.name, f.created_at, f.updated_at
-		 ORDER BY f.name COLLATE NOCASE`,
+		 GROUP BY f.id, f.name, f.parent_id, f.created_at, f.updated_at
+		 ORDER BY f.name COLLATE NOCASE, f.id`,
 	)
 		.bind(owner)
 		.all<FolderRow>();
@@ -239,42 +287,71 @@ async function listFolders(env: Env, owner: string): Promise<Response> {
 }
 
 async function createFolder(request: Request, env: Env, owner: string): Promise<Response> {
-	const input = await readJson<{ name?: string }>(request);
+	const input = await readJson<{ name?: string; parentId?: string | null }>(request);
 	const name = input?.name?.trim() ?? '';
-	if (!name || name.length > 100) return error('BAD_REQUEST', 'A folder name between 1 and 100 characters is required', 400);
-	const existing = await env.NOTES_DB.prepare('SELECT id FROM r2_webdav_note_folders WHERE user_id = ? AND name = ? COLLATE NOCASE')
-		.bind(owner, name)
-		.first();
-	if (existing) return error('CONFLICT', 'A folder with this name already exists', 409);
+	const parentId = input?.parentId ?? null;
+	if (!name || name.length > 100)
+		return error('BAD_REQUEST', 'A folder name between 1 and 100 characters is required', 400);
+	if (parentId && !/^[0-9a-f-]{36}$/i.test(parentId)) return error('BAD_REQUEST', 'Invalid parent folder ID', 400);
 	const id = crypto.randomUUID();
+	if (!(await validFolderParent(env, owner, id, parentId))) return error('BAD_REQUEST', 'Parent folder not found', 400);
+	if (await siblingFolderExists(env, owner, name, parentId)) {
+		return error('CONFLICT', 'A folder with this name already exists here', 409);
+	}
 	const now = new Date().toISOString();
-	await env.NOTES_DB.prepare(
-		'INSERT INTO r2_webdav_note_folders (id, user_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-	)
-		.bind(id, owner, name, now, now)
-		.run();
-	return data({ id, name, noteCount: 0, createdAt: now, updatedAt: now } satisfies NoteFolder, 201);
+	try {
+		await env.NOTES_DB.prepare(
+			'INSERT INTO r2_webdav_note_folders (id, user_id, name, parent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+		)
+			.bind(id, owner, name, parentId, now, now)
+			.run();
+	} catch {
+		return error('CONFLICT', 'A folder with this name already exists', 409);
+	}
+	return data({ id, name, parentId, noteCount: 0, createdAt: now, updatedAt: now } satisfies NoteFolder, 201);
 }
 
 async function renameFolder(request: Request, env: Env, owner: string, id: string): Promise<Response> {
-	const input = await readJson<{ name?: string }>(request);
-	const name = input?.name?.trim() ?? '';
-	if (!name || name.length > 100) return error('BAD_REQUEST', 'A folder name between 1 and 100 characters is required', 400);
+	const input = await readJson<{ name?: string; parentId?: string | null }>(request);
+	if (!input || (input.name === undefined && input.parentId === undefined)) {
+		return error('BAD_REQUEST', 'No folder changes supplied', 400);
+	}
+	if (input.parentId && !/^[0-9a-f-]{36}$/i.test(input.parentId)) {
+		return error('BAD_REQUEST', 'Invalid parent folder ID', 400);
+	}
+	const current = await env.NOTES_DB.prepare(
+		'SELECT id, name, parent_id FROM r2_webdav_note_folders WHERE id = ? AND user_id = ?',
+	)
+		.bind(id, owner)
+		.first<Pick<FolderRow, 'id' | 'name' | 'parent_id'>>();
+	if (!current) return error('NOT_FOUND', 'Folder not found', 404);
+	const name = input.name === undefined ? current.name : input.name.trim();
+	const parentId = input.parentId === undefined ? current.parent_id : input.parentId;
+	if (!name || name.length > 100)
+		return error('BAD_REQUEST', 'A folder name between 1 and 100 characters is required', 400);
+	if (!(await validFolderParent(env, owner, id, parentId))) {
+		return error('BAD_REQUEST', 'A folder cannot be moved into itself or one of its descendants', 400);
+	}
+	if (await siblingFolderExists(env, owner, name, parentId, id)) {
+		return error('CONFLICT', 'A folder with this name already exists here', 409);
+	}
 	const now = new Date().toISOString();
 	try {
 		const result = await env.NOTES_DB.prepare(
-			'UPDATE r2_webdav_note_folders SET name = ?, updated_at = ? WHERE id = ? AND user_id = ?',
+			'UPDATE r2_webdav_note_folders SET name = ?, parent_id = ?, updated_at = ? WHERE id = ? AND user_id = ?',
 		)
-			.bind(name, now, id, owner)
+			.bind(name, parentId, now, id, owner)
 			.run();
 		if (!(result.meta.changes ?? 0)) return error('NOT_FOUND', 'Folder not found', 404);
 	} catch {
 		return error('CONFLICT', 'A folder with this name already exists', 409);
 	}
 	const row = await env.NOTES_DB.prepare(
-		`SELECT f.id, f.name, f.created_at, f.updated_at, COUNT(n.id) AS note_count
-		 FROM r2_webdav_note_folders f LEFT JOIN r2_webdav_notes n ON n.folder_id = f.id AND n.is_archived = 0
-		 WHERE f.id = ? AND f.user_id = ? GROUP BY f.id, f.name, f.created_at, f.updated_at`,
+		`SELECT f.id, f.name, f.parent_id, f.created_at, f.updated_at, COUNT(n.id) AS note_count
+		 FROM r2_webdav_note_folders f
+		 LEFT JOIN r2_webdav_notes n ON n.folder_id = f.id AND n.user_id = f.user_id AND n.is_archived = 0
+		 WHERE f.id = ? AND f.user_id = ?
+		 GROUP BY f.id, f.name, f.parent_id, f.created_at, f.updated_at`,
 	)
 		.bind(id, owner)
 		.first<FolderRow>();
@@ -282,9 +359,23 @@ async function renameFolder(request: Request, env: Env, owner: string, id: strin
 }
 
 async function deleteFolder(env: Env, owner: string, id: string): Promise<Response> {
-	if (!(await folderExists(env, owner, id))) return error('NOT_FOUND', 'Folder not found', 404);
+	const existing = await env.NOTES_DB.prepare(
+		'SELECT parent_id FROM r2_webdav_note_folders WHERE id = ? AND user_id = ?',
+	)
+		.bind(id, owner)
+		.first<{ parent_id: string | null }>();
+	if (!existing) return error('NOT_FOUND', 'Folder not found', 404);
 	await env.NOTES_DB.batch([
-		env.NOTES_DB.prepare('UPDATE r2_webdav_notes SET folder_id = NULL WHERE folder_id = ? AND user_id = ?').bind(id, owner),
+		env.NOTES_DB.prepare('UPDATE r2_webdav_notes SET folder_id = ? WHERE folder_id = ? AND user_id = ?').bind(
+			existing.parent_id,
+			id,
+			owner,
+		),
+		env.NOTES_DB.prepare('UPDATE r2_webdav_note_folders SET parent_id = ? WHERE parent_id = ? AND user_id = ?').bind(
+			existing.parent_id,
+			id,
+			owner,
+		),
 		env.NOTES_DB.prepare('DELETE FROM r2_webdav_note_folders WHERE id = ? AND user_id = ?').bind(id, owner),
 	]);
 	return data({ deleted: true });

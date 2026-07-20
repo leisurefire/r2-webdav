@@ -92,6 +92,7 @@ export interface NotePage {
 export interface NoteFolder {
 	id: string;
 	name: string;
+	parentId: string | null;
 	noteCount: number;
 	createdAt: string;
 	updatedAt: string;

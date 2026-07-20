@@ -136,6 +136,10 @@
 	background: var(--hover-bg);
 }
 
+.note-folder-card.dragging {
+	opacity: 0.5;
+}
+
 .collection-tree-row:hover,
 .collection-tree-row.active,
 .note-tree-special.active > .collection-tree-row,
@@ -200,6 +204,10 @@
 	border-radius: 4px;
 }
 
+.note-folder-card > .collection-tree-row {
+	padding-right: 92px;
+}
+
 .notes-tree-children {
 	display: grid;
 	gap: 0;
@@ -250,6 +258,10 @@
 	display: none;
 }
 
+.notes-tree-root > .note-card::after {
+	display: none;
+}
+
 .note-card {
 	position: relative;
 	border-radius: 6px;
@@ -280,7 +292,7 @@
 	width: 100%;
 	min-width: 0;
 	min-height: 34px;
-	padding: 0 66px 0 8px;
+	padding: 0 96px 0 8px;
 	border-radius: 6px;
 	color: var(--muted);
 	font-size: 12px;
@@ -1361,6 +1373,10 @@ details.markdown-callout > .markdown-callout-title::marker {
 
 	.note-card-actions {
 		display: flex;
+	}
+
+	.note-folder-actions {
+		opacity: 1;
 	}
 }
 

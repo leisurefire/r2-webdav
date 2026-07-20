@@ -15,7 +15,8 @@ const productionApiBase = 'https://r2-webdav-x.9694151.workers.dev';
 const pageHost = typeof location === 'undefined' ? '' : location.hostname;
 const pageOrigin = typeof location === 'undefined' ? '' : location.origin;
 const isLocalDevelopment = pageHost === 'localhost' || pageHost === '127.0.0.1';
-const configuredBasePointsToPages = !isLocalDevelopment && Boolean(configuredApiBase) && configuredApiBase === pageOrigin;
+const configuredBasePointsToPages =
+	!isLocalDevelopment && Boolean(configuredApiBase) && configuredApiBase === pageOrigin;
 export const API_BASE =
 	configuredApiBase && !configuredBasePointsToPages ? configuredApiBase : isLocalDevelopment ? '' : productionApiBase;
 const notesApiBase = ((import.meta.env.VITE_NOTES_API_BASE as string | undefined) ?? '').replace(/\/$/, '');
@@ -246,18 +247,18 @@ export const api = {
 	noteFolders(): Promise<NoteFolder[]> {
 		return notesRequest('/folders');
 	},
-	createNoteFolder(name: string): Promise<NoteFolder> {
+	createNoteFolder(name: string, parentId: string | null = null): Promise<NoteFolder> {
 		return notesRequest('/folders', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ name }),
+			body: JSON.stringify({ name, parentId }),
 		});
 	},
-	updateNoteFolder(id: string, name: string): Promise<NoteFolder> {
+	updateNoteFolder(id: string, changes: { name?: string; parentId?: string | null }): Promise<NoteFolder> {
 		return notesRequest(`/folders/${encodeURIComponent(id)}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ name }),
+			body: JSON.stringify(changes),
 		});
 	},
 	deleteNoteFolder(id: string): Promise<{ deleted: boolean }> {
@@ -271,12 +272,7 @@ export const api = {
 			throw error;
 		}
 	},
-	createNote(
-		title: string,
-		content = '',
-		folderId?: string | null,
-		id?: string,
-	): Promise<Note> {
+	createNote(title: string, content = '', folderId?: string | null, id?: string): Promise<Note> {
 		return notesRequest('', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },

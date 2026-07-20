@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { markdownLinkOpensNewTab, parseMarkdownInline } from './markdownRenderer';
+import { markdownLinkOpensNewTab, parseMarkdownBlocks, parseMarkdownInline } from './markdownRenderer';
 
 describe('parseMarkdownInline', () => {
 	it('parses the inline styles supported inside table cells', () => {
@@ -23,5 +23,11 @@ describe('parseMarkdownInline', () => {
 		const html = parseMarkdownInline('==important== %%private%%');
 		expect(html).toContain('<mark>important</mark>');
 		expect(html).not.toContain('private');
+	});
+});
+
+describe('parseMarkdownBlocks', () => {
+	it('keeps single source newlines visible in note previews', () => {
+		expect(parseMarkdownBlocks('first line\nsecond line')).toContain('first line<br>second line');
 	});
 });

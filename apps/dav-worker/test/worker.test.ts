@@ -17,7 +17,9 @@ async function clearBucket(): Promise<void> {
 async function clearState(): Promise<void> {
 	await clearBucket();
 	try {
-		await env.NOTES_DB.exec('DELETE FROM r2_webdav_sessions; DELETE FROM r2_webdav_notes; DELETE FROM r2_webdav_note_folders;');
+		await env.NOTES_DB.exec(
+			'DELETE FROM r2_webdav_sessions; DELETE FROM r2_webdav_notes; DELETE FROM r2_webdav_note_folders;',
+		);
 	} catch {
 		// The first login initializes the local D1 schema.
 	}
@@ -211,18 +213,56 @@ describe('authentication and file API', () => {
 	it('persists note folders and moves notes between folders', async () => {
 		const token = await login();
 		const headers = { 'Content-Type': 'application/json' };
-		const createdFolder = await pagesNotes(token, '/folders', { method: 'POST', headers, body: JSON.stringify({ name: 'Food' }) });
+		const createdFolder = await pagesNotes(token, '/folders', {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({ name: 'Food' }),
+		});
 		expect(createdFolder.status).toBe(201);
 		const folder = await createdFolder.json<{ ok: true; data: { id: string } }>();
-		const createdNote = await pagesNotes(token, '', { method: 'POST', headers, body: JSON.stringify({ title: 'Recipes', folderId: folder.data.id }) });
-		expect(createdNote.status).toBe(201);
-		const listed = await pagesNotes(token, `?folder=${folder.data.id}`);
-		expect((await listed.json<{ ok: true; data: { total: number } }>()).data.total).toBe(1);
-		const moved = await pagesNotes(token, `/${(await createdNote.clone().json<{ ok: true; data: { id: string } }>()).data.id}`, {
-			method: 'PATCH', headers, body: JSON.stringify({ folderId: null }),
+		const createdChild = await pagesNotes(token, '/folders', {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({ name: 'Recipes', parentId: folder.data.id }),
 		});
+		expect(createdChild.status).toBe(201);
+		const child = await createdChild.json<{ ok: true; data: { id: string; parentId: string | null } }>();
+		expect(child.data.parentId).toBe(folder.data.id);
+		const listedFolders = await pagesNotes(token, '/folders').then((response) =>
+			response.json<{ ok: true; data: Array<{ id: string; parentId: string | null }> }>(),
+		);
+		expect(listedFolders.data.find((item) => item.id === child.data.id)?.parentId).toBe(folder.data.id);
+		const cyclicMove = await pagesNotes(token, `/folders/${folder.data.id}`, {
+			method: 'PATCH',
+			headers,
+			body: JSON.stringify({ parentId: child.data.id }),
+		});
+		expect(cyclicMove.status).toBe(400);
+		const createdNote = await pagesNotes(token, '', {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({ title: 'Recipes', folderId: child.data.id }),
+		});
+		expect(createdNote.status).toBe(201);
+		const listed = await pagesNotes(token, `?folder=${child.data.id}`);
+		expect((await listed.json<{ ok: true; data: { total: number } }>()).data.total).toBe(1);
+		const moved = await pagesNotes(
+			token,
+			`/${(await createdNote.clone().json<{ ok: true; data: { id: string } }>()).data.id}`,
+			{
+				method: 'PATCH',
+				headers,
+				body: JSON.stringify({ folderId: null }),
+			},
+		);
 		expect(moved.status).toBe(200);
-		expect((await pagesNotes(token, '?folder=root').then((response) => response.json<{ ok: true; data: { total: number } }>())).data.total).toBe(1);
+		expect(
+			(
+				await pagesNotes(token, '?folder=root').then((response) =>
+					response.json<{ ok: true; data: { total: number } }>(),
+				)
+			).data.total,
+		).toBe(1);
 	});
 });
 

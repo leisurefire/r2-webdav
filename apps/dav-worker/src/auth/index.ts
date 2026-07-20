@@ -85,6 +85,7 @@ export async function ensureDatabase(env: Env): Promise<void> {
 				id TEXT PRIMARY KEY,
 				user_id TEXT NOT NULL,
 				name TEXT NOT NULL COLLATE NOCASE,
+				parent_id TEXT REFERENCES r2_webdav_note_folders(id) ON DELETE SET NULL,
 				created_at TEXT NOT NULL,
 				updated_at TEXT NOT NULL,
 				UNIQUE(user_id, name)
@@ -100,8 +101,18 @@ export async function ensureDatabase(env: Env): Promise<void> {
 		} catch {
 			// Existing deployments already have the column from the migration.
 		}
+		try {
+			await env.NOTES_DB.prepare(
+				'ALTER TABLE r2_webdav_note_folders ADD COLUMN parent_id TEXT REFERENCES r2_webdav_note_folders(id) ON DELETE SET NULL',
+			).run();
+		} catch {
+			// Existing deployments already have the column from the migration.
+		}
 		await env.NOTES_DB.prepare(
 			'CREATE INDEX IF NOT EXISTS r2_webdav_notes_folder ON r2_webdav_notes(user_id, folder_id, is_archived, updated_at DESC)',
+		).run();
+		await env.NOTES_DB.prepare(
+			'CREATE INDEX IF NOT EXISTS r2_webdav_note_folders_parent ON r2_webdav_note_folders(user_id, parent_id, name COLLATE NOCASE)',
 		).run();
 		schemaInitialized = true;
 	} catch (error) {
