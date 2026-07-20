@@ -12,8 +12,10 @@ import type {
 
 const configuredApiBase = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '');
 const productionApiBase = 'https://r2-webdav-x.9694151.workers.dev';
-const isLocalDevelopment = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-const configuredBasePointsToPages = !isLocalDevelopment && configuredApiBase === location.origin;
+const pageHost = typeof location === 'undefined' ? '' : location.hostname;
+const pageOrigin = typeof location === 'undefined' ? '' : location.origin;
+const isLocalDevelopment = pageHost === 'localhost' || pageHost === '127.0.0.1';
+const configuredBasePointsToPages = !isLocalDevelopment && Boolean(configuredApiBase) && configuredApiBase === pageOrigin;
 export const API_BASE =
 	configuredApiBase && !configuredBasePointsToPages ? configuredApiBase : isLocalDevelopment ? '' : productionApiBase;
 const notesApiBase = ((import.meta.env.VITE_NOTES_API_BASE as string | undefined) ?? '').replace(/\/$/, '');

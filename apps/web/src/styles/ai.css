@@ -55,14 +55,15 @@
 	height: 14px;
 }
 
-/* AI panel pinned to the bottom of the editor host */
+/* AI panel floats above the editor (body-level fixed) so CM cannot capture input */
 
 .ai-panel {
-	position: absolute;
+	position: fixed;
 	left: 12px;
 	bottom: 18px;
 	width: min(640px, calc(100% - 24px));
-	z-index: 40;
+	z-index: 80;
+	pointer-events: auto;
 }
 
 .ai-panel-shell {
@@ -87,14 +88,18 @@
 	white-space: nowrap;
 }
 
-.ai-model {
+.ai-model,
+.ai-panel-model {
 	border: 1px solid var(--line);
 	border-radius: 6px;
 	background: var(--ai-panel-bg);
 	color: var(--muted);
 	font-size: 12px;
-	padding: 3px 4px;
+	padding: 3px 6px;
 	max-width: 168px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .ai-model:focus {
@@ -123,6 +128,10 @@
 	max-height: 132px;
 	resize: none;
 	overflow-y: auto;
+	pointer-events: auto;
+	-webkit-user-select: text;
+	user-select: text;
+	caret-color: var(--input-caret, var(--ink));
 }
 
 .ai-instruction:focus {
@@ -364,5 +373,13 @@
 
 	.ai-selection-menu {
 		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+	}
+
+	.ai-error {
+		color: #fca5a5;
+	}
+
+	.ai-empty-prompt {
+		color: #8a8a8a;
 	}
 }

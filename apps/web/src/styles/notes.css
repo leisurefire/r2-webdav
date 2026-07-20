@@ -814,21 +814,46 @@ details.markdown-callout > .markdown-callout-title::marker {
 
 /* Fresh paste / AI insert highlight, cleared on next edit or click. */
 .cm-live-new-content {
-	background: color-mix(in srgb, var(--accent) 16%, transparent);
+	background: color-mix(in srgb, #3b82f6 16%, transparent);
 	border-radius: 2px;
+	box-decoration-break: clone;
+	-webkit-box-decoration-break: clone;
 }
 
 /* AI review: struck-through original lines, blue-tinted generated lines. */
-.cm-ai-review-deleted {
-	color: var(--quiet);
+.cm-ai-review-deleted,
+.cm-ai-review-deleted .cm-line,
+.cm-line.cm-ai-review-deleted {
+	color: var(--quiet) !important;
 	text-decoration: line-through;
 	text-decoration-color: color-mix(in srgb, var(--quiet) 70%, transparent);
 	background: transparent;
 }
 
-.cm-ai-review-inserted {
-	color: var(--accent);
-	background: color-mix(in srgb, var(--accent) 14%, transparent);
+.cm-ai-review-inserted,
+.cm-ai-review-inserted .cm-line,
+.cm-line.cm-ai-review-inserted {
+	color: #2563eb !important;
+	background: color-mix(in srgb, #3b82f6 14%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+	.cm-live-new-content {
+		background: color-mix(in srgb, #60a5fa 22%, transparent);
+	}
+
+	.cm-ai-review-inserted,
+	.cm-ai-review-inserted .cm-line,
+	.cm-line.cm-ai-review-inserted {
+		color: #93c5fd !important;
+		background: color-mix(in srgb, #3b82f6 22%, transparent);
+	}
+
+	.cm-ai-review-deleted,
+	.cm-ai-review-deleted .cm-line,
+	.cm-line.cm-ai-review-deleted {
+		color: #9ca3af !important;
+	}
 }
 
 .note-heading {

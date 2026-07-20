@@ -1407,11 +1407,11 @@ function noteFolderCachePart(folderId: string | null | undefined): string {
 	return folderId === undefined ? 'all' : folderId === null ? 'root' : encodeURIComponent(folderId);
 }
 
-function noteCacheKey(archived = false, folderId = archived ? undefined : selectedNoteFolderId): string {
+function noteCacheKey(archived = false, folderId: string | null | undefined = undefined): string {
 	return `r2_notes_v3_${archived ? 'archived' : 'active'}_${noteFolderCachePart(folderId)}`;
 }
 
-function cacheNotes(data: NotePage, archived = false, folderId = archived ? undefined : selectedNoteFolderId): void {
+function cacheNotes(data: NotePage, archived = false, folderId: string | null | undefined = undefined): void {
 	localStorage.setItem(noteCacheKey(archived, folderId), JSON.stringify(data));
 }
 
@@ -1423,7 +1423,7 @@ function invalidateNoteCaches(): void {
 	validatedNotePages.clear();
 }
 
-function cachedNotes(archived = false, folderId = archived ? undefined : selectedNoteFolderId): NotePage | null {
+function cachedNotes(archived = false, folderId: string | null | undefined = undefined): NotePage | null {
 	try {
 		return JSON.parse(localStorage.getItem(noteCacheKey(archived, folderId)) ?? 'null') as NotePage | null;
 	} catch {
@@ -1709,17 +1709,16 @@ function optimisticallyUpdateNote(data: NotePage, note: Note, changes: NoteChang
 	if (previous.folderId !== note.folderId || previous.archived !== note.archived)
 		updateNoteFolderCounts(previous, note);
 	const index = data.items.findIndex((item) => item.id === note.id);
-	const leftCurrentView =
-		note.archived !== dataIsArchived ||
-		(!dataIsArchived && selectedNoteFolderId !== undefined && (note.folderId ?? null) !== selectedNoteFolderId);
+	// Folder selection only marks the active folder for new notes; the tree always
+	// keeps uncategorized root notes and other folders visible.
+	const leftCurrentView = note.archived !== dataIsArchived;
 	if (index >= 0 && leftCurrentView) {
 		data.items.splice(index, 1);
 		data.total = Math.max(0, data.total - 1);
 	}
 	if (previous.archived !== note.archived) {
 		const target = note.archived ? archivedNotesData : notesData;
-		const visibleInTarget =
-			note.archived || selectedNoteFolderId === undefined || (note.folderId ?? null) === selectedNoteFolderId;
+		const visibleInTarget = true;
 		if (target && target !== data && visibleInTarget && !target.items.some((item) => item.id === note.id)) {
 			target.items.push(note);
 			target.total += 1;
@@ -1849,6 +1848,7 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 					onError: (error) => toast(errorMessage(error)),
 					onTitleChange: (nextTitle) => {
 						optimisticallyUpdateNote(data, selected, { title: nextTitle });
+						title.value = nextTitle;
 						syncNoteTitle(selected, title);
 						reorderVisibleNoteCards(data);
 					},
@@ -2002,10 +2002,8 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 			return `<div class="note-tree-node ${folder ? 'note-folder-card' : 'note-tree-special'} ${node.kind === 'archive' ? 'archive-tree-item' : ''} ${node.active ? 'active' : ''} ${node.expanded ? 'expanded' : ''}" data-note-folder-drop="${html(drop)}" style="--tree-depth:${depth}"><button type="button" class="collection-tree-row" ${filter}>${icon}<span>${html(node.name)}</span><small>${node.count || ''}</small></button>${actions}${node.expanded && children ? `<div class="notes-tree-children">${children}</div>` : ''}</div>`;
 		},
 	);
-	const rootMarkup =
-		selectedNoteFolderId === undefined || selectedNoteFolderId === null
-			? `<div class="notes-tree-children notes-tree-root" data-note-folder-drop="root">${rootNotes.map((note) => noteCardMarkup(note, selected)).join('')}</div>`
-			: '';
+	// Always keep uncategorized (root) notes visible, even while a folder is open.
+	const rootMarkup = `<div class="notes-tree-children notes-tree-root" data-note-folder-drop="root">${rootNotes.map((note) => noteCardMarkup(note, selected)).join('')}</div>`;
 	return `<aside class="notes-folders" aria-label="${locale === 'zh' ? '便签目录' : 'Note folders'}">
 		<div class="notes-folders-head"><strong>${locale === 'zh' ? '便签目录' : 'Folders'}</strong><button class="row-action" data-new-note-folder title="${locale === 'zh' ? '新建目录' : 'New folder'}" aria-label="${locale === 'zh' ? '新建目录' : 'New folder'}"><i data-lucide="folder-plus"></i></button></div>
 		<div class="notes-tree" data-notes-tree>
@@ -2020,8 +2018,9 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 	const selectFolder = (value: string) => {
 		notesView = 'active';
 		selectedNoteFolderId = value === 'all' ? undefined : value === 'root' ? null : value;
-		notesData = null;
-		void renderNotes(undefined, false);
+		// Do not refetch a folder-scoped page: root/uncategorized notes must stay in the tree.
+		if (notesData) paintNotes(notesData, currentSelectedNoteId());
+		else void renderNotes(undefined, false);
 	};
 	content
 		.querySelectorAll<HTMLElement>('[data-note-folder-filter]')
@@ -2368,12 +2367,12 @@ async function loadMoreNotes(selectedId?: string, scrollTop = 0): Promise<void> 
 	if (status) {
 		status.innerHTML = loadingMarkup(true);
 	}
-	const folderId = loadingArchive ? undefined : selectedNoteFolderId;
+	// Active notes always use the unscoped tree page so root notes stay available.
+	const folderId = undefined;
 	try {
 		const next = await api.notes(current.page + 1, loadingArchive, folderId);
 		if (
 			(loadingArchive ? archivedNotesData !== current || !archiveExpanded : notesData !== current) ||
-			(!loadingArchive && folderId !== selectedNoteFolderId) ||
 			pageFromPath() !== 'notes'
 		)
 			return;
@@ -2411,14 +2410,16 @@ async function renderNotes(selectedId?: string, forceSync = false, openMobile = 
 		paintBookmarkView();
 		return;
 	}
-	const cached = forceSync ? null : cachedNotes(false, selectedNoteFolderId);
+	// Always load the full active note set so root/uncategorized notes never disappear
+	// when a folder is selected in the tree.
+	const treeFolderId = undefined as string | null | undefined;
+	const cached = forceSync ? null : cachedNotes(false, treeFolderId);
 	if (cached) {
-		mergePendingNoteStates(cached, false, selectedNoteFolderId);
+		mergePendingNoteStates(cached, false, treeFolderId);
 		notesData = cached;
 		paintNotes(cached, selectedId);
 	}
-	const cacheKey = noteCacheKey(false, selectedNoteFolderId);
-	const requestedFolderId = selectedNoteFolderId;
+	const cacheKey = noteCacheKey(false, treeFolderId);
 	if (!forceSync && validatedNotePages.has(cacheKey) && cached) {
 		notesData = cached;
 		if (archiveExpanded) await loadArchivedNotes(false);
@@ -2427,11 +2428,11 @@ async function renderNotes(selectedId?: string, forceSync = false, openMobile = 
 	validatedNotePages.add(cacheKey);
 	const request = ++notesRequest;
 	try {
-		const data = await api.notes(1, false, requestedFolderId);
-		if (request !== notesRequest || requestedFolderId !== selectedNoteFolderId) return;
-		mergePendingNoteStates(data, false, requestedFolderId);
+		const data = await api.notes(1, false, treeFolderId);
+		if (request !== notesRequest) return;
+		mergePendingNoteStates(data, false, treeFolderId);
 		notesData = data;
-		cacheNotes(data, false, requestedFolderId);
+		cacheNotes(data, false, treeFolderId);
 		if (pageFromPath() === 'notes') paintNotes(data, selectedId, openMobile);
 		if (archiveExpanded) await loadArchivedNotes(forceSync);
 	} catch (error) {

@@ -53,9 +53,11 @@ export function normalizeAiMarkdown(value: string): string {
 
 /** Extract a leading "# Title" from generated Markdown so it can drive the note title. */
 export function splitAiTitle(value: string): { title: string; body: string } | null {
-	const match = /^#\s+(.+?)\s*#*\s*(?:\n+|$)([\s\S]*)$/.exec(value.trim());
+	const match = /^#\s+(.+?)\s*#*\s*(?:\r?\n+|$)([\s\S]*)$/.exec(value.trim());
 	if (!match) return null;
-	return { title: match[1].trim(), body: match[2].trim() };
+	const title = match[1].trim();
+	if (!title) return null;
+	return { title, body: match[2].replace(/^\s*\n/, '').trimEnd() };
 }
 
 interface AiRange {
@@ -105,9 +107,11 @@ export function bindMarkdownAiAssistant(
 	let toolbar: HTMLElement | null = null;
 	let trackedSelection: (AiRange & { text: string }) | null = null;
 
+	let syncEmptyPrompt = () => {};
 	const removePanel = () => {
 		panel?.remove();
 		panel = null;
+		syncEmptyPrompt();
 	};
 	const removeToolbar = () => {
 		toolbar?.remove();
@@ -133,10 +137,10 @@ export function bindMarkdownAiAssistant(
 				<span class="toolbar-spacer"></span>
 				<button class="row-action" type="button" data-ai-close aria-label="${t('关闭', 'Close')}"><i data-lucide="x"></i></button>
 			</header>
-			<form class="ai-instruction-row" data-ai-form>
+			<div class="ai-instruction-row" data-ai-form>
 				<textarea class="ai-instruction" data-ai-instruction rows="1" aria-label="${t('告诉 AI 你想写什么', 'Tell AI what you want')}" placeholder="${t('告诉 AI 你想做什么…', 'Tell AI what to do…')}"></textarea>
-				<button class="ai-send" type="submit" aria-label="${t('生成', 'Generate')}" title="${t('生成', 'Generate')}"><i data-lucide="arrow-up"></i></button>
-			</form>
+				<button class="ai-send" type="button" aria-label="${t('生成', 'Generate')}" title="${t('生成', 'Generate')}"><i data-lucide="arrow-up"></i></button>
+			</div>
 			<div class="ai-result" data-ai-result hidden></div>
 			<footer class="ai-panel-actions" data-ai-actions hidden>
 				<button class="row-action" type="button" data-ai-edit title="${t('重新编辑要求', 'Edit request')}" aria-label="${t('重新编辑要求', 'Edit request')}"><i data-lucide="rotate-ccw"></i></button>
@@ -145,25 +149,51 @@ export function bindMarkdownAiAssistant(
 				<button class="button primary" type="button" data-ai-main></button>
 			</footer>
 		</div>`;
-		host.append(panel);
+		// Mount on body with fixed positioning so note-compose overflow/CM stacking
+		// cannot swallow pointer or keyboard events inside the instruction box.
+		document.body.append(panel);
 		paintIcons(panel);
-		const cursorCoords = view.coordsAtPos(range.from);
-		const hostRect = host.getBoundingClientRect();
-		if (cursorCoords && !window.matchMedia('(max-width: 720px)').matches) {
-			const shellWidth = Math.min(640, hostRect.width - 24);
-			panel.style.left = `${Math.max(12, Math.min(cursorCoords.left - hostRect.left, hostRect.width - shellWidth - 12))}px`;
+		const placePanel = () => {
+			if (!panel) return;
+			const mobile = window.matchMedia('(max-width: 720px)').matches;
+			const hostRect = host.getBoundingClientRect();
+			const cursorCoords = view.coordsAtPos(range.from);
+			const shellWidth = Math.min(640, Math.max(280, hostRect.width - 24));
+			if (mobile) {
+				panel.style.left = '8px';
+				panel.style.right = '8px';
+				panel.style.width = 'auto';
+				panel.style.top = 'auto';
+				panel.style.bottom = `calc(10px + env(safe-area-inset-bottom, 0px))`;
+				return;
+			}
+			panel.style.right = 'auto';
+			panel.style.width = `${shellWidth}px`;
 			panel.style.bottom = 'auto';
-			const maxHeight = Math.min(hostRect.height * 0.56, 460);
+			const maxHeight = Math.min(window.innerHeight * 0.56, 460);
+			const preferredLeft = cursorCoords
+				? cursorCoords.left
+				: hostRect.left + 12;
+			panel.style.left = `${Math.max(12, Math.min(preferredLeft, window.innerWidth - shellWidth - 12))}px`;
 			const isReviewAction = action === 'polish' || action === 'rewrite';
-			let top = isReviewAction
-				? Math.max(12, cursorCoords.top - hostRect.top - panel.offsetHeight - 10)
-				: cursorCoords.bottom - hostRect.top + 10;
-			if (!isReviewAction && top + maxHeight > hostRect.height - 12)
-				top = Math.max(12, cursorCoords.top - hostRect.top - maxHeight - 10);
-			panel.style.top = `${top}px`;
-		}
+			let top: number;
+			if (cursorCoords) {
+				top = isReviewAction
+					? Math.max(12, cursorCoords.top - panel.offsetHeight - 10)
+					: cursorCoords.bottom + 10;
+				if (!isReviewAction && top + maxHeight > window.innerHeight - 12)
+					top = Math.max(12, cursorCoords.top - maxHeight - 10);
+			} else {
+				top = Math.max(12, hostRect.bottom - maxHeight - 18);
+			}
+			panel.style.top = `${Math.max(12, Math.min(top, window.innerHeight - 120))}px`;
+		};
+		placePanel();
+		// Keep editor focus out of the way while typing instructions.
+		panel.addEventListener('pointerdown', (event) => event.stopPropagation());
+		panel.addEventListener('mousedown', (event) => event.stopPropagation());
 
-		const form = panel.querySelector<HTMLFormElement>('[data-ai-form]')!;
+		const form = panel.querySelector<HTMLElement>('[data-ai-form]')!;
 		const input = panel.querySelector<HTMLTextAreaElement>('[data-ai-instruction]')!;
 		const resultNode = panel.querySelector<HTMLElement>('[data-ai-result]')!;
 		const actionsNode = panel.querySelector<HTMLElement>('[data-ai-actions]')!;
@@ -215,7 +245,12 @@ export function bindMarkdownAiAssistant(
 		};
 
 		const showResult = (value: string) => {
-			resultNode.innerHTML = `<article class="ai-markdown-preview">${renderMarkdown(value)}</article>`;
+			try {
+				resultNode.innerHTML = `<article class="ai-markdown-preview">${renderMarkdown(value)}</article>`;
+			} catch {
+				// Partial streams can briefly fail to parse; keep plain text so tokens still show.
+				resultNode.textContent = value;
+			}
 			resultNode.scrollTop = resultNode.scrollHeight;
 		};
 
@@ -275,9 +310,13 @@ export function bindMarkdownAiAssistant(
 			}
 		};
 
-		form.addEventListener('submit', (event) => {
+		panel.querySelector('[data-ai-form] .ai-send')?.addEventListener('click', () => void generate());
+		form.addEventListener('mousedown', (event) => {
+			if (event.target === input) return;
+			// Clicking the instruction row chrome should keep the textarea focused for typing.
+			if ((event.target as HTMLElement | null)?.closest('button')) return;
 			event.preventDefault();
-			void generate();
+			input.focus({ preventScroll: true });
 		});
 		const autosize = () => {
 			input.style.height = 'auto';
@@ -286,11 +325,14 @@ export function bindMarkdownAiAssistant(
 		input.addEventListener('input', autosize);
 		autosize();
 		input.addEventListener('keydown', (event) => {
+			event.stopPropagation();
 			if (event.key === 'Enter' && !event.shiftKey) {
 				event.preventDefault();
 				void generate();
 			}
 		});
+		input.addEventListener('keyup', (event) => event.stopPropagation());
+		input.addEventListener('keypress', (event) => event.stopPropagation());
 		editButton.addEventListener('click', () => {
 			clearAiReview(view);
 			if (review) {
@@ -344,6 +386,7 @@ export function bindMarkdownAiAssistant(
 				scrollIntoView: true,
 			});
 			markNewContent(view, insertAt, insertAt + inserted.length);
+			if (title) options.onTitleChange?.(title);
 			close();
 		});
 		panel.querySelector('[data-ai-close]')?.addEventListener('click', close);
@@ -361,12 +404,17 @@ export function bindMarkdownAiAssistant(
 				close();
 			}
 		});
-		if (presetInstruction || action === 'generate') {
-			input.focus();
-			if (action === 'generate' ? Boolean(requestText) : Boolean(presetInstruction)) void generate();
-		} else {
-			input.focus();
-		}
+		const focusInstruction = () => {
+			input.focus({ preventScroll: true });
+			// Some browsers move caret back to CodeMirror after the mouseup that opened the panel.
+			window.setTimeout(() => {
+				if (panel?.isConnected && document.activeElement !== input) input.focus({ preventScroll: true });
+			}, 0);
+		};
+		focusInstruction();
+		if ((action === 'generate' && requestText) || (action !== 'generate' && presetInstruction)) void generate();
+		placePanel();
+		syncEmptyPrompt();
 	};
 	const showToolbar = () => {
 		if (!host.isConnected) return removeToolbar();
@@ -443,7 +491,7 @@ export function bindMarkdownAiAssistant(
 	emptyPrompt.innerHTML = `<i data-lucide="wand-sparkles"></i><span>${t('开始创作，或者按下空格来唤起AI输入框', 'Start writing, or press Space to ask AI')}</span>`;
 	host.append(emptyPrompt);
 	paintIcons(emptyPrompt);
-	const syncEmptyPrompt = () => emptyPrompt.classList.toggle('visible', view.state.doc.length === 0);
+	syncEmptyPrompt = () => emptyPrompt.classList.toggle('visible', view.state.doc.length === 0 && !panel);
 	syncEmptyPrompt();
 	// doc changes (AI insert, select-all + delete) do not fire DOM 'input'; the caller wires this sync into the editor's onChange.
 	view.dom.addEventListener('input', syncEmptyPrompt);

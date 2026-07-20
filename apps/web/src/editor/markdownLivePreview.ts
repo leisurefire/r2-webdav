@@ -1379,8 +1379,9 @@ export function createMarkdownLivePreview(
 		...historyKeymap,
 	]);
 	const clearNewOnPointer = EditorView.domEventHandlers({
-		mousedown(event, view) {
-			if (view.state.field(newContentField, false) === Decoration.none) return;
+		mousedown(_event, view) {
+			const marks = view.state.field(newContentField, false);
+			if (!marks || marks.size === 0) return;
 			view.dispatch({ effects: newContentEffect.of({ from: 0, to: 0 }) });
 		},
 	});
@@ -1511,15 +1512,9 @@ const newContentField = StateField.define<DecorationSet>({
 					next = next.update({
 						add: [Decoration.mark({ class: 'cm-live-new-content' }).range(effect.value.from, effect.value.to)],
 					});
+				else next = Decoration.none;
 			}
 		}
-		const touches = (from: number, to: number) => {
-			let hit = false;
-			next.between(from, to, () => {
-				hit = true;
-			});
-			return hit;
-		};
 		if (
 			transaction.docChanged &&
 			!transaction.isUserEvent('input.paste') &&
@@ -1532,28 +1527,64 @@ const newContentField = StateField.define<DecorationSet>({
 });
 
 /**
- * AI review mode: shows the rewritten Markdown inline. Deleted source lines get a
- * strike style, newly generated lines get a blue theme highlight. Line lengths are
- * forced equal by the caller so the mapping stays a simple split.
+ * AI review mode: original lines get strike-through, generated lines get a blue
+ * tint. Active ranges are stored and remapped so selection/focus updates keep the
+ * preview visible until accept/undo/clear.
  */
-const aiReviewSetEffect = StateEffect.define<{ deletedFrom: number; insertedFrom: number; count: number } | null>();
+type AiReviewActive = { deletedFrom: number; insertedFrom: number; count: number };
 
-const aiReviewField = StateField.define<DecorationSet>({
-	create: () => Decoration.none,
-	update(_deco, transaction) {
-		let active: { deletedFrom: number; insertedFrom: number; count: number } | null = null;
-		for (const effect of transaction.effects) if (effect.is(aiReviewSetEffect)) active = effect.value;
-		if (!active || active.count <= 0) return Decoration.none;
-		const ranges = [];
-		for (let index = 0; index < active.count; index += 1) {
-			const deletedLine = transaction.state.doc.line(active.deletedFrom + index);
-			const insertedLine = transaction.state.doc.line(active.insertedFrom + index);
-			ranges.push(Decoration.line({ class: 'cm-ai-review-deleted' }).range(deletedLine.from));
-			ranges.push(Decoration.line({ class: 'cm-ai-review-inserted' }).range(insertedLine.from));
+const aiReviewSetEffect = StateEffect.define<AiReviewActive | null>();
+
+export function buildAiReviewDecorations(doc: EditorState['doc'], active: AiReviewActive): DecorationSet {
+	if (active.count <= 0) return Decoration.none;
+	const ranges: { from: number; to: number; value: Decoration }[] = [];
+	let deletedPos = Math.max(0, Math.min(active.deletedFrom, doc.length));
+	let insertedPos = Math.max(0, Math.min(active.insertedFrom, doc.length));
+	for (let index = 0; index < active.count; index += 1) {
+		if (deletedPos > doc.length || insertedPos > doc.length) break;
+		const deletedLine = doc.lineAt(deletedPos);
+		const insertedLine = doc.lineAt(insertedPos);
+		// Line decorations must be zero-length point ranges at the line start.
+		ranges.push({ from: deletedLine.from, to: deletedLine.from, value: Decoration.line({ class: 'cm-ai-review-deleted' }) });
+		ranges.push({ from: insertedLine.from, to: insertedLine.from, value: Decoration.line({ class: 'cm-ai-review-inserted' }) });
+		deletedPos = deletedLine.to + 1;
+		insertedPos = insertedLine.to + 1;
+	}
+	return ranges.length
+		? Decoration.set(
+				ranges.map((item) => item.value.range(item.from, item.to)),
+				true,
+			)
+		: Decoration.none;
+}
+
+const aiReviewField = StateField.define<{ active: AiReviewActive | null; decorations: DecorationSet }>({
+	create: () => ({ active: null, decorations: Decoration.none }),
+	update(value, transaction) {
+		let active = value.active;
+		let rebuild = false;
+		for (const effect of transaction.effects) {
+			if (effect.is(aiReviewSetEffect)) {
+				active = effect.value;
+				rebuild = true;
+			}
 		}
-		return Decoration.set(ranges, true);
+		if (!active || active.count <= 0) {
+			if (!rebuild && value.active === null) return value;
+			return { active: null, decorations: Decoration.none };
+		}
+		if (transaction.docChanged) {
+			active = {
+				deletedFrom: transaction.changes.mapPos(active.deletedFrom, 1),
+				insertedFrom: transaction.changes.mapPos(active.insertedFrom, 1),
+				count: active.count,
+			};
+			rebuild = true;
+		}
+		if (!rebuild) return value;
+		return { active, decorations: buildAiReviewDecorations(transaction.state.doc, active) };
 	},
-	provide: (field) => EditorView.decorations.from(field),
+	provide: (field) => EditorView.decorations.from(field, (state) => state.decorations),
 });
 
 /** Highlight a freshly inserted range (paste or AI insert) until the next edit/click. */
