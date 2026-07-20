@@ -1,20 +1,23 @@
 .note-save-status {
-	min-width: 48px;
-	color: var(--quiet);
-	font-size: 10px;
-	white-space: nowrap;
+	width: 8px;
+	height: 8px;
+	min-width: 8px;
+	flex: none;
+	border-radius: 50%;
+	background: var(--quiet);
 }
 
 .note-save-status[data-state='pending'] {
-	color: var(--muted);
+	background: var(--accent);
 }
 
 .note-save-status[data-state='syncing'] {
-	color: var(--accent);
+	background: var(--accent);
+	animation: pulse 1s ease-in-out infinite;
 }
 
 .note-save-status[data-state='failed'] {
-	color: #b42318;
+	background: #b42318;
 }
 
 /* Notes are a two-column workspace: one tree and one document. */
@@ -193,8 +196,8 @@
 	border-radius: 5px;
 }
 
-.note-folder-card:hover .note-folder-actions,
-.note-folder-card:focus-within .note-folder-actions {
+.note-folder-card:hover > .note-folder-actions,
+.note-folder-card:focus-within > .note-folder-actions {
 	opacity: 1;
 }
 
@@ -1400,8 +1403,12 @@ details.markdown-callout > .markdown-callout-title::marker {
 
 .note-folder-actions,
 .notes-tree-children .note-card-actions {
-	opacity: 1;
-	background: transparent;
+	position: absolute;
+	z-index: 3;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 120ms ease;
+	background: linear-gradient(90deg, transparent, var(--panel-bg) 26%);
 }
 
 .note-folder-actions {
@@ -1424,8 +1431,17 @@ details.markdown-callout > .markdown-callout-title::marker {
 	top: 1px;
 	right: 2px;
 	bottom: auto;
-	padding: 0;
-	background: transparent;
+	padding: 0 0 0 18px;
+}
+
+.note-folder-card:hover > .note-folder-actions,
+.note-folder-card:focus-within > .note-folder-actions,
+.note-folder-actions.open,
+.notes-tree-children .note-card:hover > .note-card-actions,
+.notes-tree-children .note-card:focus-within > .note-card-actions,
+.notes-tree-children .note-card-actions.open {
+	opacity: 1;
+	pointer-events: auto;
 }
 
 .notes-tree-children .note-card-actions .row-action,
@@ -1527,6 +1543,43 @@ details.markdown-callout > .markdown-callout-title::marker {
 .notes-inner-toolbar {
 	flex: none;
 	padding: 0;
+	min-width: 0;
+	flex-wrap: nowrap;
+}
+
+.notes-inner-toolbar > .note-path {
+	flex: 1 1 auto;
+	overflow: hidden;
+}
+
+.notes-inner-toolbar > .toolbar-spacer {
+	display: none;
+}
+
+.notes-inner-toolbar .note-actions {
+	min-width: 0;
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 3px;
+}
+
+.note-last-modified {
+	max-width: 180px;
+	margin: 0 4px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--quiet);
+	font-size: 11px;
+	white-space: nowrap;
+}
+
+.notes-inner-toolbar .note-refresh {
+	margin-left: 5px;
+}
+
+.note-action-more .action-menu-popover {
+	right: 0;
 }
 
 .notes-mobile-sidebar {
@@ -1557,4 +1610,122 @@ details.markdown-callout > .markdown-callout-title::marker {
 
 .note-document > .note-heading > input::placeholder {
 	color: var(--quiet);
+}
+
+/* Compact tree rows leave room for names while preserving hierarchy. */
+.notes-tree {
+	padding-left: 0;
+	padding-right: 0;
+}
+
+.collection-tree-row {
+	gap: 6px;
+	padding-inline: 4px;
+}
+
+.note-tree-node > .collection-tree-row {
+	padding-left: 4px;
+}
+
+.notes-tree-children {
+	margin-left: 10px;
+	padding-left: 8px;
+}
+
+.notes-tree-children > .note-card::after,
+.notes-tree-children > .note-tree-node::after,
+.notes-tree-children > .bookmark-tree-node::after {
+	left: -8px;
+}
+
+.notes-tree-children .note-card-open {
+	padding-left: 4px;
+}
+
+.note-tree-leading {
+	width: 16px;
+	height: 16px;
+	display: grid;
+	place-items: center;
+}
+
+.note-tree-leading > svg {
+	grid-area: 1 / 1;
+}
+
+.note-tree-leading .tree-caret-icon {
+	display: none;
+}
+
+.note-folder-card:hover > .collection-tree-row .tree-folder-icon,
+.note-folder-card:focus-within > .collection-tree-row .tree-folder-icon {
+	display: none;
+}
+
+.note-folder-card:hover > .collection-tree-row .tree-caret-icon,
+.note-folder-card:focus-within > .collection-tree-row .tree-caret-icon {
+	display: block;
+}
+
+/* Rendered Markdown nested lists use the same vertical hierarchy cue as the sidebar tree. */
+.file-markdown-preview :is(ul, ol) :is(ul, ol),
+.note-render :is(ul, ol) :is(ul, ol) {
+	margin-left: 2px;
+	padding-left: 18px;
+	border-left: 1px solid var(--line);
+}
+
+/* CodeMirror list depth guides. Each level adds one vertical tree rail. */
+.cm-live-list-line {
+	background-repeat: no-repeat;
+}
+
+.cm-live-list-depth-2 {
+	background-image: linear-gradient(var(--line), var(--line));
+	background-position: 0.65em 0;
+	background-size: 1px 100%;
+}
+
+.cm-live-list-depth-3 {
+	background-image: linear-gradient(var(--line), var(--line)), linear-gradient(var(--line), var(--line));
+	background-position:
+		0.65em 0,
+		1.9em 0;
+	background-size:
+		1px 100%,
+		1px 100%;
+}
+
+.cm-live-list-depth-4,
+.cm-live-list-depth-5,
+.cm-live-list-depth-6,
+.cm-live-list-depth-7,
+.cm-live-list-depth-8 {
+	background-image: linear-gradient(var(--line), var(--line)), linear-gradient(var(--line), var(--line)),
+		linear-gradient(var(--line), var(--line));
+	background-position:
+		0.65em 0,
+		1.9em 0,
+		3.15em 0;
+	background-size:
+		1px 100%,
+		1px 100%,
+		1px 100%;
+}
+
+@media (max-width: 760px) {
+	.note-folder-actions,
+	.notes-tree-children .note-card-actions {
+		opacity: 1;
+		pointer-events: auto;
+	}
+
+	.notes-inner-toolbar .note-last-modified {
+		display: none;
+	}
+
+	.note-editor-mobile .note-actions {
+		width: auto;
+		flex-basis: auto;
+	}
 }

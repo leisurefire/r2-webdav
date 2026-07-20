@@ -3500,3 +3500,86 @@ body:has(.app-shell) {
 		background: var(--panel-bg);
 	}
 }
+
+/* Primary navigation: the current page carries its label; inactive pages stay compact. */
+@media (min-width: 761px) {
+	.sidebar .nav {
+		display: flex;
+		align-items: center;
+		grid-template-columns: none;
+		gap: 4px;
+	}
+
+	.sidebar .nav-button {
+		width: 36px;
+		min-width: 36px;
+		min-height: 40px;
+		flex: 0 0 36px;
+		flex-direction: row;
+		justify-content: center;
+		gap: 0;
+		padding: 0;
+		font-size: 12px;
+	}
+
+	.sidebar .nav-button span {
+		display: none;
+	}
+
+	.sidebar .nav-button.active {
+		width: auto;
+		min-width: 78px;
+		flex: 1 1 auto;
+		justify-content: flex-start;
+		gap: 8px;
+		padding: 0 10px;
+	}
+
+	.sidebar .nav-button.active span {
+		display: block;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+}
+
+.context-tree-row {
+	padding-left: calc(4px + var(--tree-depth, 0) * 12px);
+	padding-right: 4px;
+}
+
+.toolbar,
+.calendar-toolbar {
+	flex-wrap: nowrap;
+}
+
+.calendar-toolbar h2 {
+	flex: none;
+	white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+	.sidebar .nav {
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+	}
+
+	.sidebar .nav-button,
+	.sidebar .nav-button.active {
+		width: 100%;
+		min-width: 0;
+		flex-direction: column;
+		justify-content: center;
+		gap: 3px;
+		padding: 0;
+	}
+
+	.sidebar .nav-button span,
+	.sidebar .nav-button.active span {
+		display: inline;
+	}
+
+	.toolbar,
+	.calendar-toolbar {
+		flex-wrap: wrap;
+	}
+}

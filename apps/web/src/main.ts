@@ -755,10 +755,11 @@ function paintFiles(listing: FileListing): void {
 		)
 		.join('');
 	content.innerHTML = `<div class="toolbar"><div class="breadcrumbs">${breadcrumbMarkup(listing.path)}</div><span class="toolbar-spacer"></span>
-			<button class="button icon-button" id="files-refresh" title="${locale === 'zh' ? '刷新文件' : 'Refresh files'}" aria-label="${locale === 'zh' ? '刷新文件' : 'Refresh files'}"><i data-lucide="refresh-cw"></i></button>
+			<button class="button" id="upload" title="${locale === 'zh' ? '上传' : 'Upload'}" aria-label="${locale === 'zh' ? '上传' : 'Upload'}"><i data-lucide="upload"></i><span>${locale === 'zh' ? '上传' : 'Upload'}</span></button>
 			<button class="button" id="mkdir"><i data-lucide="folder-plus"></i><span>${locale === 'zh' ? '新建文件夹' : 'New folder'}</span></button>
+			<button class="button icon-button" id="files-refresh" title="${locale === 'zh' ? '同步文件' : 'Sync files'}" aria-label="${locale === 'zh' ? '同步文件' : 'Sync files'}"><i data-lucide="refresh-cw"></i></button>
 			<input type="file" id="file-input" hidden multiple>
-		</div><div id="upload-status"></div><button class="button primary floating-primary-action" id="upload" title="${locale === 'zh' ? '上传' : 'Upload'}" aria-label="${locale === 'zh' ? '上传' : 'Upload'}"><i data-lucide="upload"></i><span>${locale === 'zh' ? '上传' : 'Upload'}</span></button>
+		</div><div id="upload-status"></div>
 		${rows ? `<div class="file-grid">${rows}</div>` : `<div class="empty-state"><div><i data-lucide="folder-open"></i><div>${locale === 'zh' ? '此文件夹为空' : 'This folder is empty'}</div></div></div>`}`;
 	const context = sidebarContext();
 	if (context) context.innerHTML = fileSidebarMarkup(listing);
@@ -1300,7 +1301,7 @@ async function renderCalendar(forceSync = false): Promise<void> {
 		}
 		const calendar = calendarCache.calendars[0];
 		if (!content.querySelector('#calendar-view')) {
-			content.innerHTML = `<div class="calendar-toolbar"><button class="button icon-button" id="cal-prev"><i data-lucide="chevron-left"></i></button><button class="button" id="cal-today">${locale === 'zh' ? '今天' : 'Today'}</button><button class="button icon-button" id="cal-next"><i data-lucide="chevron-right"></i></button><h2 id="calendar-title"></h2><span class="sync-status" id="calendar-sync"><span class="status-dot"></span>${locale === 'zh' ? '已缓存' : 'Cached'}</span><span class="toolbar-spacer"></span><button class="button icon-button" id="cal-refresh"><i data-lucide="refresh-cw"></i></button></div><div class="calendar" id="calendar-view"><div class="weekday-row">${(locale === 'zh' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).map((day) => `<div class="weekday">${day}</div>`).join('')}</div><div class="month-grid" id="month-grid"></div></div><button class="button primary floating-primary-action" id="new-event" title="${locale === 'zh' ? '新建日程' : 'New event'}" aria-label="${locale === 'zh' ? '新建日程' : 'New event'}"><i data-lucide="plus"></i><span>${locale === 'zh' ? '新建日程' : 'New event'}</span></button>`;
+			content.innerHTML = `<div class="calendar-toolbar"><button class="button icon-button" id="cal-prev"><i data-lucide="chevron-left"></i></button><button class="button" id="cal-today">${locale === 'zh' ? '今天' : 'Today'}</button><button class="button icon-button" id="cal-next"><i data-lucide="chevron-right"></i></button><h2 id="calendar-title"></h2><span class="sync-status" id="calendar-sync"><span class="status-dot"></span>${locale === 'zh' ? '已缓存' : 'Cached'}</span><span class="toolbar-spacer"></span><button class="button" id="new-event" title="${locale === 'zh' ? '新建日程' : 'New event'}" aria-label="${locale === 'zh' ? '新建日程' : 'New event'}"><i data-lucide="plus"></i><span>${locale === 'zh' ? '新建日程' : 'New event'}</span></button><button class="button icon-button" id="cal-refresh" title="${locale === 'zh' ? '同步日历' : 'Sync calendar'}" aria-label="${locale === 'zh' ? '同步日历' : 'Sync calendar'}"><i data-lucide="refresh-cw"></i></button></div><div class="calendar" id="calendar-view"><div class="weekday-row">${(locale === 'zh' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).map((day) => `<div class="weekday">${day}</div>`).join('')}</div><div class="month-grid" id="month-grid"></div></div>`;
 			content.querySelector('#cal-prev')?.addEventListener('click', () => {
 				calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
 				void renderCalendar();
@@ -1641,16 +1642,38 @@ function revealNoteFolderInTree(folderId: string | null): void {
 	});
 }
 
+function noteActionControlsMarkup(selected: Note, includeRefresh = false): string {
+	const saveState = noteCommitStates.get(selected.id)?.status ?? 'synced';
+	const exportLabel = locale === 'zh' ? '导出 Markdown' : 'Export Markdown';
+	const moveLabel = locale === 'zh' ? '移动到' : 'Move to';
+	const moreLabel = locale === 'zh' ? '更多操作' : 'More actions';
+	const refreshLabel = locale === 'zh' ? '同步便签' : 'Sync notes';
+	return `<div class="note-actions" data-note-toolbar-id="${html(selected.id)}">
+		<span class="note-save-status" data-note-save-status data-state="${saveState}" role="status" aria-label="${noteSaveCopy(saveState)}" title="${noteSaveCopy(saveState)}"></span>
+		<time class="note-last-modified" data-note-last-modified datetime="${html(selected.updatedAt)}">${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>
+		<button type="button" class="row-action" data-note-export title="${exportLabel}" aria-label="${exportLabel}"><i data-lucide="file-down"></i></button>
+		<button type="button" class="row-action ${selected.pinned ? 'active' : ''}" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}" aria-label="${selected.pinned ? t('unpin') : t('pin')}" aria-pressed="${selected.pinned}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
+		<div class="action-menu note-action-more" data-action-menu>
+			<button type="button" class="row-action" data-menu-toggle title="${moreLabel}" aria-label="${moreLabel}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
+			<div class="action-menu-popover" data-menu-popover role="menu">
+				<button type="button" data-note-export role="menuitem"><i data-lucide="file-down"></i><span>${exportLabel}</span></button>
+				<button type="button" data-note-move role="menuitem"><i data-lucide="folder-input"></i><span>${moveLabel}</span></button>
+				<button type="button" data-note-archive role="menuitem"><i data-lucide="archive"></i><span>${selected.archived ? t('restore') : t('archive')}</span></button>
+				<button type="button" class="danger" data-note-delete role="menuitem"><i data-lucide="trash-2"></i><span>${t('delete')}</span></button>
+			</div>
+		</div>
+		${includeRefresh ? `<button type="button" class="button icon-button note-refresh" id="notes-refresh" title="${refreshLabel}" aria-label="${refreshLabel}"><i data-lucide="refresh-cw"></i></button>` : ''}
+	</div>`;
+}
+
+function noteToolbarMarkup(selected: Note): string {
+	return `<div class="notes-inner-toolbar">${notePathMarkup(selected)}<span class="toolbar-spacer"></span>${noteActionControlsMarkup(selected, true)}</div>`;
+}
+
 function noteEditorMarkup(selected: Note, mobile = false): string {
 	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'}" data-note-editor-id="${html(selected.id)}">
 		<form data-note-form>
-			<div class="note-editor-head">${mobile ? `<button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>` : ''}${notePathMarkup(selected)}<span class="note-save-status" data-note-save-status aria-live="polite"></span><time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
-				<button type="button" class="row-action" data-note-export title="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}" aria-label="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}"><i data-lucide="file-down"></i></button>
-				<button type="button" class="row-action" data-note-move title="${locale === 'zh' ? '移动到目录' : 'Move to folder'}" aria-label="${locale === 'zh' ? '移动到目录' : 'Move to folder'}"><i data-lucide="folder-input"></i></button>
-				<button type="button" class="row-action ${selected.pinned ? 'active' : ''}" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}" aria-label="${selected.pinned ? t('unpin') : t('pin')}" aria-pressed="${selected.pinned}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
-				<button type="button" class="row-action" data-note-archive title="${selected.archived ? t('restore') : t('archive')}" aria-label="${selected.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
-				<button type="button" class="row-action danger" data-note-delete title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button>
-			</div></div>
+			${mobile ? `<div class="note-editor-head"><button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>${notePathMarkup(selected)}${noteActionControlsMarkup(selected)}</div>` : ''}
 			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-heading"><input data-note-title value="${html(selected.title)}" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}"></div><div class="note-source" data-note-source aria-label="${t('markdown')}"></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
 		</form>
 	</section>`;
@@ -1720,12 +1743,13 @@ function noteSaveCopy(state: NoteSaveState): string {
 }
 
 function paintNoteSaveStatus(noteId: string, state: NoteSaveState): void {
-	document.querySelectorAll<HTMLElement>('[data-note-editor-id]').forEach((editor) => {
-		if (editor.dataset.noteEditorId !== noteId) return;
-		const status = editor.querySelector<HTMLElement>('[data-note-save-status]');
+	document.querySelectorAll<HTMLElement>(`[data-note-toolbar-id="${CSS.escape(noteId)}"]`).forEach((toolbar) => {
+		const status = toolbar.querySelector<HTMLElement>('[data-note-save-status]');
 		if (!status) return;
 		status.dataset.state = state;
-		status.textContent = noteSaveCopy(state);
+		status.textContent = '';
+		status.title = noteSaveCopy(state);
+		status.setAttribute('aria-label', noteSaveCopy(state));
 	});
 }
 
@@ -1762,7 +1786,8 @@ function syncNoteTitle(note: Note, source?: HTMLInputElement): void {
 		if (editor.dataset.noteEditorId !== note.id) return;
 		const input = editor.querySelector<HTMLInputElement>('[data-note-title]');
 		if (input && input !== source && input !== document.activeElement) input.value = note.title;
-		const location = editor.querySelector<HTMLElement>('.note-location');
+	});
+	document.querySelectorAll<HTMLElement>('.note-location').forEach((location) => {
 		const locationTitle = location?.querySelector<HTMLElement>('[data-note-path-title]');
 		const title = note.title.trim() || (locale === 'zh' ? '无标题便签' : 'Untitled note');
 		if (locationTitle) {
@@ -1777,37 +1802,38 @@ function syncNoteTitle(note: Note, source?: HTMLInputElement): void {
 }
 
 function syncNotePinControls(note: Note): void {
-	document.querySelectorAll<HTMLElement>('[data-note-editor-id]').forEach((editor) => {
-		if (editor.dataset.noteEditorId !== note.id) return;
-		const button = editor.querySelector<HTMLButtonElement>('[data-note-pin]');
-		if (!button) return;
-		const label = note.pinned ? t('unpin') : t('pin');
-		button.classList.toggle('active', note.pinned);
-		button.title = label;
-		button.setAttribute('aria-label', label);
-		button.setAttribute('aria-pressed', String(note.pinned));
-		button.innerHTML = `<i data-lucide="${note.pinned ? 'pin-off' : 'pin'}"></i>`;
-	});
+	document
+		.querySelectorAll<HTMLButtonElement>(`[data-note-toolbar-id="${CSS.escape(note.id)}"] [data-note-pin]`)
+		.forEach((button) => {
+			const label = note.pinned ? t('unpin') : t('pin');
+			button.classList.toggle('active', note.pinned);
+			button.title = label;
+			button.setAttribute('aria-label', label);
+			button.setAttribute('aria-pressed', String(note.pinned));
+			button.innerHTML = `<i data-lucide="${note.pinned ? 'pin-off' : 'pin'}"></i>`;
+		});
 	refreshIcons();
 }
 
 function syncNoteMetadata(note: Note): void {
 	syncNoteTitle(note);
-	document.querySelectorAll<HTMLElement>('[data-note-editor-id]').forEach((editor) => {
-		if (editor.dataset.noteEditorId !== note.id) return;
-		const path = editor.querySelector<HTMLElement>('.note-path');
+	document.querySelectorAll<HTMLElement>('.note-path').forEach((path) => {
 		if (path) {
 			const wrapper = document.createElement('div');
 			wrapper.innerHTML = notePathMarkup(note);
 			const next = wrapper.firstElementChild;
 			if (next instanceof HTMLElement) {
 				path.replaceWith(next);
-				bindNotePath(editor, note);
+				bindNotePath(next, note);
 			}
 		}
-		const time = editor.querySelector<HTMLTimeElement>('.note-editor-head > time');
-		if (time) time.textContent = new Date(note.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en');
 	});
+	document
+		.querySelectorAll<HTMLTimeElement>(`[data-note-toolbar-id="${CSS.escape(note.id)}"] [data-note-last-modified]`)
+		.forEach((time) => {
+			time.dateTime = note.updatedAt;
+			time.textContent = new Date(note.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en');
+		});
 }
 
 function bindNotePath(root: HTMLElement, _note: Note): void {
@@ -2086,10 +2112,21 @@ async function deleteNote(selected: Note): Promise<void> {
 	);
 }
 
-function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobile: boolean): void {
+function bindNoteEditor(
+	root: HTMLElement,
+	data: NotePage,
+	selected: Note,
+	mobile: boolean,
+	actionRoot: ParentNode = root,
+): void {
 	const source = root.querySelector<HTMLElement>('[data-note-source]')!;
 	let draftContent = selected.content.replaceAll('\r', '');
 	const title = root.querySelector<HTMLInputElement>('[data-note-title]')!;
+	const actionHosts = mobile
+		? [...root.querySelectorAll<HTMLElement>('[data-note-toolbar-id]')]
+		: [...actionRoot.querySelectorAll<HTMLElement>('.notes-inner-toolbar [data-note-toolbar-id]')];
+	const actionButtons = (selector: string): HTMLElement[] =>
+		actionHosts.flatMap((host) => [...host.querySelectorAll<HTMLElement>(selector)]);
 	const pendingState = noteCommitStates.get(selected.id);
 	if (pendingState) paintNoteSaveStatus(selected.id, pendingState.status);
 	title.addEventListener('input', () => {
@@ -2296,18 +2333,25 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		})
 		.catch((error) => {
 			console.error('Markdown editor failed to load', error);
-			const status = root.querySelector<HTMLElement>('[data-note-save-status]');
-			if (status) status.textContent = locale === 'zh' ? '编辑器加载失败' : 'Editor failed to load';
+			for (const host of actionHosts) {
+				const status = host.querySelector<HTMLElement>('[data-note-save-status]');
+				if (!status) continue;
+				status.dataset.state = 'failed';
+				status.title = locale === 'zh' ? '编辑器加载失败' : 'Editor failed to load';
+				status.setAttribute('aria-label', status.title);
+			}
 			toast(locale === 'zh' ? '编辑器加载失败，无法同步修改' : 'Editor failed to load; changes cannot sync');
 		});
-	root.querySelector('[data-note-export]')?.addEventListener('click', () => {
-		const objectUrl = URL.createObjectURL(new Blob([draftContent], { type: 'text/markdown;charset=utf-8' }));
-		const anchor = document.createElement('a');
-		anchor.href = objectUrl;
-		anchor.download = `${(title.value.trim() || 'note').replace(/[\\/:*?"<>|]/g, '_')}.md`;
-		anchor.click();
-		URL.revokeObjectURL(objectUrl);
-	});
+	actionButtons('[data-note-export]').forEach((button) =>
+		button.addEventListener('click', () => {
+			const objectUrl = URL.createObjectURL(new Blob([draftContent], { type: 'text/markdown;charset=utf-8' }));
+			const anchor = document.createElement('a');
+			anchor.href = objectUrl;
+			anchor.download = `${(title.value.trim() || 'note').replace(/[\\/:*?"<>|]/g, '_')}.md`;
+			anchor.click();
+			URL.revokeObjectURL(objectUrl);
+		}),
+	);
 	const updateStructure = (changes: NoteChanges) => {
 		const leftCurrentView = optimisticallyUpdateNote(data, selected, changes);
 		if (typeof changes.folderId === 'string') {
@@ -2321,28 +2365,34 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		syncNoteMetadata(selected);
 		if (notesData) replaceNotesSidebar(notesData, selected.id);
 	};
-	root.querySelector('[data-note-move]')?.addEventListener('click', async () => {
-		const destination = await openFolderDialog(
-			locale === 'zh' ? '移动便签' : 'Move note',
-			noteFolders,
-			selected.folderId ?? null,
-		);
-		if (destination === undefined || (!selected.archived && destination === (selected.folderId ?? null))) return;
-		updateStructure({ archived: false, folderId: destination });
-	});
-	bindNotePath(root, selected);
+	actionButtons('[data-note-move]').forEach((button) =>
+		button.addEventListener('click', async () => {
+			const destination = await openFolderDialog(
+				locale === 'zh' ? '移动便签' : 'Move note',
+				noteFolders,
+				selected.folderId ?? null,
+			);
+			if (destination === undefined || (!selected.archived && destination === (selected.folderId ?? null))) return;
+			updateStructure({ archived: false, folderId: destination });
+		}),
+	);
+	for (const host of actionHosts) bindNotePath(host, selected);
 	root
 		.querySelector<HTMLFormElement>('[data-note-form]')
 		?.addEventListener('submit', (event) => event.preventDefault());
-	root.querySelector('[data-note-pin]')?.addEventListener('click', () => {
-		optimisticallyUpdateNote(data, selected, { pinned: !selected.pinned });
-		if (notesData) replaceNotesSidebar(notesData, selected.id);
-		syncNotePinControls(selected);
-	});
-	root
-		.querySelector('[data-note-archive]')
-		?.addEventListener('click', () => updateStructure({ archived: !selected.archived }));
-	root.querySelector('[data-note-delete]')?.addEventListener('click', () => void deleteNote(selected));
+	actionButtons('[data-note-pin]').forEach((button) =>
+		button.addEventListener('click', () => {
+			optimisticallyUpdateNote(data, selected, { pinned: !selected.pinned });
+			if (notesData) replaceNotesSidebar(notesData, selected.id);
+			syncNotePinControls(selected);
+		}),
+	);
+	actionButtons('[data-note-archive]').forEach((button) =>
+		button.addEventListener('click', () => updateStructure({ archived: !selected.archived })),
+	);
+	actionButtons('[data-note-delete]').forEach((button) =>
+		button.addEventListener('click', () => void deleteNote(selected)),
+	);
 	root.querySelector('[data-note-close]')?.addEventListener('click', () => {
 		if (mobileNoteDialogOpen) history.back();
 		else
@@ -2381,7 +2431,7 @@ function noteSortMenuMarkup(): string {
 
 function noteCardMarkup(note: Note, selected?: Note): string {
 	return `<article class="note-card ${note.id === selected?.id ? 'active' : ''}" draggable="true" data-note-card-id="${html(note.id)}"><button class="note-card-open" data-note="${html(note.id)}">
-		<div class="note-card-title"><span class="note-card-leading" aria-hidden="true">${note.pinned ? '<i data-lucide="pin"></i>' : ''}</span><span class="note-card-label">${html(note.title)}</span></div>
+		<div class="note-card-title"><span class="note-card-leading" aria-hidden="true"><i data-lucide="file"></i></span><span class="note-card-label">${html(note.title)}</span></div>
 	</button>
 	<div class="note-card-actions action-menu" data-action-menu>
 			<button class="row-action" data-menu-toggle title="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-label="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
@@ -2448,9 +2498,11 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 			(node, depth, children) => {
 				if (node.kind === 'note') return node.note ? noteCardMarkup(node.note, selected) : '';
 				const folder = node.kind === 'folder';
-				const icon = caret(node.expanded);
+				const icon = folder
+					? `<span class="note-tree-leading" aria-hidden="true"><i class="tree-folder-icon" data-lucide="${node.expanded ? 'folder-open' : 'folder'}"></i>${caret(node.expanded)}</span>`
+					: caret(node.expanded);
 				const actions = folder
-					? `<div class="note-folder-actions action-menu" data-action-menu><button class="row-action" data-menu-toggle title="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-label="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button><div class="action-menu-popover" data-menu-popover role="menu"><button data-move-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="folder-input"></i><span>${locale === 'zh' ? '移动目录' : 'Move folder'}</span></button><button data-rename-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="pencil"></i><span>${locale === 'zh' ? '重命名' : 'Rename'}</span></button><button class="danger" data-delete-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="folder-minus"></i><span>${locale === 'zh' ? '解散' : 'Dissolve'}</span></button></div></div>`
+					? `<div class="note-folder-actions action-menu" data-action-menu><button class="row-action" data-new-note="${html(node.key)}" title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button><button class="row-action" data-menu-toggle title="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-label="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button><div class="action-menu-popover" data-menu-popover role="menu"><button data-move-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="folder-input"></i><span>${locale === 'zh' ? '移动目录' : 'Move folder'}</span></button><button data-rename-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="pencil"></i><span>${locale === 'zh' ? '重命名' : 'Rename'}</span></button><button class="danger" data-delete-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="folder-minus"></i><span>${locale === 'zh' ? '解散' : 'Dissolve'}</span></button></div></div>`
 					: '';
 				const filter = node.kind === 'archive' ? 'data-note-archived' : `data-note-folder-filter="${html(node.key)}"`;
 				const drop = node.kind === 'archive' ? 'archive' : node.key;
@@ -2864,9 +2916,11 @@ function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?: Note):
 	);
 	bindNotesFolders(content, data);
 	content.querySelectorAll<HTMLElement>('[data-new-note]').forEach((button) =>
-		button.addEventListener('click', () => {
+		button.addEventListener('click', (event) => {
+			event.stopPropagation();
 			const now = new Date().toISOString();
-			const folderId = typeof selectedNoteFolderId === 'string' ? selectedNoteFolderId : null;
+			const requestedFolderId = button.dataset.newNote?.trim();
+			const folderId = requestedFolderId || (typeof selectedNoteFolderId === 'string' ? selectedNoteFolderId : null);
 			if (folderId) noteExpandedFolders.add(folderId);
 			const note: Note = {
 				id: crypto.randomUUID(),
@@ -2961,7 +3015,7 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 	const context = sidebarContext();
 	if (context) context.innerHTML = folderSidebar;
 	content.innerHTML = `<div class="notes-layout">
-		<div class="notes-inner-toolbar"><span class="note-count">${data.total} ${locale === 'zh' ? '个便签' : data.total === 1 ? 'note' : 'notes'}</span><span class="toolbar-spacer"></span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}" aria-label="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}"><i data-lucide="refresh-cw"></i></button></div>
+		${selected ? noteToolbarMarkup(selected) : `<div class="notes-inner-toolbar"><span class="muted">${t('noNotes')}</span></div>`}
 		<div class="notes-mobile-sidebar">${folderSidebar}</div>
 		${selected ? noteEditorMarkup(selected) : `<section class="note-editor note-editor-desktop"><div class="notes-empty large"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div></section>`}
 	</div>
@@ -2983,7 +3037,7 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 	});
 	if (!selected) return;
 	const desktopEditor = content.querySelector<HTMLElement>('.note-editor-desktop');
-	if (desktopEditor) bindNoteEditor(desktopEditor, selectedData, selected, false);
+	if (desktopEditor) bindNoteEditor(desktopEditor, selectedData, selected, false, content);
 	const dialog = content.querySelector<HTMLDialogElement>('#note-dialog');
 	if (dialog) {
 		bindNoteEditor(dialog, selectedData, selected, true);

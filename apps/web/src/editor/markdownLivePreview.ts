@@ -1259,6 +1259,12 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 			const block = blocks.find((item) => line.from >= item.from && line.from < item.to);
 			if (block) continue;
 			const lineText = line.text;
+			const listLine = /^(\s*)(?:[-+*]|\d+[.)])\s+/.exec(lineText);
+			if (listLine) {
+				const indent = listLine[1]!.replace(/\t/g, '  ').length;
+				const depth = Math.min(8, Math.max(1, Math.floor(indent / 2) + 1));
+				add(line.from, line.from, Decoration.line({ class: `cm-live-list-line cm-live-list-depth-${depth}` }));
+			}
 			const task = /^(\s*(?:[-+*]|\d+[.)])\s+)\[([ xX])\]\s+/.exec(lineText);
 			if (task) {
 				const markerFrom = line.from + task[1].length;
