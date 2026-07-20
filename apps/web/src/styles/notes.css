@@ -324,7 +324,7 @@
 	grid-template-columns: minmax(0, 1fr);
 }
 
-.note-compose.previewing.has-outline {
+.note-compose.has-outline {
 	grid-template-columns: minmax(0, 1fr) minmax(150px, 200px);
 }
 
@@ -340,10 +340,6 @@
 	padding: 22px 14px;
 	border-left: 1px solid var(--line);
 	overflow: auto;
-}
-
-.note-outline.empty {
-	display: none;
 }
 
 .note-outline > strong {
@@ -386,8 +382,12 @@
 	display: block;
 }
 
-.note-compose:not(.previewing) .note-render,
-.note-compose:not(.previewing) .note-outline {
+.note-compose:not(.previewing) .note-render {
+	display: none;
+}
+
+.note-compose:not(.has-outline) .note-outline,
+.note-outline.empty {
 	display: none;
 }
 
@@ -446,11 +446,25 @@
 .cm-live-em {
 	font-style: italic;
 }
-.cm-live-link {
+.cm-live-link,
+.markdown-wikilink {
 	color: var(--accent);
 	cursor: pointer;
 	text-decoration: underline;
 	text-underline-offset: 2px;
+}
+
+.cm-live-embed,
+.markdown-embed {
+	display: inline-flex;
+	align-items: center;
+	max-width: 100%;
+	padding: 1px 6px;
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	background: var(--surface);
+	color: var(--muted);
+	font-size: 0.92em;
 }
 
 .cm-live-link-disabled {

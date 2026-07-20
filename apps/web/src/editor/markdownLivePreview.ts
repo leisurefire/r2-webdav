@@ -18,10 +18,14 @@ import {
 	collectInlineExcludedRanges,
 	collectObsidianInlineRanges,
 	collectStructuralBlocks,
+	collectWikiLinkRanges,
+	continueMarkdownStructuredLine,
+	indentMarkdownListLine,
 	parseFrontmatterBlock,
 	parseTableBlock,
 	tableCellSourceRanges,
 	type StructuralBlock,
+	type WikiLinkRange,
 } from './markdownStructure';
 import { normalizeClipboardText, prepareClipboardText, readClipboardText } from './markdownClipboard';
 import {
@@ -239,11 +243,58 @@ function toggleMarkdownWrap(view: EditorView, marker: string): boolean {
 	return true;
 }
 
+/** Continue list / blockquote lines on Enter like Obsidian Live Preview. */
+export function continueStructuredMarkdownLine(view: EditorView): boolean {
+	const selection = view.state.selection.main;
+	if (!selection.empty) return false;
+	const line = view.state.doc.lineAt(selection.head);
+	const continuation = continueMarkdownStructuredLine(line.text, selection.head - line.from);
+	if (!continuation) return false;
+	view.dispatch({
+		changes: {
+			from: line.from + continuation.replaceFrom,
+			to: line.from + continuation.replaceTo,
+			insert: continuation.insert,
+		},
+		selection: { anchor: line.from + continuation.cursor },
+		annotations: Transaction.userEvent.of('input'),
+		scrollIntoView: true,
+	});
+	return true;
+}
+
+export function indentStructuredMarkdownLine(view: EditorView, direction: 'indent' | 'outdent'): boolean {
+	const selection = view.state.selection.main;
+	if (!selection.empty) return false;
+	const line = view.state.doc.lineAt(selection.head);
+	const next = indentMarkdownListLine(line.text, direction);
+	if (next === null || next === line.text) return false;
+	const delta = next.length - line.text.length;
+	const cursorInLine = selection.head - line.from;
+	const cursor = Math.max(0, Math.min(cursorInLine + delta, next.length));
+	view.dispatch({
+		changes: { from: line.from, to: line.to, insert: next },
+		selection: { anchor: line.from + cursor },
+		annotations: Transaction.userEvent.of('input'),
+	});
+	return true;
+}
+
 type LinkDefinition = { href: string; title?: string };
 type ResolvedLink = LinkDefinition & { label: string };
 
 function isMarkdownHeading(name: string): boolean {
 	return /^ATXHeading[1-6]$|^SetextHeading[12]$/.test(name);
+}
+
+function slugifyHeadingText(value: string): string {
+	return (
+		value
+			.trim()
+			.toLowerCase()
+			.replace(/[^\p{L}\p{N}]+/gu, '-')
+			.replace(/^-|-$/g, '') || 'section'
+	);
 }
 
 function normalizeReferenceLabel(value: string): string {
@@ -274,12 +325,13 @@ function markdownLinkTitle(value: string): string {
 function headingPositionForHash(view: EditorView, hash: string): number | null {
 	let id: string;
 	try {
-		id = decodeURIComponent(hash.slice(1));
+		id = decodeURIComponent(hash.startsWith('#') ? hash.slice(1) : hash);
 	} catch {
 		return null;
 	}
+	const slug = slugifyHeadingText(id);
 	const headingIndex = renderMarkdownDocument(view.state.doc.toString()).headings.findIndex(
-		(heading) => heading.id === id,
+		(heading) => heading.id === id || heading.id === slug || slugifyHeadingText(heading.text) === slug,
 	);
 	if (headingIndex < 0) return null;
 	let index = 0;
@@ -292,6 +344,17 @@ function headingPositionForHash(view: EditorView, hash: string): number | null {
 		},
 	});
 	return position;
+}
+
+export function scrollToMarkdownHeading(view: EditorView, hash: string): boolean {
+	const position = headingPositionForHash(view, hash);
+	if (position === null) return false;
+	view.dispatch({
+		selection: { anchor: position },
+		effects: EditorView.scrollIntoView(position, { y: 'start' }),
+	});
+	view.focus();
+	return true;
 }
 
 export function taskMarkerChange(
@@ -521,6 +584,9 @@ class CheckboxWidget extends WidgetType {
 	) {
 		super();
 	}
+	eq(other: CheckboxWidget): boolean {
+		return this.checked === other.checked && this.from === other.from && this.to === other.to;
+	}
 	toDOM(view: EditorView): HTMLElement {
 		const input = document.createElement('input');
 		input.type = 'checkbox';
@@ -540,6 +606,9 @@ class InlineMathWidget extends SourceWidget {
 		private readonly to: number,
 	) {
 		super();
+	}
+	eq(other: InlineMathWidget): boolean {
+		return this.expression === other.expression && this.from === other.from && this.to === other.to;
 	}
 	toDOM(view: EditorView): HTMLElement {
 		const node = document.createElement('span');
@@ -563,6 +632,9 @@ class InlineMarkdownWidget extends SourceWidget {
 	) {
 		super();
 	}
+	eq(other: InlineMarkdownWidget): boolean {
+		return this.source === other.source && this.from === other.from && this.to === other.to && this.kind === other.kind;
+	}
 	toDOM(view: EditorView): HTMLElement {
 		const node = document.createElement('span');
 		node.className = `cm-live-inline-block cm-live-inline-${this.kind}`;
@@ -580,6 +652,16 @@ class LinkWidget extends SourceWidget {
 		private readonly resolved?: ResolvedLink,
 	) {
 		super();
+	}
+	eq(other: LinkWidget): boolean {
+		return (
+			this.source === other.source &&
+			this.from === other.from &&
+			this.to === other.to &&
+			this.resolved?.href === other.resolved?.href &&
+			this.resolved?.title === other.resolved?.title &&
+			this.resolved?.label === other.resolved?.label
+		);
 	}
 	toDOM(view: EditorView): HTMLElement {
 		const container = document.createElement('span');
@@ -624,6 +706,9 @@ class HorizontalRuleWidget extends SourceWidget {
 	) {
 		super();
 	}
+	eq(other: HorizontalRuleWidget): boolean {
+		return this.from === other.from && this.to === other.to;
+	}
 	toDOM(view: EditorView): HTMLElement {
 		const rule = document.createElement('hr');
 		rule.className = 'cm-live-hr';
@@ -639,6 +724,9 @@ class ImageWidget extends SourceWidget {
 		private readonly to: number,
 	) {
 		super();
+	}
+	eq(other: ImageWidget): boolean {
+		return this.source === other.source && this.from === other.from && this.to === other.to;
 	}
 	toDOM(view: EditorView): HTMLElement {
 		const container = document.createElement('span');
@@ -666,6 +754,9 @@ class ListMarkerWidget extends SourceWidget {
 	) {
 		super();
 	}
+	eq(other: ListMarkerWidget): boolean {
+		return this.marker === other.marker && this.from === other.from && this.to === other.to;
+	}
 	toDOM(view: EditorView): HTMLElement {
 		const node = document.createElement('span');
 		node.className = 'cm-live-list-marker';
@@ -681,6 +772,14 @@ class BlockWidget extends SourceWidget {
 		private readonly source: string,
 	) {
 		super();
+	}
+	eq(other: BlockWidget): boolean {
+		return (
+			this.block.kind === other.block.kind &&
+			this.block.from === other.block.from &&
+			this.block.to === other.block.to &&
+			this.source === other.source
+		);
 	}
 	toDOM(view: EditorView): HTMLElement {
 		if (this.block.kind === 'table') return this.tableDOM(view);
@@ -767,7 +866,7 @@ class BlockWidget extends SourceWidget {
 		if (this.block.kind !== 'math') bindSourceNavigation(wrapper, this.block.from, this.source);
 		return wrapper;
 	}
-	private tableDOM(view: EditorView): HTMLElement {
+	private tableDOM(_view: EditorView): HTMLElement {
 		const parsed = parseTableBlock(this.source);
 		if (!parsed) {
 			const fallback = document.createElement('pre');
@@ -786,32 +885,6 @@ class BlockWidget extends SourceWidget {
 			lineOffsets.push(lineOffset);
 			lineOffset += line.length + 1;
 		}
-		table.addEventListener('mousedown', (event) => {
-			if (!(event instanceof MouseEvent) || event.button !== 0 || hasInteractiveTarget(event.target)) return;
-			const { clientX, clientY } = event;
-			const cell = (event.target as Element | null)?.closest<HTMLElement>('th[data-source-row],td[data-source-row]');
-			let position =
-				this.block.from + geometricSourcePosition(this.source, clientX, clientY, table.getBoundingClientRect());
-			if (cell) {
-				const rowIndex = Number(cell.dataset.sourceRow);
-				const columnIndex = Number(cell.dataset.sourceColumn);
-				const range = tableCellSourceRanges(sourceLines[rowIndex] ?? '')[columnIndex];
-				if (range) {
-					const source = sourceLines[rowIndex].slice(range.from, range.to);
-					position = sourcePositionAtPointer(
-						cell,
-						this.block.from + lineOffsets[rowIndex] + range.from,
-						source,
-						clientX,
-						clientY,
-						'text',
-					);
-				}
-			}
-			event.preventDefault();
-			event.stopPropagation();
-			selectSource(view, position);
-		});
 		const rows = parsed.rows;
 		rows.forEach((cells, rowIndex) => {
 			if (rowIndex === parsed.separatorIndex) return;
@@ -823,16 +896,70 @@ class BlockWidget extends SourceWidget {
 				const alignment = parsed.alignments[columnIndex];
 				if (alignment) cell.style.textAlign = alignment;
 				cell.innerHTML = renderMarkdownInline(value);
+				const range = tableCellSourceRanges(sourceLines[rowIndex] ?? '')[columnIndex];
+				if (range) {
+					const source = sourceLines[rowIndex].slice(range.from, range.to);
+					bindSourceNavigation(cell, this.block.from + lineOffsets[rowIndex] + range.from, source, 'text');
+				}
 				row.append(cell);
 			});
 			(rowIndex < parsed.separatorIndex ? head : body).append(row);
 		});
 		table.append(head, body);
+		bindSourceNavigation(table, this.block.from, this.source, 'geometry');
 		return table;
 	}
 }
 
-type InlineFormatKind = 'format' | 'code' | 'math' | 'highlight' | 'link' | 'image' | 'comment';
+
+class WikiLinkWidget extends SourceWidget {
+	constructor(
+		private readonly source: string,
+		private readonly from: number,
+		private readonly to: number,
+		private readonly link: WikiLinkRange,
+	) {
+		super();
+	}
+	eq(other: WikiLinkWidget): boolean {
+		return (
+			this.source === other.source &&
+			this.from === other.from &&
+			this.to === other.to &&
+			this.link.kind === other.link.kind &&
+			this.link.target === other.link.target &&
+			this.link.alias === other.link.alias
+		);
+	}
+	toDOM(view: EditorView): HTMLElement {
+		const node = document.createElement(this.link.kind === 'embed' ? 'span' : 'a');
+		const label = this.link.alias || this.link.target;
+		if (this.link.kind === 'embed') {
+			node.className = 'cm-live-inline-block cm-live-embed markdown-embed';
+			node.textContent = label;
+			node.setAttribute('data-embed', this.link.target);
+		} else {
+			const anchor = node as HTMLAnchorElement;
+			anchor.className = 'cm-live-inline-block cm-live-link cm-live-wikilink markdown-wikilink';
+			const headingTarget = this.link.target.includes('#')
+				? this.link.target.slice(this.link.target.indexOf('#') + 1)
+				: this.link.target;
+			anchor.href = `#${slugifyHeadingText(headingTarget)}`;
+			anchor.textContent = label;
+			anchor.addEventListener('click', (event) => {
+				if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+				event.preventDefault();
+				const position = headingPositionForHash(view, headingTarget);
+				if (position === null) return;
+				view.dispatch({ effects: EditorView.scrollIntoView(position, { y: 'start' }) });
+			});
+		}
+		bindSourceNavigation(node, this.from, this.source, 'text');
+		return node;
+	}
+}
+
+type InlineFormatKind = 'format' | 'code' | 'math' | 'highlight' | 'link' | 'image' | 'comment' | 'wikilink' | 'embed';
 
 type InlineFormatBlock = {
 	from: number;
@@ -896,14 +1023,23 @@ function collectInlineFormatBlocks(state: EditorState, structuralBlocks: Structu
 				to: lineOffset + range.to,
 				kind: range.kind,
 			});
+		for (const range of collectWikiLinkRanges(line))
+			add({
+				from: lineOffset + range.from,
+				to: lineOffset + range.to,
+				kind: range.kind,
+				name: range.kind,
+			});
 		lineOffset += line.length + 1;
 	}
 
 	// Prefer one outer range for nested syntax. Rendering the outer source lets the
 	// Markdown renderer handle nested emphasis and prevents overlapping replacements.
 	const priority: Record<InlineFormatKind, number> = {
-		link: 6,
-		image: 5,
+		link: 7,
+		image: 6,
+		wikilink: 5,
+		embed: 5,
 		math: 4,
 		code: 3,
 		highlight: 2,
@@ -1057,7 +1193,21 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 					inline.to,
 					Decoration.replace({ widget: new ImageWidget(source, inline.from, inline.to) }),
 				);
-			else
+			else if (inline.kind === 'wikilink' || inline.kind === 'embed') {
+				const wiki = collectWikiLinkRanges(source)[0];
+				if (wiki)
+					add(
+						inline.from,
+						inline.to,
+						Decoration.replace({
+							widget: new WikiLinkWidget(source, inline.from, inline.to, {
+								...wiki,
+								from: 0,
+								to: source.length,
+							}),
+						}),
+					);
+			} else
 				add(
 					inline.from,
 					inline.to,
@@ -1177,6 +1327,7 @@ type MarkdownLivePreviewOptions = {
 	onChange: (value: string, immediate: boolean) => void;
 	onImageTooLarge?: () => void;
 	onImageReadError?: () => void;
+	onHeadingsChange?: (headings: ReturnType<typeof renderMarkdownDocument>['headings']) => void;
 };
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -1206,7 +1357,6 @@ export function createMarkdownLivePreview(
 	value: string,
 	options: MarkdownLivePreviewOptions,
 ): EditorView {
-	localStorage.setItem('wysiwygMode', 'true');
 	const darkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
 	const pendingImageRanges = new Map<number, { from: number; to: number; empty: boolean }>();
 	let nextImagePasteId = 0;
@@ -1224,6 +1374,9 @@ export function createMarkdownLivePreview(
 	const editingKeymap = keymap.of([
 		{ key: 'Backspace', run: parsedDelete('backward') },
 		{ key: 'Delete', run: parsedDelete('forward') },
+		{ key: 'Enter', run: continueStructuredMarkdownLine },
+		{ key: 'Tab', run: (view) => indentStructuredMarkdownLine(view, 'indent') },
+		{ key: 'Shift-Tab', run: (view) => indentStructuredMarkdownLine(view, 'outdent') },
 		{ key: 'Mod-b', run: (view) => toggleMarkdownWrap(view, '**') },
 		{ key: 'Mod-i', run: (view) => toggleMarkdownWrap(view, '*') },
 		{ key: 'Mod-Shift-s', run: (view) => toggleMarkdownWrap(view, '~~') },
@@ -1312,21 +1465,28 @@ export function createMarkdownLivePreview(
 				{ dark: darkMode },
 			),
 			EditorView.updateListener.of((update) => {
-				if (!update.docChanged) return;
-				for (const [id, range] of pendingImageRanges) {
-					const mappedFrom = update.changes.mapPos(range.from, range.empty ? 1 : -1);
-					pendingImageRanges.set(id, {
-						from: mappedFrom,
-						to: range.empty ? mappedFrom : update.changes.mapPos(range.to, 1),
-						empty: range.empty,
-					});
+				if (update.docChanged) {
+					for (const [id, range] of pendingImageRanges) {
+						const mappedFrom = update.changes.mapPos(range.from, range.empty ? 1 : -1);
+						pendingImageRanges.set(id, {
+							from: mappedFrom,
+							to: range.empty ? mappedFrom : update.changes.mapPos(range.to, 1),
+							empty: range.empty,
+						});
+					}
+					const immediate = update.transactions.some(
+						(transaction) => transaction.isUserEvent('input.paste') || transaction.isUserEvent('delete.cut'),
+					);
+					options.onChange(update.state.doc.toString(), immediate);
 				}
-				const immediate = update.transactions.some(
-					(transaction) => transaction.isUserEvent('input.paste') || transaction.isUserEvent('delete.cut'),
-				);
-				options.onChange(update.state.doc.toString(), immediate);
+				if (options.onHeadingsChange && update.docChanged) {
+					options.onHeadingsChange(renderMarkdownDocument(update.state.doc.toString()).headings);
+				}
 			}),
 		],
 	});
-	return new EditorView({ state, parent });
+	const view = new EditorView({ state, parent });
+	options.onHeadingsChange?.(renderMarkdownDocument(view.state.doc.toString()).headings);
+	return view;
 }
+

@@ -4,8 +4,12 @@ import markedKatex from 'marked-katex-extension';
 import { parseFrontmatterBlock, type FrontmatterEntry } from './markdownStructure';
 
 type ObsidianInlineToken = Token & {
-	type: 'obsidian-highlight' | 'obsidian-comment';
+	type: 'obsidian-highlight' | 'obsidian-comment' | 'obsidian-wikilink';
 	text: string;
+	raw: string;
+	embed?: boolean;
+	target?: string;
+	alias?: string;
 	tokens?: Token[];
 };
 
@@ -51,6 +55,40 @@ markdown.use({
 				return '';
 			},
 		},
+		{
+			name: 'obsidian-wikilink',
+			level: 'inline',
+			start(source) {
+				const embed = source.indexOf('![[');
+				const link = source.indexOf('[[');
+				if (embed < 0) return link < 0 ? undefined : link;
+				if (link < 0) return embed;
+				return Math.min(embed, link);
+			},
+			tokenizer(source) {
+				const match = /^(!?)\[\[([^\]|\r\n]+?)(?:\|([^\]\r\n]+))?\]\]/.exec(source);
+				if (!match) return undefined;
+				const target = match[2].trim();
+				const alias = match[3]?.trim();
+				if (!target) return undefined;
+				return {
+					type: 'obsidian-wikilink',
+					raw: match[0],
+					text: alias || target,
+					embed: match[1] === '!',
+					target,
+					alias,
+				} as ObsidianInlineToken;
+			},
+			renderer(token) {
+				const value = token as ObsidianInlineToken;
+				const label = escapeHtml(value.alias || value.target || value.text);
+				if (value.embed) {
+					return `<span class="markdown-embed" data-embed="${escapeAttribute(value.target || '')}">${label}</span>`;
+				}
+				return `<a class="markdown-wikilink" href="#${escapeAttribute(value.target || '')}">${label}</a>`;
+			},
+		},
 	],
 });
 
@@ -60,6 +98,14 @@ export interface MarkdownHeading {
 	id: string;
 	level: number;
 	text: string;
+}
+
+function escapeAttribute(value: string): string {
+	return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+function escapeHtml(value: string): string {
+	return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 export function parseMarkdownInline(value: string): string {
@@ -129,7 +175,7 @@ function decorateCallouts(documentNode: Document): void {
 
 function sanitizedDocument(parsed: string): Document {
 	const sanitized = DOMPurify.sanitize(parsed, {
-		ADD_ATTR: ['target'],
+		ADD_ATTR: ['target', 'data-embed'],
 		ALLOW_DATA_ATTR: false,
 	});
 	const documentNode = new DOMParser().parseFromString(`<body>${sanitized}</body>`, 'text/html');
@@ -193,3 +239,4 @@ export function renderMarkdownDocument(value: string): { html: string; headings:
 export function renderMarkdown(value: string): string {
 	return renderMarkdownDocument(value).html;
 }
+

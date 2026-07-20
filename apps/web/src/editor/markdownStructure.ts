@@ -186,6 +186,14 @@ export type InlineRange = { from: number; to: number; kind: 'code' | 'math' };
 
 export type ObsidianInlineRange = { from: number; to: number; kind: 'highlight' | 'comment' };
 
+export type WikiLinkRange = {
+	from: number;
+	to: number;
+	kind: 'wikilink' | 'embed';
+	target: string;
+	alias?: string;
+};
+
 export type TableAlignment = 'left' | 'center' | 'right' | null;
 
 export type ParsedTable = {
@@ -193,6 +201,119 @@ export type ParsedTable = {
 	separatorIndex: number;
 	alignments: TableAlignment[];
 };
+
+export type MarkdownListPrefix = {
+	indent: string;
+	marker: string;
+	task?: ' ' | 'x' | 'X';
+	content: string;
+	prefixLength: number;
+};
+
+export type MarkdownLineContinuation = {
+	insert: string;
+	replaceFrom: number;
+	replaceTo: number;
+	cursor: number;
+};
+
+/** Parse a bullet, ordered, or task list prefix for Obsidian-style list editing. */
+export function parseMarkdownListPrefix(line: string): MarkdownListPrefix | null {
+	const match = /^(\s*)([-+*]|\d+[.)])(\s+)(?:\[([ xX])\](\s*))?(.*)$/.exec(line);
+	if (!match) return null;
+	return {
+		indent: match[1],
+		marker: match[2],
+		...(match[4] ? { task: match[4] as ' ' | 'x' | 'X' } : {}),
+		content: match[6],
+		prefixLength: match[0].length - match[6].length,
+	};
+}
+
+export function nextOrderedListMarker(marker: string): string {
+	const match = /^(\d+)([.)])$/.exec(marker);
+	if (!match) return marker;
+	return `${Number(match[1]) + 1}${match[2]}`;
+}
+
+function formatListPrefix(indent: string, marker: string, task?: ' ' | 'x' | 'X'): string {
+	const taskPart = task === undefined ? '' : `[${task === 'x' || task === 'X' ? 'x' : ' '}] `;
+	return `${indent}${marker} ${taskPart}`;
+}
+
+/**
+ * Continue a list or blockquote on Enter the way Obsidian Live Preview does:
+ * split content, increment ordered markers, and exit empty items.
+ */
+export function continueMarkdownStructuredLine(
+	line: string,
+	cursorInLine: number,
+): MarkdownLineContinuation | null {
+	const quoteMatch = /^(?:>\s?)+/.exec(line);
+	const quotePrefix = quoteMatch?.[0] ?? '';
+	const body = line.slice(quotePrefix.length);
+	const list = parseMarkdownListPrefix(body);
+	if (!list && !quotePrefix) return null;
+
+	if (!list) {
+		const content = body;
+		const offset = Math.max(quotePrefix.length, Math.min(cursorInLine, line.length));
+		const before = line.slice(quotePrefix.length, offset);
+		const after = line.slice(offset);
+		if (!content.trim()) {
+			return { insert: '', replaceFrom: 0, replaceTo: line.length, cursor: 0 };
+		}
+		const next = `${quotePrefix}${before}\n${quotePrefix}${after}`;
+		return {
+			insert: next,
+			replaceFrom: 0,
+			replaceTo: line.length,
+			cursor: quotePrefix.length + before.length + 1 + quotePrefix.length,
+		};
+	}
+
+	const absolutePrefixLength = quotePrefix.length + list.prefixLength;
+	const offset = Math.max(absolutePrefixLength, Math.min(cursorInLine, line.length));
+	const before = line.slice(absolutePrefixLength, offset);
+	const after = line.slice(offset);
+	const originalPrefix = line.slice(0, absolutePrefixLength);
+	if (!list.content.trim()) {
+		if (list.indent.length >= 2) {
+			const nextIndent = list.indent.slice(0, Math.max(0, list.indent.length - 2));
+			const nextBody = formatListPrefix(nextIndent, list.marker, list.task === undefined ? undefined : ' ');
+			const next = `${quotePrefix}${nextBody}`;
+			return { insert: next, replaceFrom: 0, replaceTo: line.length, cursor: next.length };
+		}
+		if (quotePrefix) {
+			const next = quotePrefix;
+			return { insert: next, replaceFrom: 0, replaceTo: line.length, cursor: next.length };
+		}
+		return { insert: '', replaceFrom: 0, replaceTo: line.length, cursor: 0 };
+	}
+
+	const nextMarker = /^\d+[.)]$/.test(list.marker) ? nextOrderedListMarker(list.marker) : list.marker;
+	const nextBodyPrefix = formatListPrefix(list.indent, nextMarker, list.task === undefined ? undefined : ' ');
+	const nextPrefix = `${quotePrefix}${nextBodyPrefix}`;
+	const next = `${originalPrefix}${before}\n${nextPrefix}${after}`;
+	return {
+		insert: next,
+		replaceFrom: 0,
+		replaceTo: line.length,
+		cursor: originalPrefix.length + before.length + 1 + nextPrefix.length,
+	};
+}
+
+export function indentMarkdownListLine(line: string, direction: 'indent' | 'outdent'): string | null {
+	const quoteMatch = /^(?:>\s?)+/.exec(line);
+	const quotePrefix = quoteMatch?.[0] ?? '';
+	const body = line.slice(quotePrefix.length);
+	const list = parseMarkdownListPrefix(body);
+	if (!list) return null;
+	if (direction === 'indent') return `${quotePrefix}  ${body}`;
+	if (!list.indent) return null;
+	const remove = list.indent.startsWith('\t') ? 1 : Math.min(2, list.indent.length);
+	return `${quotePrefix}${body.slice(remove)}`;
+}
 
 export function collectInlineExcludedRanges(line: string): InlineRange[] {
 	const ranges: InlineRange[] = [];
@@ -280,6 +401,56 @@ export function collectObsidianInlineRanges(line: string): ObsidianInlineRange[]
 		}
 		ranges.push({ from: index, to: end + delimiter.length, kind: delimiter === '%%' ? 'comment' : 'highlight' });
 		index = end + delimiter.length;
+	}
+	return ranges;
+}
+
+/** Collect Obsidian-style wiki links and embeds outside code/math spans. */
+export function collectWikiLinkRanges(line: string): WikiLinkRange[] {
+	const excluded = collectInlineExcludedRanges(line);
+	const ranges: WikiLinkRange[] = [];
+	let index = 0;
+	while (index < line.length) {
+		const excludedRange = excluded.find((range) => index >= range.from && index < range.to);
+		if (excludedRange) {
+			index = excludedRange.to;
+			continue;
+		}
+		if (line[index] === '\\') {
+			index += 2;
+			continue;
+		}
+		const embed = line.startsWith('![[', index);
+		if (!embed && !line.startsWith('[[', index)) {
+			index += 1;
+			continue;
+		}
+		const contentFrom = index + (embed ? 3 : 2);
+		const end = line.indexOf(']]', contentFrom);
+		if (end < 0) {
+			index += embed ? 3 : 2;
+			continue;
+		}
+		const raw = line.slice(contentFrom, end);
+		if (!raw || /[\r\n]/.test(raw)) {
+			index += embed ? 3 : 2;
+			continue;
+		}
+		const pipe = raw.indexOf('|');
+		const target = (pipe >= 0 ? raw.slice(0, pipe) : raw).trim();
+		const alias = pipe >= 0 ? raw.slice(pipe + 1).trim() : '';
+		if (!target) {
+			index = end + 2;
+			continue;
+		}
+		ranges.push({
+			from: index,
+			to: end + 2,
+			kind: embed ? 'embed' : 'wikilink',
+			target,
+			...(alias ? { alias } : {}),
+		});
+		index = end + 2;
 	}
 	return ranges;
 }
@@ -397,3 +568,4 @@ function escapeTableCell(value: string): string {
 	}
 	return result;
 }
+

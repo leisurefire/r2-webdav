@@ -3,7 +3,11 @@ import {
 	collectInlineExcludedRanges,
 	collectObsidianInlineRanges,
 	collectStructuralBlocks,
+	collectWikiLinkRanges,
+	continueMarkdownStructuredLine,
+	indentMarkdownListLine,
 	parseFrontmatterBlock,
+	parseMarkdownListPrefix,
 	parseTableBlock,
 	serializeTableRows,
 	splitTableRow,
@@ -139,5 +143,71 @@ describe('splitTableRow', () => {
 
 	it('rejects a table whose header and separator have different column counts', () => {
 		expect(parseTableBlock('| Name | Value |\n| --- |')).toBeNull();
+	});
+});
+
+
+describe('collectWikiLinkRanges', () => {
+	it('finds wiki links and embeds while ignoring code spans', () => {
+		const line = '`[[code]]` [[Note]] [[Note|Alias]] ![[Embed]]';
+		expect(collectWikiLinkRanges(line).map((range) => [range.kind, line.slice(range.from, range.to), range.target, range.alias])).toEqual([
+			['wikilink', '[[Note]]', 'Note', undefined],
+			['wikilink', '[[Note|Alias]]', 'Note', 'Alias'],
+			['embed', '![[Embed]]', 'Embed', undefined],
+		]);
+	});
+});
+
+describe('Obsidian list editing helpers', () => {
+	it('parses bullet, ordered, and task prefixes', () => {
+		expect(parseMarkdownListPrefix('- item')).toMatchObject({ marker: '-', content: 'item', prefixLength: 2 });
+		expect(parseMarkdownListPrefix('1. [x] done')).toMatchObject({
+			marker: '1.',
+			task: 'x',
+			content: 'done',
+			prefixLength: 7,
+		});
+	});
+
+	it('continues a list item and exits an empty one', () => {
+		expect(continueMarkdownStructuredLine('- hello world', 7)).toEqual({
+			insert: '- hello\n-  world',
+			replaceFrom: 0,
+			replaceTo: 13,
+			cursor: 9,
+		});
+		expect(continueMarkdownStructuredLine('1. [ ] ', 7)).toEqual({
+			insert: '',
+			replaceFrom: 0,
+			replaceTo: 7,
+			cursor: 0,
+		});
+		expect(continueMarkdownStructuredLine('  - ', 4)).toEqual({
+			insert: '- ',
+			replaceFrom: 0,
+			replaceTo: 4,
+			cursor: 2,
+		});
+	});
+
+	it('continues blockquotes and quoted lists', () => {
+		expect(continueMarkdownStructuredLine('> quote', 7)).toEqual({
+			insert: '> quote\n> ',
+			replaceFrom: 0,
+			replaceTo: 7,
+			cursor: 9,
+		});
+		expect(continueMarkdownStructuredLine('> - item', 8)).toEqual({
+			insert: '> - item\n> - ',
+			replaceFrom: 0,
+			replaceTo: 8,
+			cursor: 13,
+		});
+	});
+
+	it('indents and outdents list lines', () => {
+		expect(indentMarkdownListLine('- item', 'indent')).toBe('  - item');
+		expect(indentMarkdownListLine('  - item', 'outdent')).toBe('- item');
+		expect(indentMarkdownListLine('> - item', 'indent')).toBe('>   - item');
 	});
 });

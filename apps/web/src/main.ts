@@ -1773,15 +1773,38 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 	title.addEventListener('blur', () => {
 		title.value = selected.title;
 	});
+	const compose = root.querySelector<HTMLElement>('[data-note-compose]');
+	const outline = root.querySelector<HTMLElement>('[data-note-outline]');
 	void import('./editor/markdownLivePreview')
-		.then(({ createMarkdownLivePreview }) => {
+		.then(({ createMarkdownLivePreview, scrollToMarkdownHeading }) => {
 			if (!source.isConnected) return;
-			createMarkdownLivePreview(source, draftContent, {
+			const view = createMarkdownLivePreview(source, draftContent, {
 				onChange: (value, immediate) => {
 					draftContent = value.replaceAll('\r', '');
 					optimisticallyUpdateNote(data, selected, { content: draftContent });
 					reorderVisibleNoteCards(data);
 					if (immediate) void flushNoteCommit(selected.id);
+				},
+				onHeadingsChange: (headings) => {
+					if (!outline || !compose) return;
+					const hasOutline = headings.length > 0;
+					compose.classList.toggle('has-outline', hasOutline);
+					outline.classList.toggle('empty', !hasOutline);
+					if (!hasOutline) {
+						outline.replaceChildren();
+						return;
+					}
+					const title = document.createElement('strong');
+					title.textContent = locale === 'zh' ? '大纲' : 'Outline';
+					const buttons = headings.map((heading) => {
+						const button = document.createElement('button');
+						button.type = 'button';
+						button.style.setProperty('--outline-level', String(heading.level));
+						button.textContent = heading.text;
+						button.addEventListener('click', () => scrollToMarkdownHeading(view, heading.id));
+						return button;
+					});
+					outline.replaceChildren(title, ...buttons);
 				},
 				onImageTooLarge: () =>
 					toast(locale === 'zh' ? '图片超过 256 KB，暂不允许粘贴' : 'Images over 256 KB cannot be pasted yet'),
