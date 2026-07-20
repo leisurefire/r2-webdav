@@ -698,7 +698,7 @@
 .cm-live-block {
 	box-sizing: border-box;
 	width: 100%;
-	margin: 8px 0;
+	margin: 6px 0;
 	border: 1px solid var(--line);
 	border-radius: 6px;
 	background: var(--surface);
@@ -827,33 +827,106 @@
 .cm-live-quote {
 	border: 0;
 	background: transparent;
+	margin: 4px 0;
 }
 
 .cm-live-quote blockquote,
-.file-markdown-preview blockquote {
-	margin: 0;
+.file-markdown-preview blockquote,
+.note-render blockquote {
+	margin: 0.45em 0;
 	padding-left: 12px;
 	border-left: 2px solid var(--line-strong, var(--line));
 	color: var(--muted);
 }
 
-.cm-live-quote blockquote p:first-child,
-.markdown-callout p:first-of-type {
+/* Shared prose rhythm for rendered notes, file preview, live widgets, and callouts.
+   Browser defaults (1em p/list margins, 40px list indent) make blank gaps look huge. */
+.note-render,
+.file-markdown-preview,
+.cm-live-quote,
+.markdown-callout {
+	--md-block-gap: 0.55em;
+	--md-list-gap: 0.22em;
+	--md-list-indent: 1.35em;
+}
+
+.note-render p,
+.file-markdown-preview p,
+.cm-live-quote p,
+.markdown-callout p {
+	margin: 0 0 var(--md-block-gap);
+}
+
+.note-render :is(ul, ol),
+.file-markdown-preview :is(ul, ol),
+.cm-live-quote :is(ul, ol),
+.markdown-callout :is(ul, ol) {
+	margin: 0.28em 0 0.45em;
+	padding-left: var(--md-list-indent);
+}
+
+.note-render li,
+.file-markdown-preview li,
+.cm-live-quote li,
+.markdown-callout li {
+	margin: 0 0 var(--md-list-gap);
+	padding: 0;
+}
+
+.note-render li > p,
+.file-markdown-preview li > p,
+.cm-live-quote li > p,
+.markdown-callout li > p {
+	margin: 0.15em 0;
+}
+
+.note-render li > p:first-child,
+.file-markdown-preview li > p:first-child,
+.cm-live-quote li > p:first-child,
+.markdown-callout li > p:first-child {
 	margin-top: 0;
 }
 
-.cm-live-quote blockquote p:last-child,
-.markdown-callout p:last-child {
+.note-render li > p:last-child,
+.file-markdown-preview li > p:last-child,
+.cm-live-quote li > p:last-child,
+.markdown-callout li > p:last-child,
+.note-render p:last-child,
+.file-markdown-preview p:last-child,
+.cm-live-quote p:last-child,
+.markdown-callout p:last-child,
+.note-render li:last-child,
+.file-markdown-preview li:last-child,
+.cm-live-quote li:last-child,
+.markdown-callout li:last-child {
 	margin-bottom: 0;
+}
+
+/* Empty markdown paragraphs from sparse blank lines should not reserve a full block gap. */
+.note-render p:empty,
+.file-markdown-preview p:empty,
+.cm-live-quote p:empty,
+.markdown-callout p:empty {
+	display: none;
+}
+
+.note-render p:has(> br:only-child),
+.file-markdown-preview p:has(> br:only-child),
+.cm-live-quote p:has(> br:only-child),
+.markdown-callout p:has(> br:only-child) {
+	margin: 0.2em 0;
+	line-height: 1.15;
+	min-height: 0.65em;
 }
 
 .markdown-callout {
 	--callout-color: var(--accent);
-	margin: 12px 0;
-	padding: 10px 12px 10px 12px;
+	margin: 8px 0;
+	padding: 8px 11px;
 	border-left: 3px solid var(--callout-color);
 	background: color-mix(in srgb, var(--callout-color) 9%, var(--panel-bg));
 	border-radius: 0 8px 8px 0;
+	line-height: 1.55;
 }
 
 .cm-live-quote > .markdown-callout {
@@ -863,11 +936,12 @@
 .markdown-callout-title {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	margin-bottom: 6px;
+	gap: 6px;
+	margin: 0 0 4px;
 	color: var(--callout-color);
 	font-weight: 650;
 	font-size: 0.95em;
+	line-height: 1.3;
 }
 
 .markdown-callout-icon {
@@ -1408,7 +1482,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 	opacity: 0;
 	pointer-events: none;
 	transition: opacity 120ms ease;
-	background: linear-gradient(90deg, transparent, var(--panel-bg) 26%);
+	background: transparent;
 }
 
 .note-folder-actions {
@@ -1431,7 +1505,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 	top: 1px;
 	right: 2px;
 	bottom: auto;
-	padding: 0 0 0 18px;
+	padding: 0;
 }
 
 .note-folder-card:hover > .note-folder-actions,
@@ -1548,7 +1622,8 @@ details.markdown-callout > .markdown-callout-title::marker {
 }
 
 .notes-inner-toolbar > .note-path {
-	flex: 1 1 auto;
+	flex: 0 1 auto;
+	max-width: min(640px, 48vw);
 	overflow: hidden;
 }
 
@@ -1582,6 +1657,67 @@ details.markdown-callout > .markdown-callout-title::marker {
 	right: 0;
 }
 
+.note-font-toggle > span {
+	font-size: 12px;
+	font-weight: 650;
+}
+
+.note-font-toggle[data-font='serif'] > span,
+.note-font-preview-serif {
+	font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', SimSun, Georgia, serif;
+}
+
+.note-font-toggle[data-font='sans'] > span,
+.note-font-preview-sans {
+	font-family:
+		'OpenAI Sans',
+		ui-sans-serif,
+		system-ui,
+		-apple-system,
+		BlinkMacSystemFont,
+		'Segoe UI',
+		sans-serif;
+}
+
+.note-font-options {
+	min-width: 220px;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 4px;
+	padding: 6px;
+}
+
+.action-menu.open .note-font-options {
+	display: grid;
+}
+
+.note-font-options button {
+	min-width: 0;
+	height: 68px;
+	flex-direction: column;
+	justify-content: center;
+	gap: 4px;
+	padding: 6px;
+	white-space: normal;
+}
+
+.note-font-options button > span:first-child {
+	font-size: 22px;
+	line-height: 1;
+}
+
+.note-font-options button > span:last-child {
+	font-size: 10px;
+}
+
+.note-action-more [data-note-full-width] .note-menu-check {
+	margin-left: auto;
+	opacity: 0;
+}
+
+.note-action-more [data-note-full-width][aria-checked='true'] .note-menu-check {
+	opacity: 1;
+}
+
 .notes-mobile-sidebar {
 	display: none;
 }
@@ -1596,6 +1732,21 @@ details.markdown-callout > .markdown-callout-title::marker {
 .note-document {
 	display: flex;
 	flex-direction: column;
+}
+
+.note-editor.note-font-serif .note-document {
+	font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', SimSun, Georgia, serif;
+}
+
+@media (min-width: 761px) {
+	.note-editor:not(.note-width-full) .note-document {
+		width: min(100%, 880px);
+		margin-inline: auto;
+	}
+
+	.note-editor:not(.note-width-full) .note-outline {
+		right: max(8px, calc((100% - 880px) / 2 + 8px));
+	}
 }
 
 .note-document > .note-heading {
@@ -1630,6 +1781,11 @@ details.markdown-callout > .markdown-callout-title::marker {
 .notes-tree-children {
 	margin-left: 10px;
 	padding-left: 8px;
+}
+
+.notes-tree-root {
+	margin-left: 0;
+	padding-left: 0;
 }
 
 .notes-tree-children > .note-card::after,
@@ -1669,9 +1825,11 @@ details.markdown-callout > .markdown-callout-title::marker {
 
 /* Rendered Markdown nested lists use the same vertical hierarchy cue as the sidebar tree. */
 .file-markdown-preview :is(ul, ol) :is(ul, ol),
-.note-render :is(ul, ol) :is(ul, ol) {
-	margin-left: 2px;
-	padding-left: 18px;
+.note-render :is(ul, ol) :is(ul, ol),
+.cm-live-quote :is(ul, ol) :is(ul, ol),
+.markdown-callout :is(ul, ol) :is(ul, ol) {
+	margin: 0.15em 0 0.2em 2px;
+	padding-left: 16px;
 	border-left: 1px solid var(--line);
 }
 

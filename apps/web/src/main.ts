@@ -24,6 +24,7 @@ import {
 	Languages,
 	Laptop,
 	LogOut,
+	Maximize2,
 	Music,
 	MoreHorizontal,
 	PanelLeftClose,
@@ -284,6 +285,7 @@ function refreshIcons(): void {
 			Languages,
 			Laptop,
 			LogOut,
+			Maximize2,
 			Music,
 			MoreHorizontal,
 			PanelLeftClose,
@@ -754,7 +756,7 @@ function paintFiles(listing: FileListing): void {
 			</article>`,
 		)
 		.join('');
-	content.innerHTML = `<div class="toolbar"><div class="breadcrumbs">${breadcrumbMarkup(listing.path)}</div><span class="toolbar-spacer"></span>
+	content.innerHTML = `<div class="toolbar"><div class="breadcrumbs">${breadcrumbMarkup(listing.path)}</div>
 			<button class="button" id="upload" title="${locale === 'zh' ? '上传' : 'Upload'}" aria-label="${locale === 'zh' ? '上传' : 'Upload'}"><i data-lucide="upload"></i><span>${locale === 'zh' ? '上传' : 'Upload'}</span></button>
 			<button class="button" id="mkdir"><i data-lucide="folder-plus"></i><span>${locale === 'zh' ? '新建文件夹' : 'New folder'}</span></button>
 			<button class="button icon-button" id="files-refresh" title="${locale === 'zh' ? '同步文件' : 'Sync files'}" aria-label="${locale === 'zh' ? '同步文件' : 'Sync files'}"><i data-lucide="refresh-cw"></i></button>
@@ -1301,7 +1303,7 @@ async function renderCalendar(forceSync = false): Promise<void> {
 		}
 		const calendar = calendarCache.calendars[0];
 		if (!content.querySelector('#calendar-view')) {
-			content.innerHTML = `<div class="calendar-toolbar"><button class="button icon-button" id="cal-prev"><i data-lucide="chevron-left"></i></button><button class="button" id="cal-today">${locale === 'zh' ? '今天' : 'Today'}</button><button class="button icon-button" id="cal-next"><i data-lucide="chevron-right"></i></button><h2 id="calendar-title"></h2><span class="sync-status" id="calendar-sync"><span class="status-dot"></span>${locale === 'zh' ? '已缓存' : 'Cached'}</span><span class="toolbar-spacer"></span><button class="button" id="new-event" title="${locale === 'zh' ? '新建日程' : 'New event'}" aria-label="${locale === 'zh' ? '新建日程' : 'New event'}"><i data-lucide="plus"></i><span>${locale === 'zh' ? '新建日程' : 'New event'}</span></button><button class="button icon-button" id="cal-refresh" title="${locale === 'zh' ? '同步日历' : 'Sync calendar'}" aria-label="${locale === 'zh' ? '同步日历' : 'Sync calendar'}"><i data-lucide="refresh-cw"></i></button></div><div class="calendar" id="calendar-view"><div class="weekday-row">${(locale === 'zh' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).map((day) => `<div class="weekday">${day}</div>`).join('')}</div><div class="month-grid" id="month-grid"></div></div>`;
+			content.innerHTML = `<div class="calendar-toolbar"><h2 id="calendar-title"></h2><button class="button icon-button" id="cal-prev"><i data-lucide="chevron-left"></i></button><button class="button" id="cal-today">${locale === 'zh' ? '今天' : 'Today'}</button><button class="button icon-button" id="cal-next"><i data-lucide="chevron-right"></i></button><span class="sync-status" id="calendar-sync"><span class="status-dot"></span>${locale === 'zh' ? '已缓存' : 'Cached'}</span><button class="button" id="new-event" title="${locale === 'zh' ? '新建日程' : 'New event'}" aria-label="${locale === 'zh' ? '新建日程' : 'New event'}"><i data-lucide="plus"></i><span>${locale === 'zh' ? '新建日程' : 'New event'}</span></button><button class="button icon-button" id="cal-refresh" title="${locale === 'zh' ? '同步日历' : 'Sync calendar'}" aria-label="${locale === 'zh' ? '同步日历' : 'Sync calendar'}"><i data-lucide="refresh-cw"></i></button></div><div class="calendar" id="calendar-view"><div class="weekday-row">${(locale === 'zh' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).map((day) => `<div class="weekday">${day}</div>`).join('')}</div><div class="month-grid" id="month-grid"></div></div>`;
 			content.querySelector('#cal-prev')?.addEventListener('click', () => {
 				calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
 				void renderCalendar();
@@ -1605,18 +1607,15 @@ async function loadNoteFolders(force = false): Promise<void> {
 }
 
 function notePathMarkup(note: Note): string {
-	const rootLabel = locale === 'zh' ? '根目录' : 'Root';
 	const title = note.title.trim() || (locale === 'zh' ? '无标题便签' : 'Untitled note');
-	const crumbs = [
-		`<button type="button" class="note-path-item" data-note-path-folder="root" title="${rootLabel}">${rootLabel}</button>`,
-	];
+	const crumbs: string[] = [];
 	for (const folder of noteFolderPath(noteFolders, note.folderId)) {
 		crumbs.push('<span class="note-path-separator" aria-hidden="true">/</span>');
 		crumbs.push(
 			`<button type="button" class="note-path-item" data-note-path-folder="${html(folder.id)}" title="${html(folder.name)}">${html(folder.name)}</button>`,
 		);
 	}
-	crumbs.push('<span class="note-path-separator" aria-hidden="true">/</span>');
+	if (crumbs.length) crumbs.push('<span class="note-path-separator" aria-hidden="true">/</span>');
 	crumbs.push(`<span class="note-path-item current" data-note-path-title title="${html(title)}">${html(title)}</span>`);
 	return `<nav class="collection-path note-location note-head-path note-path" aria-label="${locale === 'zh' ? '当前便签路径' : 'Current note path'}">${crumbs.join('')}</nav>`;
 }
@@ -1642,20 +1641,98 @@ function revealNoteFolderInTree(folderId: string | null): void {
 	});
 }
 
+type NoteFont = 'sans' | 'serif';
+type NoteViewPreferences = { fullWidth: boolean; font: NoteFont };
+const NOTE_VIEW_PREFERENCES_KEY = 'r2_note_view_preferences';
+
+function noteViewPreferences(noteId: string): NoteViewPreferences {
+	try {
+		const stored = JSON.parse(localStorage.getItem(NOTE_VIEW_PREFERENCES_KEY) ?? '{}') as Record<
+			string,
+			Partial<NoteViewPreferences>
+		>;
+		const preferences = stored[noteId];
+		return {
+			fullWidth: preferences?.fullWidth === true,
+			font: preferences?.font === 'serif' ? 'serif' : 'sans',
+		};
+	} catch {
+		return { fullWidth: false, font: 'sans' };
+	}
+}
+
+function saveNoteViewPreferences(noteId: string, changes: Partial<NoteViewPreferences>): NoteViewPreferences {
+	const next = { ...noteViewPreferences(noteId), ...changes };
+	try {
+		const stored = JSON.parse(localStorage.getItem(NOTE_VIEW_PREFERENCES_KEY) ?? '{}') as Record<string, unknown>;
+		stored[noteId] = next;
+		localStorage.setItem(NOTE_VIEW_PREFERENCES_KEY, JSON.stringify(stored));
+	} catch {
+		// A blocked or malformed local store should not prevent editing the note.
+	}
+	return next;
+}
+
+function applyNoteViewPreferences(noteId: string, preferences: NoteViewPreferences): void {
+	document.querySelectorAll<HTMLElement>(`[data-note-editor-id="${CSS.escape(noteId)}"]`).forEach((editor) => {
+		editor.classList.toggle('note-width-full', preferences.fullWidth);
+		editor.classList.toggle('note-font-serif', preferences.font === 'serif');
+	});
+	document.querySelectorAll<HTMLElement>(`[data-note-toolbar-id="${CSS.escape(noteId)}"]`).forEach((toolbar) => {
+		const widthButton = toolbar.querySelector<HTMLButtonElement>('[data-note-full-width]');
+		if (widthButton) {
+			widthButton.setAttribute('aria-checked', String(preferences.fullWidth));
+			widthButton.classList.toggle('selected', preferences.fullWidth);
+		}
+		const fontButton = toolbar.querySelector<HTMLElement>('[data-note-font-toggle]');
+		if (fontButton) {
+			fontButton.dataset.font = preferences.font;
+			fontButton.title =
+				preferences.font === 'serif'
+					? locale === 'zh'
+						? '衬线字型'
+						: 'Serif font'
+					: locale === 'zh'
+						? '非衬线字型'
+						: 'Sans-serif font';
+			fontButton.setAttribute('aria-label', fontButton.title);
+		}
+		toolbar.querySelectorAll<HTMLElement>('[data-note-font]').forEach((button) => {
+			const selected = button.dataset.noteFont === preferences.font;
+			button.classList.toggle('selected', selected);
+			button.setAttribute('aria-checked', String(selected));
+		});
+	});
+}
+
 function noteActionControlsMarkup(selected: Note, includeRefresh = false): string {
 	const saveState = noteCommitStates.get(selected.id)?.status ?? 'synced';
+	const preferences = noteViewPreferences(selected.id);
 	const exportLabel = locale === 'zh' ? '导出 Markdown' : 'Export Markdown';
 	const moveLabel = locale === 'zh' ? '移动到' : 'Move to';
 	const moreLabel = locale === 'zh' ? '更多操作' : 'More actions';
 	const refreshLabel = locale === 'zh' ? '同步便签' : 'Sync notes';
+	const fontLabel = locale === 'zh' ? '字型' : 'Font';
+	const serifLabel = locale === 'zh' ? '衬线' : 'Serif';
+	const sansLabel = locale === 'zh' ? '非衬线' : 'Sans serif';
+	const fullWidthLabel = locale === 'zh' ? '全宽' : 'Full width';
+	const selectedFontLabel = preferences.font === 'serif' ? serifLabel : sansLabel;
 	return `<div class="note-actions" data-note-toolbar-id="${html(selected.id)}">
 		<span class="note-save-status" data-note-save-status data-state="${saveState}" role="status" aria-label="${noteSaveCopy(saveState)}" title="${noteSaveCopy(saveState)}"></span>
 		<time class="note-last-modified" data-note-last-modified datetime="${html(selected.updatedAt)}">${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>
 		<button type="button" class="row-action" data-note-export title="${exportLabel}" aria-label="${exportLabel}"><i data-lucide="file-down"></i></button>
 		<button type="button" class="row-action ${selected.pinned ? 'active' : ''}" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}" aria-label="${selected.pinned ? t('unpin') : t('pin')}" aria-pressed="${selected.pinned}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
+		<div class="action-menu note-font-menu" data-action-menu>
+			<button type="button" class="row-action note-font-toggle" data-menu-toggle data-note-font-toggle data-font="${preferences.font}" title="${fontLabel}: ${selectedFontLabel}" aria-label="${fontLabel}: ${selectedFontLabel}" aria-expanded="false"><span>Aa</span></button>
+			<div class="action-menu-popover note-font-options" data-menu-popover role="menu" aria-label="${fontLabel}">
+				<button type="button" data-note-font="serif" role="menuitemradio" aria-checked="${preferences.font === 'serif'}"><span class="note-font-preview-serif">Aa</span><span>${serifLabel}</span></button>
+				<button type="button" data-note-font="sans" role="menuitemradio" aria-checked="${preferences.font === 'sans'}"><span class="note-font-preview-sans">Aa</span><span>${sansLabel}</span></button>
+			</div>
+		</div>
 		<div class="action-menu note-action-more" data-action-menu>
 			<button type="button" class="row-action" data-menu-toggle title="${moreLabel}" aria-label="${moreLabel}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
 			<div class="action-menu-popover" data-menu-popover role="menu">
+				<button type="button" data-note-full-width role="menuitemcheckbox" aria-checked="${preferences.fullWidth}"><i data-lucide="maximize-2"></i><span>${fullWidthLabel}</span><i class="note-menu-check" data-lucide="check" aria-hidden="true"></i></button>
 				<button type="button" data-note-export role="menuitem"><i data-lucide="file-down"></i><span>${exportLabel}</span></button>
 				<button type="button" data-note-move role="menuitem"><i data-lucide="folder-input"></i><span>${moveLabel}</span></button>
 				<button type="button" data-note-archive role="menuitem"><i data-lucide="archive"></i><span>${selected.archived ? t('restore') : t('archive')}</span></button>
@@ -1667,11 +1744,12 @@ function noteActionControlsMarkup(selected: Note, includeRefresh = false): strin
 }
 
 function noteToolbarMarkup(selected: Note): string {
-	return `<div class="notes-inner-toolbar">${notePathMarkup(selected)}<span class="toolbar-spacer"></span>${noteActionControlsMarkup(selected, true)}</div>`;
+	return `<div class="notes-inner-toolbar">${notePathMarkup(selected)}${noteActionControlsMarkup(selected, true)}</div>`;
 }
 
 function noteEditorMarkup(selected: Note, mobile = false): string {
-	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'}" data-note-editor-id="${html(selected.id)}">
+	const preferences = noteViewPreferences(selected.id);
+	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'} ${preferences.fullWidth ? 'note-width-full' : ''} ${preferences.font === 'serif' ? 'note-font-serif' : ''}" data-note-editor-id="${html(selected.id)}">
 		<form data-note-form>
 			${mobile ? `<div class="note-editor-head"><button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>${notePathMarkup(selected)}${noteActionControlsMarkup(selected)}</div>` : ''}
 			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-heading"><input data-note-title value="${html(selected.title)}" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}"></div><div class="note-source" data-note-source aria-label="${t('markdown')}"></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
@@ -2387,6 +2465,22 @@ function bindNoteEditor(
 			syncNotePinControls(selected);
 		}),
 	);
+	actionButtons('[data-note-full-width]').forEach((button) =>
+		button.addEventListener('click', () => {
+			const preferences = noteViewPreferences(selected.id);
+			applyNoteViewPreferences(
+				selected.id,
+				saveNoteViewPreferences(selected.id, { fullWidth: !preferences.fullWidth }),
+			);
+		}),
+	);
+	actionButtons('[data-note-font]').forEach((button) =>
+		button.addEventListener('click', () => {
+			const font = button.dataset.noteFont;
+			if (font !== 'sans' && font !== 'serif') return;
+			applyNoteViewPreferences(selected.id, saveNoteViewPreferences(selected.id, { font }));
+		}),
+	);
 	actionButtons('[data-note-archive]').forEach((button) =>
 		button.addEventListener('click', () => updateStructure({ archived: !selected.archived })),
 	);
@@ -2431,7 +2525,7 @@ function noteSortMenuMarkup(): string {
 
 function noteCardMarkup(note: Note, selected?: Note): string {
 	return `<article class="note-card ${note.id === selected?.id ? 'active' : ''}" draggable="true" data-note-card-id="${html(note.id)}"><button class="note-card-open" data-note="${html(note.id)}">
-		<div class="note-card-title"><span class="note-card-leading" aria-hidden="true"><i data-lucide="file"></i></span><span class="note-card-label">${html(note.title)}</span></div>
+		<div class="note-card-title"><span class="note-card-leading" aria-hidden="true"><i data-lucide="${note.pinned ? 'pin' : 'file'}"></i></span><span class="note-card-label">${html(note.title)}</span></div>
 	</button>
 	<div class="note-card-actions action-menu" data-action-menu>
 			<button class="row-action" data-menu-toggle title="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-label="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
@@ -2770,7 +2864,7 @@ function paintBookmarkView(): void {
 		.join('');
 	const folderTree = bookmarkFolderTreeMarkup(root, selectedFolderKey);
 	content.innerHTML = `<div class="links-layout">
-		<div class="notes-inner-toolbar"><div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择链接目录' : 'Choose link folder'}">${folderOptions}</select></div><span class="toolbar-spacer"></span><span class="note-count">${cards.length}</span><button class="button icon-button" id="links-refresh" title="${locale === 'zh' ? '拉取链接' : 'Refresh links'}" aria-label="${locale === 'zh' ? '拉取链接' : 'Refresh links'}"><i data-lucide="refresh-cw"></i></button></div>
+		<div class="notes-inner-toolbar"><div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择链接目录' : 'Choose link folder'}">${folderOptions}</select></div><span class="note-count">${cards.length}</span><button class="button icon-button" id="links-refresh" title="${locale === 'zh' ? '拉取链接' : 'Refresh links'}" aria-label="${locale === 'zh' ? '拉取链接' : 'Refresh links'}"><i data-lucide="refresh-cw"></i></button></div>
 		<div class="bookmarks-main">${bookmarkPathMarkup(bookmarkFolderPath)}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无保存链接' : 'No saved links'}</span></div>`}</div></div>
 	</div>`;
 	const context = sidebarContext();

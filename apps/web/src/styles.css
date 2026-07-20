@@ -1552,7 +1552,7 @@ dialog::backdrop {
 }
 
 .markdown-space {
-	height: 12px;
+	height: 0.55em;
 }
 
 .note-savebar {
@@ -3191,7 +3191,7 @@ body:has(.app-shell) {
 }
 
 .note-render p {
-	margin: 0 0 10px;
+	margin: 0 0 var(--md-block-gap, 0.55em);
 }
 
 .note-render code {
@@ -3202,9 +3202,9 @@ body:has(.app-shell) {
 }
 
 .note-render blockquote {
-	margin: 18px 0;
-	padding-left: 14px;
-	border-left: 3px solid var(--ink);
+	margin: 0.55em 0;
+	padding-left: 12px;
+	border-left: 2px solid var(--line-strong, var(--line));
 	color: var(--muted);
 }
 
