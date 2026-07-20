@@ -1232,7 +1232,10 @@ let notesRequest = 0;
 let archivedNotesRequest = 0;
 let noteFolders: NoteFolder[] = [];
 let noteFoldersLoaded = false;
+/** Folder used only as the target for newly created notes. Opening a folder never selects a note. */
 let selectedNoteFolderId: string | null | undefined;
+/** Obsidian-style folder expand state; folders start collapsed and only open on user click. */
+const noteExpandedFolders = new Set<string>();
 let mobileNoteDialogOpen = false;
 let flushMobileNote: (() => Promise<void>) | null = null;
 let mobileNoteId: string | undefined;
@@ -1828,7 +1831,7 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 	const compose = root.querySelector<HTMLElement>('[data-note-compose]');
 	const outline = root.querySelector<HTMLElement>('[data-note-outline]');
 	void import('./editor/markdownLivePreview')
-		.then(({ createMarkdownLivePreview, scrollToMarkdownHeading }) => {
+		.then(({ createMarkdownLivePreview, scrollToMarkdownHeading, markdownHeadingPosition }) => {
 			if (!source.isConnected) return;
 			const view = createMarkdownLivePreview(source, draftContent, {
 				onChange: (value, immediate) => {
@@ -1843,36 +1846,130 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 					const hasOutline = headings.length > 0;
 					compose.classList.toggle('has-outline', hasOutline);
 					outline.classList.toggle('empty', !hasOutline);
+					compose.classList.remove('outline-collapsed');
+					outline.classList.remove('collapsed', 'open');
 					if (!hasOutline) {
 						outline.replaceChildren();
-						compose.classList.remove('outline-collapsed');
 						return;
 					}
-					const collapsed = localStorage.getItem('r2_note_outline_collapsed') === '1';
-					outline.classList.toggle('collapsed', collapsed);
-					compose.classList.toggle('outline-collapsed', collapsed);
-					const toggle = document.createElement('button');
-					toggle.type = 'button';
-					toggle.className = 'note-outline-toggle';
-					toggle.title = locale === 'zh' ? '折叠/展开大纲' : 'Collapse/expand outline';
-					toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-					toggle.innerHTML = `<i data-lucide="chevron-down"></i><strong>${locale === 'zh' ? '大纲' : 'Outline'}</strong>`;
-					toggle.addEventListener('click', () => {
-						const next = outline.classList.toggle('collapsed');
-						compose.classList.toggle('outline-collapsed', next);
-						toggle.setAttribute('aria-expanded', next ? 'false' : 'true');
-						localStorage.setItem('r2_note_outline_collapsed', next ? '1' : '0');
+
+					const scroller = view.scrollDOM;
+					const rail = document.createElement('div');
+					rail.className = 'note-outline-rail';
+					rail.setAttribute('role', 'navigation');
+					rail.setAttribute('aria-label', locale === 'zh' ? '章节位置' : 'Section positions');
+
+					const panel = document.createElement('div');
+					panel.className = 'note-outline-panel';
+					panel.setAttribute('role', 'menu');
+
+					const markButtons: HTMLButtonElement[] = [];
+					const itemButtons: HTMLButtonElement[] = [];
+					const anchors = headings
+						.map((heading) => {
+							const from = markdownHeadingPosition(view, heading.id);
+							return from === null ? null : { id: heading.id, from };
+						})
+						.filter((item): item is { id: string; from: number } => item !== null);
+
+					const setActive = (activeId: string | null) => {
+						for (const button of markButtons) {
+							button.classList.toggle('active', button.dataset.headingId === activeId);
+						}
+						for (const button of itemButtons) {
+							button.classList.toggle('active', button.dataset.headingId === activeId);
+						}
+					};
+
+					const refreshActive = () => {
+						if (!anchors.length) {
+							setActive(null);
+							return;
+						}
+						const top = scroller.scrollTop + 36;
+						let activeId = anchors[0]!.id;
+						for (const anchor of anchors) {
+							// lineBlockAt is document-relative and stays valid while off-screen.
+							const offset = view.lineBlockAt(anchor.from).top;
+							if (offset <= top) activeId = anchor.id;
+							else break;
+						}
+						setActive(activeId);
+					};
+
+					for (const heading of headings) {
+						const mark = document.createElement('button');
+						mark.type = 'button';
+						mark.className = 'note-outline-mark';
+						mark.dataset.headingId = heading.id;
+						mark.style.setProperty('--outline-level', String(heading.level));
+						mark.title = heading.text;
+						mark.setAttribute('aria-label', heading.text);
+						mark.addEventListener('click', (event) => {
+							event.stopPropagation();
+							scrollToMarkdownHeading(view, heading.id);
+							// Mobile: first tap expands the panel; second tap (or any mark) jumps.
+							if (matchMedia('(hover: none)').matches) outline.classList.add('open');
+							refreshActive();
+						});
+						markButtons.push(mark);
+						rail.append(mark);
+
+						const item = document.createElement('button');
+						item.type = 'button';
+						item.className = 'note-outline-item';
+						item.dataset.headingId = heading.id;
+						item.style.setProperty('--outline-level', String(heading.level));
+						item.setAttribute('role', 'menuitem');
+						const label = document.createElement('span');
+						label.textContent = heading.text;
+						item.append(label);
+						item.addEventListener('click', (event) => {
+							event.stopPropagation();
+							scrollToMarkdownHeading(view, heading.id);
+							outline.classList.remove('open');
+							refreshActive();
+						});
+						itemButtons.push(item);
+						panel.append(item);
+					}
+
+					outline.replaceChildren(rail, panel);
+
+					const openPanel = () => outline.classList.add('open');
+					const closePanel = () => {
+						if (!outline.matches(':hover') && !outline.contains(document.activeElement))
+							outline.classList.remove('open');
+					};
+					outline.addEventListener('mouseenter', openPanel);
+					outline.addEventListener('mouseleave', () => {
+						if (!matchMedia('(hover: none)').matches) outline.classList.remove('open');
 					});
-					const buttons = headings.map((heading) => {
-						const button = document.createElement('button');
-						button.type = 'button';
-						button.style.setProperty('--outline-level', String(heading.level));
-						button.textContent = heading.text;
-						button.addEventListener('click', () => scrollToMarkdownHeading(view, heading.id));
-						return button;
+					rail.addEventListener('focusin', openPanel);
+					panel.addEventListener('focusout', () => closePanel());
+					// Touch: tapping the rail area toggles the floating list.
+					rail.addEventListener('click', (event) => {
+						if (!(event.target instanceof Element)) return;
+						if (event.target.closest('.note-outline-mark')) return;
+						if (matchMedia('(hover: none)').matches) outline.classList.toggle('open');
 					});
-					outline.replaceChildren(toggle, ...buttons);
-					refreshIcons();
+
+					const previous = outline as HTMLElement & {
+						_outlineScroll?: () => void;
+						_outlineOutside?: (event: Event) => void;
+					};
+					if (previous._outlineScroll) scroller.removeEventListener('scroll', previous._outlineScroll);
+					if (previous._outlineOutside) document.removeEventListener('pointerdown', previous._outlineOutside);
+					const onScroll = () => refreshActive();
+					const onOutside = (event: Event) => {
+						if (!(event.target instanceof Node) || outline.contains(event.target)) return;
+						outline.classList.remove('open');
+					};
+					previous._outlineScroll = onScroll;
+					previous._outlineOutside = onOutside;
+					scroller.addEventListener('scroll', onScroll, { passive: true });
+					document.addEventListener('pointerdown', onOutside);
+					refreshActive();
 				},
 				onImageTooLarge: () =>
 					toast(locale === 'zh' ? '图片超过 256 KB，暂不允许粘贴' : 'Images over 256 KB cannot be pasted yet'),
@@ -2029,8 +2126,9 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 		key: folder.id,
 		name: folder.name,
 		count: folder.noteCount,
-		expanded: selectedNoteFolderId === undefined || selectedNoteFolderId === folder.id,
-		active: selectedNoteFolderId === folder.id && notesFor(folder.id).length === 0,
+		expanded: noteExpandedFolders.has(folder.id),
+		// Folders themselves are never "selected" like a note; only expanded/collapsed.
+		active: false,
 		children: noteNodes(notesFor(folder.id)),
 	}));
 	const archiveTree: NoteTreeNode[] = [
@@ -2077,17 +2175,31 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 }
 
 function bindNotesFolders(content: HTMLElement, data: NotePage): void {
-	const selectFolder = (value: string) => {
+	const toggleFolder = (value: string) => {
 		notesView = 'active';
-		selectedNoteFolderId = value === 'all' ? undefined : value === 'root' ? null : value;
-		// Do not refetch a folder-scoped page: root/uncategorized notes must stay in the tree.
-		if (notesData) paintNotes(notesData, currentSelectedNoteId());
-		else void renderNotes(undefined, false);
+		if (value === 'all' || value === 'root') {
+			// Root is always visible; only clear the create-target marker.
+			selectedNoteFolderId = value === 'root' ? null : undefined;
+			if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
+			return;
+		}
+		// Obsidian behavior: click expands a closed folder, click again collapses it.
+		// Never auto-switch the open note when toggling folders.
+		if (noteExpandedFolders.has(value)) {
+			noteExpandedFolders.delete(value);
+			if (selectedNoteFolderId === value) selectedNoteFolderId = undefined;
+		} else {
+			noteExpandedFolders.add(value);
+			// Remember as create-target only; do not open/select any note.
+			selectedNoteFolderId = value;
+		}
+		if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
+		else void renderNotes(currentSelectedNoteId(), false);
 	};
 	content
 		.querySelectorAll<HTMLElement>('[data-note-folder-filter]')
 		.forEach((button) =>
-			button.addEventListener('click', () => selectFolder(button.dataset.noteFolderFilter ?? 'all')),
+			button.addEventListener('click', () => toggleFolder(button.dataset.noteFolderFilter ?? 'all')),
 		);
 	content.querySelector('[data-new-note-folder]')?.addEventListener('click', async () => {
 		const name = await openTextDialog(
@@ -2120,7 +2232,7 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 			try {
 				const updated = await api.updateNoteFolder(folder.id, name);
 				Object.assign(folder, updated);
-				paintNotes(data, data.items[0]?.id);
+				if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
 			} catch (error) {
 				toast(errorMessage(error));
 			}
@@ -2144,6 +2256,7 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 			try {
 				await api.deleteNoteFolder(folder.id);
 				noteFolders = noteFolders.filter((item) => item.id !== folder.id);
+				noteExpandedFolders.delete(folder.id);
 				if (selectedNoteFolderId === folder.id) selectedNoteFolderId = undefined;
 				invalidateNoteCaches();
 				await renderNotes(undefined, true);
@@ -2302,7 +2415,22 @@ function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?: Note):
 	const noteFor = (noteId: string | undefined) =>
 		data.items.find((item) => item.id === noteId) ?? archivedNotesData?.items.find((item) => item.id === noteId);
 	content.querySelectorAll<HTMLElement>('[data-note]').forEach((node) => {
-		node.addEventListener('click', () => paintNotes(data, node.dataset.note, true));
+		node.addEventListener('click', () => {
+			const note =
+				data.items.find((item) => item.id === node.dataset.note) ??
+				archivedNotesData?.items.find((item) => item.id === node.dataset.note);
+			// Only a note click switches the open document; also reveal its folder.
+			if (note) {
+				if (note.folderId) {
+					noteExpandedFolders.add(note.folderId);
+					selectedNoteFolderId = note.folderId;
+				} else {
+					selectedNoteFolderId = null;
+				}
+				if (note.archived) archiveExpanded = true;
+			}
+			paintNotes(data, node.dataset.note, true);
+		});
 	});
 	content.querySelectorAll<HTMLElement>('[data-note-card-id]').forEach((card) => {
 		card.addEventListener('dragstart', (event) => {
@@ -2342,6 +2470,7 @@ function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?: Note):
 	content.querySelector('#new-note')?.addEventListener('click', () => {
 		const now = new Date().toISOString();
 		const folderId = typeof selectedNoteFolderId === 'string' ? selectedNoteFolderId : null;
+		if (folderId) noteExpandedFolders.add(folderId);
 		const note: Note = {
 			id: crypto.randomUUID(),
 			title: locale === 'zh' ? '无标题便签' : 'Untitled note',

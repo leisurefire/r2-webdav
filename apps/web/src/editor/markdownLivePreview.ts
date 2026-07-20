@@ -353,6 +353,10 @@ function headingPositionForHash(view: EditorView, hash: string): number | null {
 	return position;
 }
 
+export function markdownHeadingPosition(view: EditorView, hash: string): number | null {
+	return headingPositionForHash(view, hash);
+}
+
 export function scrollToMarkdownHeading(view: EditorView, hash: string): boolean {
 	const position = headingPositionForHash(view, hash);
 	if (position === null) return false;
