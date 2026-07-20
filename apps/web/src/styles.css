@@ -2798,6 +2798,32 @@ body:has(.app-shell) {
 	background: var(--panel-bg);
 }
 
+.note-source .cm-scroller {
+	scrollbar-gutter: stable;
+	scrollbar-width: thin;
+	scrollbar-color: color-mix(in srgb, var(--quiet) 45%, transparent) transparent;
+}
+
+.note-source .cm-scroller::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+.note-source .cm-scroller::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.note-source .cm-scroller::-webkit-scrollbar-thumb {
+	border: 2px solid transparent;
+	border-radius: 999px;
+	background-clip: padding-box;
+	background-color: color-mix(in srgb, var(--quiet) 38%, transparent);
+}
+
+.note-source .cm-scroller::-webkit-scrollbar-thumb:hover {
+	background-color: color-mix(in srgb, var(--muted) 55%, transparent);
+}
+
 .note-compose textarea,
 .note-render {
 	width: 100%;

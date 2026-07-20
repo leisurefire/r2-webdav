@@ -72,6 +72,35 @@
 	overflow-y: auto;
 	overflow-x: hidden;
 	padding: 0 2px 56px;
+	/* Reserve space so a scrollbar never reflows row widths. */
+	scrollbar-gutter: stable;
+	scrollbar-width: thin;
+	scrollbar-color: color-mix(in srgb, var(--quiet) 45%, transparent) transparent;
+}
+
+.notes-tree::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+.notes-tree::-webkit-scrollbar-track {
+	background: transparent;
+	margin: 4px 0;
+}
+
+.notes-tree::-webkit-scrollbar-thumb {
+	border: 2px solid transparent;
+	border-radius: 999px;
+	background-clip: padding-box;
+	background-color: color-mix(in srgb, var(--quiet) 38%, transparent);
+}
+
+.notes-tree::-webkit-scrollbar-thumb:hover {
+	background-color: color-mix(in srgb, var(--muted) 55%, transparent);
+}
+
+.notes-tree::-webkit-scrollbar-corner {
+	background: transparent;
 }
 
 .note-tree-special,
@@ -418,6 +447,9 @@
 	max-height: min(52vh, 420px);
 	overflow-x: auto;
 	overflow-y: auto;
+	scrollbar-gutter: stable;
+	scrollbar-width: thin;
+	scrollbar-color: color-mix(in srgb, var(--quiet) 45%, transparent) transparent;
 	padding: 8px;
 	border: 1px solid var(--line);
 	border-radius: 10px;
@@ -474,6 +506,22 @@
 .note-outline-item.active {
 	color: var(--accent);
 	background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.note-outline-panel::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+.note-outline-panel::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.note-outline-panel::-webkit-scrollbar-thumb {
+	border: 2px solid transparent;
+	border-radius: 999px;
+	background-clip: padding-box;
+	background-color: color-mix(in srgb, var(--quiet) 38%, transparent);
 }
 
 .note-mode.active {
@@ -637,10 +685,45 @@
 }
 
 .cm-live-code-chrome {
-	padding: 5px 12px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	min-height: 30px;
+	padding: 4px 8px 4px 12px;
 	border-bottom: 1px solid var(--line);
 	color: var(--quiet);
 	font-size: 11px;
+}
+
+.cm-live-code-lang {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.cm-live-code-copy {
+	flex: none;
+	min-height: 22px;
+	padding: 2px 8px;
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--muted);
+	font: inherit;
+	font-size: 11px;
+	line-height: 1.2;
+	cursor: pointer;
+}
+
+.cm-live-code-copy:hover {
+	background: var(--hover-bg, var(--surface));
+	color: var(--ink);
+}
+
+.cm-live-code-copy.copied {
+	color: var(--accent);
 }
 
 .cm-live-block pre {
@@ -978,20 +1061,53 @@ details.markdown-callout > .markdown-callout-title::marker {
 
 .note-head-path {
 	flex: 1;
+	min-width: 0;
 	align-items: center;
-	gap: 6px;
+	gap: 0;
 	font-size: 12px;
 }
 
-.note-head-path .note-folder-select {
-	flex: none;
-	max-width: 140px;
+.note-path {
+	min-width: 0;
+	max-width: 100%;
+	color: var(--muted);
 }
 
-.note-head-path > span:last-child {
+.note-path-item {
+	flex: none;
+	min-width: 0;
+	max-width: 180px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	padding: 4px 6px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	font-size: inherit;
+	line-height: 1.2;
+	text-align: left;
+	cursor: pointer;
+}
+
+.note-path-item:hover {
+	background: var(--hover-bg);
+	color: var(--ink);
+}
+
+.note-path-item.current {
+	max-width: min(280px, 42vw);
 	background: transparent;
 	color: var(--ink);
 	font-weight: 600;
+	cursor: default;
+}
+
+.note-path-separator {
+	flex: none;
+	color: var(--quiet);
 }
 
 .note-editor-head .note-actions {
@@ -1089,26 +1205,15 @@ details.markdown-callout > .markdown-callout-title::marker {
 	display: none;
 }
 
-.note-location span {
+.note-location .note-path-item,
+.note-location .note-path-separator {
 	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
 }
 
-.note-location span:not([aria-hidden='true']) {
-	padding: 2px 4px;
-	border-radius: 4px;
-}
-
-.note-location span:last-child {
-	background: var(--hover-bg);
-	color: var(--ink);
-}
-
-.note-location span[aria-hidden='true'] {
+.note-location .note-path-separator {
 	flex: none;
 	overflow: visible;
-	color: var(--line);
+	color: var(--quiet);
 }
 
 .note-heading > input {
@@ -1179,19 +1284,6 @@ details.markdown-callout > .markdown-callout-title::marker {
 	overflow-y: hidden;
 }
 
-.note-folder-select {
-	width: min(132px, 20vw);
-	height: 30px;
-	flex: none;
-	padding: 0 24px 0 8px;
-	border: 0;
-	border-radius: 6px;
-	background: var(--surface);
-	color: var(--muted);
-	font-size: 11px;
-	text-overflow: ellipsis;
-}
-
 .note-mobile-back {
 	display: none;
 }
@@ -1241,10 +1333,6 @@ details.markdown-callout > .markdown-callout-title::marker {
 
 	.note-outline-item > span {
 		max-width: 180px;
-	}
-
-	.note-folder-select {
-		width: 92px;
 	}
 
 	.note-heading > input {

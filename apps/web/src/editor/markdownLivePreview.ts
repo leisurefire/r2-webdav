@@ -797,15 +797,49 @@ class BlockWidget extends SourceWidget {
 		if (this.block.kind === 'fence') {
 			const lines = this.source.split('\n');
 			const label = /^\s*(?:`{3,}|~{3,})(.*)$/.exec(lines[0])?.[1].trim() ?? '';
+			const codeText = lines.slice(1, -1).join('\n');
 			const chrome = document.createElement('div');
 			chrome.className = 'cm-live-code-chrome';
-			chrome.textContent = label || 'code';
+			const lang = document.createElement('span');
+			lang.className = 'cm-live-code-lang';
+			lang.textContent = label || 'code';
+			const copy = document.createElement('button');
+			const zh = navigator.language.toLowerCase().startsWith('zh');
+			const copyLabel = zh ? '复制' : 'Copy';
+			const copiedLabel = zh ? '已复制' : 'Copied';
+			const failedLabel = zh ? '失败' : 'Failed';
+			copy.type = 'button';
+			copy.className = 'cm-live-code-copy';
+			copy.title = zh ? '复制代码' : 'Copy code';
+			copy.setAttribute('aria-label', copy.title);
+			copy.textContent = copyLabel;
+			copy.addEventListener('mousedown', (event) => {
+				// Keep the editor selection/source mapping from stealing the click.
+				event.preventDefault();
+				event.stopPropagation();
+			});
+			copy.addEventListener('click', async (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				try {
+					await navigator.clipboard.writeText(codeText);
+					copy.textContent = copiedLabel;
+					copy.classList.add('copied');
+				} catch {
+					copy.textContent = failedLabel;
+				}
+				window.setTimeout(() => {
+					copy.textContent = copyLabel;
+					copy.classList.remove('copied');
+				}, 1400);
+			});
+			chrome.append(lang, copy);
 			const code = document.createElement('code');
-			code.textContent = lines.slice(1, -1).join('\n');
+			code.textContent = codeText;
 			const pre = document.createElement('pre');
 			pre.append(code);
 			wrapper.append(chrome, pre);
-			bindSourceNavigation(chrome, this.block.from, lines[0], 'geometry');
+			bindSourceNavigation(lang, this.block.from, lines[0], 'geometry');
 			const codeFrom = lines[0].length + 1;
 			bindSourceNavigation(
 				code,
@@ -1497,7 +1531,12 @@ export function createMarkdownLivePreview(
 		],
 	});
 	const view = new EditorView({ state, parent });
-	options.onHeadingsChange?.(renderMarkdownDocument(view.state.doc.toString()).headings);
+	// Defer the initial headings callback so callers can finish assigning `const view = ...`
+	// before the outline code references the EditorView instance.
+	queueMicrotask(() => {
+		if (!view.dom.isConnected) return;
+		options.onHeadingsChange?.(renderMarkdownDocument(view.state.doc.toString()).headings);
+	});
 	return view;
 }
 

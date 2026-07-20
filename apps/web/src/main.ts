@@ -1446,15 +1446,48 @@ async function loadNoteFolders(force = false): Promise<void> {
 	}
 }
 
-function noteFolderSelectMarkup(selectedFolderId: string | null | undefined): string {
-	const label = locale === 'zh' ? '便签目录' : 'Note folder';
-	return `<select class="note-folder-select" data-note-folder-select aria-label="${label}" title="${label}"><option value="" ${selectedFolderId ? '' : 'selected'}>${locale === 'zh' ? '根目录' : 'Root'}</option>${noteFolders.map((folder) => `<option value="${html(folder.id)}" ${selectedFolderId === folder.id ? 'selected' : ''}>${html(folder.name)}</option>`).join('')}</select>`;
+function notePathMarkup(note: Note): string {
+	const rootLabel = locale === 'zh' ? '根目录' : 'Root';
+	const folder = note.folderId ? noteFolders.find((item) => item.id === note.folderId) : undefined;
+	const title = note.title.trim() || (locale === 'zh' ? '无标题便签' : 'Untitled note');
+	const crumbs = [
+		`<button type="button" class="note-path-item" data-note-path-folder="root" title="${rootLabel}">${rootLabel}</button>`,
+	];
+	if (folder) {
+		crumbs.push('<span class="note-path-separator" aria-hidden="true">/</span>');
+		crumbs.push(
+			`<button type="button" class="note-path-item" data-note-path-folder="${html(folder.id)}" title="${html(folder.name)}">${html(folder.name)}</button>`,
+		);
+	}
+	crumbs.push('<span class="note-path-separator" aria-hidden="true">/</span>');
+	crumbs.push(`<span class="note-path-item current" data-note-path-title title="${html(title)}">${html(title)}</span>`);
+	return `<nav class="collection-path note-location note-head-path note-path" aria-label="${locale === 'zh' ? '当前便签路径' : 'Current note path'}">${crumbs.join('')}</nav>`;
+}
+
+function revealNoteFolderInTree(folderId: string | null): void {
+	notesView = 'active';
+	if (folderId) {
+		noteExpandedFolders.add(folderId);
+		selectedNoteFolderId = folderId;
+	} else {
+		selectedNoteFolderId = null;
+	}
+	const selectedId = currentSelectedNoteId();
+	if (notesData) replaceNotesSidebar(notesData, selectedId);
+	requestAnimationFrame(() => {
+		const tree = document.querySelector<HTMLElement>('[data-notes-tree]');
+		if (!tree) return;
+		const target = folderId
+			? tree.querySelector<HTMLElement>(`[data-note-folder-drop="${CSS.escape(folderId)}"]`)
+			: tree.querySelector<HTMLElement>('.notes-tree-root-pinned, .notes-tree-root-unpinned, [data-note-folder-drop="root"]');
+		target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+	});
 }
 
 function noteEditorMarkup(selected: Note, mobile = false): string {
 	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'}" data-note-editor-id="${html(selected.id)}">
 		<form data-note-form>
-			<div class="note-editor-head">${mobile ? `<button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>` : ''}<div class="collection-path note-location note-head-path">${noteFolderSelectMarkup(selected.folderId)}<span aria-hidden="true">/</span><span>${html(selected.title)}</span></div><span class="note-save-status" data-note-save-status aria-live="polite"></span><time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
+			<div class="note-editor-head">${mobile ? `<button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>` : ''}${notePathMarkup(selected)}<span class="note-save-status" data-note-save-status aria-live="polite"></span><time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
 				<button type="button" class="row-action" data-note-export title="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}" aria-label="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}"><i data-lucide="file-down"></i></button>
 				<button type="button" class="row-action ${selected.pinned ? 'active' : ''}" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}" aria-label="${selected.pinned ? t('unpin') : t('pin')}" aria-pressed="${selected.pinned}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
 				<button type="button" class="row-action" data-note-archive title="${selected.archived ? t('restore') : t('archive')}" aria-label="${selected.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
@@ -1550,11 +1583,15 @@ function syncNoteTitle(note: Note, source?: HTMLInputElement): void {
 		const input = editor.querySelector<HTMLInputElement>('[data-note-title]');
 		if (input && input !== source && input !== document.activeElement) input.value = note.title;
 		const location = editor.querySelector<HTMLElement>('.note-location');
-		const locationTitle = location?.querySelector<HTMLElement>('span:last-child');
-		if (locationTitle) locationTitle.textContent = note.title;
+		const locationTitle = location?.querySelector<HTMLElement>('[data-note-path-title]');
+		const title = note.title.trim() || (locale === 'zh' ? '无标题便签' : 'Untitled note');
+		if (locationTitle) {
+			locationTitle.textContent = title;
+			locationTitle.title = title;
+		}
 		if (location) {
 			const folder = note.folderId ? noteFolders.find((item) => item.id === note.folderId)?.name : undefined;
-			location.title = [folder, note.title].filter(Boolean).join(' / ');
+			location.title = [folder, title].filter(Boolean).join(' / ');
 		}
 	});
 }
@@ -1578,11 +1615,30 @@ function syncNoteMetadata(note: Note): void {
 	syncNoteTitle(note);
 	document.querySelectorAll<HTMLElement>('[data-note-editor-id]').forEach((editor) => {
 		if (editor.dataset.noteEditorId !== note.id) return;
-		const folder = editor.querySelector<HTMLSelectElement>('[data-note-folder-select]');
-		if (folder) folder.value = note.folderId ?? '';
+		const path = editor.querySelector<HTMLElement>('.note-path');
+		if (path) {
+			const wrapper = document.createElement('div');
+			wrapper.innerHTML = notePathMarkup(note);
+			const next = wrapper.firstElementChild;
+			if (next instanceof HTMLElement) {
+				path.replaceWith(next);
+				bindNotePath(editor, note);
+			}
+		}
 		const time = editor.querySelector<HTMLTimeElement>('.note-editor-head > time');
 		if (time) time.textContent = new Date(note.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en');
 	});
+}
+
+function bindNotePath(root: HTMLElement, _note: Note): void {
+	root.querySelectorAll<HTMLElement>('[data-note-path-folder]').forEach((button) =>
+		button.addEventListener('click', (event) => {
+			event.preventDefault();
+			const value = button.dataset.notePathFolder ?? 'root';
+			// Keep the open note; path clicks only navigate the tree.
+			revealNoteFolderInTree(value === 'root' ? null : value);
+		}),
+	);
 }
 
 function reorderVisibleNoteCards(data: NotePage): void {
@@ -1843,6 +1899,7 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 				},
 				onHeadingsChange: (headings) => {
 					if (!outline || !compose) return;
+					try {
 					const hasOutline = headings.length > 0;
 					compose.classList.toggle('has-outline', hasOutline);
 					outline.classList.toggle('empty', !hasOutline);
@@ -1970,6 +2027,9 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 					scroller.addEventListener('scroll', onScroll, { passive: true });
 					document.addEventListener('pointerdown', onOutside);
 					refreshActive();
+					} catch (error) {
+						console.error('Note outline failed', error);
+					}
 				},
 				onImageTooLarge: () =>
 					toast(locale === 'zh' ? '图片超过 256 KB，暂不允许粘贴' : 'Images over 256 KB cannot be pasted yet'),
@@ -1988,7 +2048,8 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 				});
 			});
 		})
-		.catch(() => {
+		.catch((error) => {
+			console.error('Markdown editor failed to load', error);
 			const status = root.querySelector<HTMLElement>('[data-note-save-status]');
 			if (status) status.textContent = locale === 'zh' ? '编辑器加载失败' : 'Editor failed to load';
 			toast(locale === 'zh' ? '编辑器加载失败，无法同步修改' : 'Editor failed to load; changes cannot sync');
@@ -2011,10 +2072,7 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		syncNoteMetadata(selected);
 		if (notesData) replaceNotesSidebar(notesData, selected.id);
 	};
-	root.querySelector<HTMLSelectElement>('[data-note-folder-select]')?.addEventListener('change', (event) => {
-		const folderId = (event.target as HTMLSelectElement).value || null;
-		updateStructure({ folderId });
-	});
+	bindNotePath(root, selected);
 	root
 		.querySelector<HTMLFormElement>('[data-note-form]')
 		?.addEventListener('submit', (event) => event.preventDefault());
