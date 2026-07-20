@@ -1733,19 +1733,6 @@ function applyNoteViewPreferences(noteId: string, preferences: NoteViewPreferenc
 			widthButton.setAttribute('aria-checked', String(preferences.fullWidth));
 			widthButton.classList.toggle('selected', preferences.fullWidth);
 		}
-		const fontButton = toolbar.querySelector<HTMLElement>('[data-note-font-toggle]');
-		if (fontButton) {
-			fontButton.dataset.font = preferences.font;
-			fontButton.title =
-				preferences.font === 'serif'
-					? locale === 'zh'
-						? '衬线字型'
-						: 'Serif font'
-					: locale === 'zh'
-						? '非衬线字型'
-						: 'Sans-serif font';
-			fontButton.setAttribute('aria-label', fontButton.title);
-		}
 		toolbar.querySelectorAll<HTMLElement>('[data-note-font]').forEach((button) => {
 			const selected = button.dataset.noteFont === preferences.font;
 			button.classList.toggle('selected', selected);
@@ -1765,30 +1752,35 @@ function noteActionControlsMarkup(selected: Note, includeRefresh = false): strin
 	const serifLabel = locale === 'zh' ? '衬线' : 'Serif';
 	const sansLabel = locale === 'zh' ? '非衬线' : 'Sans serif';
 	const fullWidthLabel = locale === 'zh' ? '全宽' : 'Full width';
-	const selectedFontLabel = preferences.font === 'serif' ? serifLabel : sansLabel;
 	return `<div class="note-actions" data-note-toolbar-id="${html(selected.id)}">
-		<span class="note-save-status" data-note-save-status data-state="${saveState}" role="status" aria-label="${noteSaveCopy(saveState)}" title="${noteSaveCopy(saveState)}"></span>
-		<time class="note-last-modified" data-note-last-modified datetime="${html(selected.updatedAt)}">${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>
-		<button type="button" class="row-action" data-note-export title="${exportLabel}" aria-label="${exportLabel}"><i data-lucide="file-down"></i></button>
-		<button type="button" class="row-action ${selected.pinned ? 'active' : ''}" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}" aria-label="${selected.pinned ? t('unpin') : t('pin')}" aria-pressed="${selected.pinned}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
-		<div class="action-menu note-font-menu" data-action-menu>
-			<button type="button" class="row-action note-font-toggle" data-menu-toggle data-note-font-toggle data-font="${preferences.font}" title="${fontLabel}: ${selectedFontLabel}" aria-label="${fontLabel}: ${selectedFontLabel}" aria-expanded="false"><span>Aa</span></button>
-			<div class="action-menu-popover note-font-options" data-menu-popover role="menu" aria-label="${fontLabel}">
-				<button type="button" data-note-font="serif" role="menuitemradio" aria-checked="${preferences.font === 'serif'}"><span class="note-font-preview-serif">Aa</span><span>${serifLabel}</span></button>
-				<button type="button" data-note-font="sans" role="menuitemradio" aria-checked="${preferences.font === 'sans'}"><span class="note-font-preview-sans">Aa</span><span>${sansLabel}</span></button>
-			</div>
+		<div class="note-actions-meta">
+			<span class="note-save-status" data-note-save-status data-state="${saveState}" role="status" aria-label="${noteSaveCopy(saveState)}" title="${noteSaveCopy(saveState)}"></span>
+			<time class="note-last-modified" data-note-last-modified datetime="${html(selected.updatedAt)}">${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>
 		</div>
-		<div class="action-menu note-action-more" data-action-menu>
-			<button type="button" class="row-action" data-menu-toggle title="${moreLabel}" aria-label="${moreLabel}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
-			<div class="action-menu-popover" data-menu-popover role="menu">
-				<button type="button" class="desktop-only-action" data-note-full-width role="menuitemcheckbox" aria-checked="${preferences.fullWidth}"><i data-lucide="maximize-2"></i><span>${fullWidthLabel}</span><i class="note-menu-check" data-lucide="check" aria-hidden="true"></i></button>
-				<button type="button" data-note-export role="menuitem"><i data-lucide="file-down"></i><span>${exportLabel}</span></button>
-				<button type="button" data-note-move role="menuitem"><i data-lucide="folder-input"></i><span>${moveLabel}</span></button>
-				<button type="button" data-note-archive role="menuitem"><i data-lucide="archive"></i><span>${selected.archived ? t('restore') : t('archive')}</span></button>
-				<button type="button" class="danger" data-note-delete role="menuitem"><i data-lucide="trash-2"></i><span>${t('delete')}</span></button>
+		<div class="note-actions-tools">
+			<button type="button" class="row-action" data-note-export title="${exportLabel}" aria-label="${exportLabel}"><i data-lucide="file-down"></i></button>
+			<button type="button" class="row-action ${selected.pinned ? 'active' : ''}" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}" aria-label="${selected.pinned ? t('unpin') : t('pin')}" aria-pressed="${selected.pinned}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
+			<div class="action-menu note-action-more" data-action-menu>
+				<button type="button" class="row-action" data-menu-toggle title="${moreLabel}" aria-label="${moreLabel}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
+				<div class="action-menu-popover note-more-popover" data-menu-popover role="menu">
+					<div class="note-font-card" role="group" aria-label="${fontLabel}">
+						<button type="button" class="note-font-choice" data-note-font="sans" role="menuitemradio" aria-checked="${preferences.font === 'sans'}" title="${sansLabel}" aria-label="${sansLabel}">
+							<span class="note-font-preview note-font-preview-sans">Aa</span>
+							<span class="note-font-choice-label">${sansLabel}</span>
+						</button>
+						<button type="button" class="note-font-choice" data-note-font="serif" role="menuitemradio" aria-checked="${preferences.font === 'serif'}" title="${serifLabel}" aria-label="${serifLabel}">
+							<span class="note-font-preview note-font-preview-serif">Aa</span>
+							<span class="note-font-choice-label">${serifLabel}</span>
+						</button>
+					</div>
+					<button type="button" class="desktop-only-action" data-note-full-width role="menuitemcheckbox" aria-checked="${preferences.fullWidth}"><i data-lucide="maximize-2"></i><span>${fullWidthLabel}</span><i class="note-menu-check" data-lucide="check" aria-hidden="true"></i></button>
+					<button type="button" data-note-move role="menuitem"><i data-lucide="folder-input"></i><span>${moveLabel}</span></button>
+					<button type="button" data-note-archive role="menuitem"><i data-lucide="archive"></i><span>${selected.archived ? t('restore') : t('archive')}</span></button>
+					<button type="button" class="danger" data-note-delete role="menuitem"><i data-lucide="trash-2"></i><span>${t('delete')}</span></button>
+				</div>
 			</div>
+			${includeRefresh ? `<button type="button" class="button icon-button note-refresh" data-notes-refresh title="${refreshLabel}" aria-label="${refreshLabel}"><i data-lucide="refresh-cw"></i></button>` : ''}
 		</div>
-		${includeRefresh ? `<button type="button" class="button icon-button note-refresh" id="notes-refresh" title="${refreshLabel}" aria-label="${refreshLabel}"><i data-lucide="refresh-cw"></i></button>` : ''}
 	</div>`;
 }
 

@@ -190,6 +190,27 @@ function appendFrontmatter(documentNode: Document, entries: FrontmatterEntry[]):
 	documentNode.body.prepend(properties);
 }
 
+/** Loose lists put a single <p> in each <li>; unwrap so item gaps stay tight. */
+function compactListItems(root: ParentNode): void {
+	root.querySelectorAll('li').forEach((item) => {
+		const only = item.children.length === 1 ? item.firstElementChild : null;
+		if (!only || only.tagName !== 'P') return;
+		// Keep multi-paragraph list bodies intact.
+		if (only.nextSibling) return;
+		while (only.firstChild) item.insertBefore(only.firstChild, only);
+		only.remove();
+	});
+	// Blank quote lines become empty paragraphs between blocks; drop pure spacers.
+	root.querySelectorAll('p').forEach((paragraph) => {
+		const text = paragraph.textContent?.replace(/\u00a0/g, ' ').trim() ?? '';
+		const onlyBreak =
+			paragraph.childElementCount === 1 &&
+			paragraph.children[0]?.tagName === 'BR' &&
+			text.length === 0;
+		if ((text.length === 0 && paragraph.childElementCount === 0) || onlyBreak) paragraph.remove();
+	});
+}
+
 function decorateCallouts(documentNode: Document): void {
 	documentNode.body.querySelectorAll('blockquote').forEach((blockquote) => {
 		const paragraph = blockquote.firstElementChild;
@@ -217,6 +238,7 @@ function decorateCallouts(documentNode: Document): void {
 			appendCalloutTitle(summary, type, label);
 			const content = documentNode.createElement('div');
 			while (blockquote.firstChild) content.append(blockquote.firstChild);
+			compactListItems(content);
 			details.append(summary, content);
 			blockquote.replaceWith(details);
 			return;
@@ -226,6 +248,7 @@ function decorateCallouts(documentNode: Document): void {
 		appendCalloutTitle(title, type, label);
 		callout.append(title);
 		while (blockquote.firstChild) callout.append(blockquote.firstChild);
+		compactListItems(callout);
 		blockquote.replaceWith(callout);
 	});
 }
@@ -246,6 +269,8 @@ function sanitizedDocument(parsed: string): Document {
 		}
 	});
 	decorateCallouts(documentNode);
+	// Compact loose single-paragraph list items across the whole note body too.
+	compactListItems(documentNode.body);
 	return documentNode;
 }
 
