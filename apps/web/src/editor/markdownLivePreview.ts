@@ -1449,6 +1449,7 @@ export function createMarkdownLivePreview(
 			livePreviewField,
 			newContentField,
 			aiReviewField,
+			selectionHoldField,
 			clearNewOnPointer,
 			EditorView.mouseSelectionStyle.of(livePreviewMouseSelectionStyle),
 			history(),
@@ -1527,62 +1528,51 @@ const newContentField = StateField.define<DecorationSet>({
 });
 
 /**
- * AI review mode: original lines get strike-through, generated lines get a blue
- * tint. Active ranges are stored and remapped so selection/focus updates keep the
- * preview visible until accept/undo/clear.
+ * AI review mode: character-level deleted/inserted marks inside a unified preview.
+ * Segments are stored with absolute document positions and remapped across edits.
  */
-type AiReviewActive = { deletedFrom: number; insertedFrom: number; count: number };
+export type AiReviewSegment = { from: number; to: number; kind: 'deleted' | 'inserted' };
 
-const aiReviewSetEffect = StateEffect.define<AiReviewActive | null>();
+const aiReviewSetEffect = StateEffect.define<AiReviewSegment[] | null>();
 
-export function buildAiReviewDecorations(doc: EditorState['doc'], active: AiReviewActive): DecorationSet {
-	if (active.count <= 0) return Decoration.none;
-	const ranges: { from: number; to: number; value: Decoration }[] = [];
-	let deletedPos = Math.max(0, Math.min(active.deletedFrom, doc.length));
-	let insertedPos = Math.max(0, Math.min(active.insertedFrom, doc.length));
-	for (let index = 0; index < active.count; index += 1) {
-		if (deletedPos > doc.length || insertedPos > doc.length) break;
-		const deletedLine = doc.lineAt(deletedPos);
-		const insertedLine = doc.lineAt(insertedPos);
-		// Line decorations must be zero-length point ranges at the line start.
-		ranges.push({ from: deletedLine.from, to: deletedLine.from, value: Decoration.line({ class: 'cm-ai-review-deleted' }) });
-		ranges.push({ from: insertedLine.from, to: insertedLine.from, value: Decoration.line({ class: 'cm-ai-review-inserted' }) });
-		deletedPos = deletedLine.to + 1;
-		insertedPos = insertedLine.to + 1;
-	}
-	return ranges.length
-		? Decoration.set(
-				ranges.map((item) => item.value.range(item.from, item.to)),
-				true,
-			)
-		: Decoration.none;
+export function buildAiReviewMarkDecorations(segments: AiReviewSegment[]): DecorationSet {
+	const ranges = segments
+		.filter((segment) => segment.to > segment.from)
+		.map((segment) =>
+			Decoration.mark({
+				class: segment.kind === 'deleted' ? 'cm-ai-review-deleted' : 'cm-ai-review-inserted',
+			}).range(segment.from, segment.to),
+		);
+	return ranges.length ? Decoration.set(ranges, true) : Decoration.none;
 }
 
-const aiReviewField = StateField.define<{ active: AiReviewActive | null; decorations: DecorationSet }>({
-	create: () => ({ active: null, decorations: Decoration.none }),
+const aiReviewField = StateField.define<{ segments: AiReviewSegment[] | null; decorations: DecorationSet }>({
+	create: () => ({ segments: null, decorations: Decoration.none }),
 	update(value, transaction) {
-		let active = value.active;
+		let segments = value.segments;
 		let rebuild = false;
 		for (const effect of transaction.effects) {
 			if (effect.is(aiReviewSetEffect)) {
-				active = effect.value;
+				segments = effect.value;
 				rebuild = true;
 			}
 		}
-		if (!active || active.count <= 0) {
-			if (!rebuild && value.active === null) return value;
-			return { active: null, decorations: Decoration.none };
+		if (!segments || segments.length === 0) {
+			if (!rebuild && value.segments === null) return value;
+			return { segments: null, decorations: Decoration.none };
 		}
 		if (transaction.docChanged) {
-			active = {
-				deletedFrom: transaction.changes.mapPos(active.deletedFrom, 1),
-				insertedFrom: transaction.changes.mapPos(active.insertedFrom, 1),
-				count: active.count,
-			};
+			segments = segments
+				.map((segment) => ({
+					from: transaction.changes.mapPos(segment.from, 1),
+					to: transaction.changes.mapPos(segment.to, -1),
+					kind: segment.kind,
+				}))
+				.filter((segment) => segment.to > segment.from);
 			rebuild = true;
 		}
 		if (!rebuild) return value;
-		return { active, decorations: buildAiReviewDecorations(transaction.state.doc, active) };
+		return { segments, decorations: buildAiReviewMarkDecorations(segments) };
 	},
 	provide: (field) => EditorView.decorations.from(field, (state) => state.decorations),
 });
@@ -1593,24 +1583,51 @@ export function markNewContent(view: EditorView, from: number, to: number): void
 	view.dispatch({ effects: newContentEffect.of({ from, to }) });
 }
 
-export interface AiReviewRange {
-	deletedFrom: number;
-	insertedFrom: number;
-	lineCount: number;
-}
-
-/** Show the AI review decoration for a rewrite preview. */
-export function showAiReview(view: EditorView, range: AiReviewRange): void {
-	view.dispatch({
-		effects: aiReviewSetEffect.of({
-			deletedFrom: range.deletedFrom,
-			insertedFrom: range.insertedFrom,
-			count: range.lineCount,
-		}),
-	});
+/** Show the AI review decoration for a character-level rewrite preview. */
+export function showAiReview(view: EditorView, segments: AiReviewSegment[]): void {
+	view.dispatch({ effects: aiReviewSetEffect.of(segments) });
 }
 
 /** Clear the AI review decoration (accept, undo, or abort). */
 export function clearAiReview(view: EditorView): void {
 	view.dispatch({ effects: aiReviewSetEffect.of(null) });
 }
+
+/**
+ * Persist a soft selection highlight while the AI panel steals focus.
+ * Active (editor focused / panel open): light blue; inactive: light gray.
+ */
+const selectionHoldEffect = StateEffect.define<{ from: number; to: number } | null>();
+
+const selectionHoldField = StateField.define<DecorationSet>({
+	create: () => Decoration.none,
+	update(deco, transaction) {
+		let next = deco.map(transaction.changes);
+		for (const effect of transaction.effects) {
+			if (effect.is(selectionHoldEffect)) {
+				if (!effect.value || effect.value.to <= effect.value.from) next = Decoration.none;
+				else
+					next = Decoration.set([
+						Decoration.mark({ class: 'cm-ai-selection-hold' }).range(effect.value.from, effect.value.to),
+					]);
+			}
+		}
+		return next;
+	},
+	provide: (field) => EditorView.decorations.from(field),
+});
+
+/** Show a durable selection highlight independent of native focus. */
+export function holdSelectionHighlight(view: EditorView, from: number, to: number): void {
+	if (to <= from) {
+		view.dispatch({ effects: selectionHoldEffect.of(null) });
+		return;
+	}
+	view.dispatch({ effects: selectionHoldEffect.of({ from, to }) });
+}
+
+/** Clear the durable selection highlight. */
+export function clearSelectionHold(view: EditorView): void {
+	view.dispatch({ effects: selectionHoldEffect.of(null) });
+}
+

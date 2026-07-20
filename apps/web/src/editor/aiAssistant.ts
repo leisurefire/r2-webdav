@@ -6,17 +6,25 @@ import {
 	Check,
 	Code,
 	Italic,
-	MessageSquareText,
 	RotateCcw,
 	Sigma,
 	Sparkles,
+	Square,
 	WandSparkles,
 	X,
 	createElement,
 	type IconNode,
 } from 'lucide';
 import { aiModelForAction, api, type AiAction } from '../api/client';
-import { clearAiReview, markNewContent, showAiReview, toggleMarkdownWrap } from './markdownLivePreview';
+import {
+	clearAiReview,
+	clearSelectionHold,
+	holdSelectionHighlight,
+	markNewContent,
+	showAiReview,
+	toggleMarkdownWrap,
+} from './markdownLivePreview';
+import { buildAiReviewPreview } from './textDiff';
 import { renderMarkdown } from './markdownRenderer';
 
 type Locale = 'en' | 'zh';
@@ -27,10 +35,10 @@ const AI_ICONS: Record<string, IconNode> = {
 	check: Check,
 	code: Code,
 	italic: Italic,
-	'message-square-text': MessageSquareText,
 	'rotate-ccw': RotateCcw,
 	sigma: Sigma,
 	sparkles: Sparkles,
+	square: Square,
 	'wand-sparkles': WandSparkles,
 	x: X,
 };
@@ -77,6 +85,41 @@ const FORMAT_BUTTONS: Array<{ id: string; marker: string; icon: string; zh: stri
 	{ id: 'formula', marker: '$', icon: 'sigma', zh: '公式', en: 'Formula' },
 ];
 
+
+const SUMMARIZE_INSTRUCTION_ZH = '请用简洁的 Markdown 总结选中内容，保留关键信息；可用要点列表。只返回总结正文。';
+const SUMMARIZE_INSTRUCTION_EN =
+	'Summarize the selection concisely in Markdown. Keep key facts; use a short bullet list when helpful. Return only the summary body.';
+
+const POLISH_INSTRUCTIONS = {
+	formal: {
+		zh: '请将选中文本润色为更正式、书面的表达，保持原意与 Markdown 结构。只返回润色后的正文。',
+		en: 'Polish into a more formal, professional tone while preserving meaning and Markdown structure. Return only the polished body.',
+	},
+	concise: {
+		zh: '请将选中文本润色得更简洁精炼，去掉冗余，保持原意与 Markdown 结构。只返回润色后的正文。',
+		en: 'Polish to be more concise and remove redundancy while preserving meaning and Markdown structure. Return only the polished body.',
+	},
+	witty: {
+		zh: '请将选中文本润色得更轻松风趣，增强可读性，保持原意与 Markdown 结构。只返回润色后的正文。',
+		en: 'Polish with a lighter, witty tone while preserving meaning and Markdown structure. Return only the polished body.',
+	},
+} as const;
+
+type PolishStyle = keyof typeof POLISH_INSTRUCTIONS;
+
+/** Split rewrite model output: first short sentence is the status note, rest is Markdown body. */
+export function splitRewriteSummary(value: string): { summary: string; body: string } {
+	const trimmed = value.trim();
+	if (!trimmed) return { summary: '', body: '' };
+	const blank = /^(.*?)\n\s*\n([\s\S]*)$/.exec(trimmed);
+	if (blank) return { summary: blank[1].trim(), body: blank[2].trim() };
+	const lineBreak = trimmed.indexOf('\n');
+	if (lineBreak > 0) {
+		return { summary: trimmed.slice(0, lineBreak).trim(), body: trimmed.slice(lineBreak + 1).trim() };
+	}
+	return { summary: '', body: trimmed };
+}
+
 /** How much of [from, to) is wrapped by paired markers: none, partially, or fully. */
 function markerCoverage(view: EditorView, from: number, to: number, marker: string): 'none' | 'partial' | 'full' {
 	const doc = view.state.doc.toString();
@@ -118,9 +161,18 @@ export function bindMarkdownAiAssistant(
 		toolbar = null;
 	};
 
-	const openPanel = (action: AiAction, requestText: string, range: AiRange, presetInstruction = '') => {
+	const openPanel = (
+		action: AiAction,
+		requestText: string,
+		range: AiRange,
+		presetInstruction = '',
+		panelOptions: { autoStart?: boolean; hideInstruction?: boolean } = {},
+	) => {
 		removeToolbar();
 		removePanel();
+		// Keep a soft selection highlight while the panel steals focus.
+		if (range.to > range.from) holdSelectionHighlight(view, range.from, range.to);
+		else clearSelectionHold(view);
 		panel = document.createElement('div');
 		panel.className = 'ai-panel';
 		const actionLabel = {
@@ -144,7 +196,7 @@ export function bindMarkdownAiAssistant(
 			<div class="ai-result" data-ai-result hidden></div>
 			<footer class="ai-panel-actions" data-ai-actions hidden>
 				<button class="row-action" type="button" data-ai-edit title="${t('重新编辑要求', 'Edit request')}" aria-label="${t('重新编辑要求', 'Edit request')}"><i data-lucide="rotate-ccw"></i></button>
-				<button class="button" type="button" data-ai-undo hidden>${t('撤销', 'Undo')}</button><button class="button" type="button" data-ai-insert-below hidden>${t('在下面插入', 'Insert below')}</button>
+				<button class="button" type="button" data-ai-insert-below hidden title="${t('保留原文并在下方插入 AI 结果', 'Keep the selection and insert the AI result below')}">${t('在下面插入', 'Insert below')}</button>
 				<span class="toolbar-spacer"></span>
 				<button class="button primary" type="button" data-ai-main></button>
 			</footer>
@@ -199,7 +251,6 @@ export function bindMarkdownAiAssistant(
 		const actionsNode = panel.querySelector<HTMLElement>('[data-ai-actions]')!;
 		const mainButton = panel.querySelector<HTMLButtonElement>('[data-ai-main]')!;
 		const editButton = panel.querySelector<HTMLButtonElement>('[data-ai-edit]')!;
-		const undoButton = panel.querySelector<HTMLButtonElement>('[data-ai-undo]')!;
 		const insertBelowButton = panel.querySelector<HTMLButtonElement>('[data-ai-insert-below]')!;
 		input.value = presetInstruction;
 
@@ -209,27 +260,21 @@ export function bindMarkdownAiAssistant(
 		let streamText = '';
 		let controller: AbortController | null = null;
 		let accepted = false;
-		let review: { insertedFrom: number; undoFrom: number; undoTo: number; original: string } | null = null;
+		let review: { undoFrom: number; undoTo: number; original: string; generated: string } | null = null;
 
-		const padToSameLines = (source: string, generated: string): [string, string] => {
-			const sourceLines = source.split('\n').length;
-			const generatedLines = generated.split('\n').length;
-			if (sourceLines === generatedLines) return [source, generated];
-			const pad = (value: string, count: number) => value + '\n'.repeat(Math.max(0, count - value.split('\n').length));
-			const total = Math.max(sourceLines, generatedLines);
-			return [pad(source, total), pad(generated, total)];
-		};
-
+		let hideInstruction = Boolean(panelOptions.hideInstruction);
 		const setStage = (next: Stage) => {
 			stage = next;
-			form.hidden = next !== 'input';
+			form.hidden = next !== 'input' || hideInstruction;
 			resultNode.hidden = next === 'input';
 			actionsNode.hidden = next === 'input';
 			editButton.hidden = next !== 'done';
+			// Polish/rewrite: accept replaces selection; insert-below keeps the selection and appends.
+			insertBelowButton.hidden = !(next === 'done' && (action === 'polish' || action === 'rewrite'));
 			panel?.classList.toggle('busy', next === 'busy');
 			if (next === 'busy') {
 				mainButton.disabled = false;
-				mainButton.innerHTML = `<i data-lucide="x"></i><span>${t('终止', 'Stop')}</span>`;
+				mainButton.innerHTML = `<i data-lucide="square"></i><span>${t('终止', 'Stop')}</span>`;
 			} else if (next === 'done') {
 				mainButton.disabled = false;
 				mainButton.innerHTML = `<i data-lucide="check"></i><span>${action === 'generate' || action === 'summarize' ? t('在下方插入', 'Insert below') : t('接受', 'Accept')}</span>`;
@@ -237,9 +282,25 @@ export function bindMarkdownAiAssistant(
 			paintIcons(actionsNode);
 		};
 
+		/** Discard an in-progress review preview and restore the original selection text. */
+		const discardReview = () => {
+			if (!review) {
+				clearAiReview(view);
+				return;
+			}
+			clearAiReview(view);
+			view.dispatch({
+				changes: { from: review.undoFrom, to: review.undoTo, insert: review.original },
+				annotations: Transaction.userEvent.of('input'),
+			});
+			review = null;
+		};
+
+		/** Close the panel. Pending AI review previews are always discarded (never kept as an insert). */
 		const close = () => {
 			controller?.abort();
-			clearAiReview(view);
+			discardReview();
+			clearSelectionHold(view);
 			removePanel();
 			view.focus();
 		};
@@ -265,38 +326,57 @@ export function bindMarkdownAiAssistant(
 			resultNode.innerHTML = `<div class="ai-thinking"><i data-lucide="sparkles"></i><span>${t('正在生成…', 'Writing…')}</span></div>`;
 			paintIcons(resultNode);
 			try {
+				const instruction = input.value.trim() || presetInstruction || undefined;
+				// Rewrite: keep a stable loading state (no token streaming in the panel).
+				const streamIntoPanel = action !== 'rewrite';
 				await api.ai(
 					{
 						model: aiModelForAction(action),
 						action,
 						text: requestText || request,
-						instruction: input.value.trim() || undefined,
+						instruction,
 						context: view.state.doc.toString(),
 					},
 					(token) => {
 						streamText += token;
-						showResult(normalizeAiMarkdown(streamText));
+						if (streamIntoPanel) showResult(normalizeAiMarkdown(streamText));
 					},
 					controller.signal,
 				);
+				let note = '';
 				result = normalizeAiMarkdown(streamText);
+				if (action === 'rewrite') {
+					const split = splitRewriteSummary(result);
+					note =
+						split.summary ||
+						t('已按照你的要求完成修改，请查看。', 'Edits applied as requested.');
+					result = split.body || result;
+				}
 				if (!result) throw new Error(t('AI 没有返回内容', 'AI returned no content'));
 				if (action === 'polish' || action === 'rewrite') {
-					const [paddedSource, paddedGenerated] = padToSameLines(requestText, result);
-					const lineCount = paddedGenerated.split('\n').length;
 					const original = view.state.sliceDoc(range.from, range.to);
+					const preview = buildAiReviewPreview(original, result);
 					view.dispatch({
-						changes: { from: range.from, to: range.to, insert: `${paddedSource}\n${paddedGenerated}` },
+						changes: { from: range.from, to: range.to, insert: preview.text },
 						annotations: Transaction.userEvent.of('input'),
 					});
 					review = {
-						insertedFrom: range.from + paddedSource.length + 1,
 						undoFrom: range.from,
-						undoTo: range.from + paddedSource.length + 1 + paddedGenerated.length,
+						undoTo: range.from + preview.text.length,
 						original,
+						generated: result,
 					};
-					showAiReview(view, { deletedFrom: range.from, insertedFrom: review.insertedFrom, lineCount });
-					resultNode.innerHTML = `<div class="ai-review-note">${t('已按照你的要求进行了更改。', 'Done. Changes applied as requested.')}</div>`;
+					// Diff preview replaces the soft selection hold.
+					clearSelectionHold(view);
+					showAiReview(
+						view,
+						preview.segments.map((segment) => ({
+							from: range.from + segment.from,
+							to: range.from + segment.to,
+							kind: segment.kind,
+						})),
+					);
+					resultNode.innerHTML = `<div class="ai-review-note">${note || t('已按照你的要求完成修改，请查看。', 'Edits applied as requested.')}</div>`;
 				} else {
 					showResult(result);
 				}
@@ -334,16 +414,10 @@ export function bindMarkdownAiAssistant(
 		input.addEventListener('keyup', (event) => event.stopPropagation());
 		input.addEventListener('keypress', (event) => event.stopPropagation());
 		editButton.addEventListener('click', () => {
-			clearAiReview(view);
-			if (review) {
-				view.dispatch({
-					changes: { from: review.undoFrom, to: review.undoTo, insert: review.original },
-					annotations: Transaction.userEvent.of('input'),
-				});
-				review = null;
-			}
+			discardReview();
 			result = '';
 			streamText = '';
+			hideInstruction = false;
 			setStage('input');
 			input.focus();
 		});
@@ -355,13 +429,14 @@ export function bindMarkdownAiAssistant(
 			}
 			if (stage !== 'done') return;
 			if (review) {
-				// Accept: keep only the generated lines.
+				// Accept: keep only the generated text (drop deleted spans from the preview).
+				const acceptedText = review.generated;
 				view.dispatch({
-					changes: { from: review.undoFrom, to: review.undoTo, insert: result },
+					changes: { from: review.undoFrom, to: review.undoTo, insert: acceptedText },
 					annotations: Transaction.userEvent.of('input'),
 				});
 				clearAiReview(view);
-				markNewContent(view, review.undoFrom, review.undoFrom + result.length);
+				markNewContent(view, review.undoFrom, review.undoFrom + acceptedText.length);
 				review = null;
 				close();
 				return;
@@ -389,22 +464,69 @@ export function bindMarkdownAiAssistant(
 			if (title) options.onTitleChange?.(title);
 			close();
 		});
-		panel.querySelector('[data-ai-close]')?.addEventListener('click', close);
+		const insertGeneratedBelow = () => {
+			if (stage !== 'done') return;
+			const generated = (review?.generated ?? result).trimEnd();
+			if (!generated) return;
+			if (review) {
+				// Restore the original selection, then append the AI result under it.
+				clearAiReview(view);
+				const original = review.original;
+				const separator = !original
+					? ''
+					: original.endsWith('\n\n')
+						? ''
+						: original.endsWith('\n')
+							? '\n'
+							: '\n\n';
+				const combined = `${original}${separator}${generated}`;
+				const insertedFrom = review.undoFrom + original.length + separator.length;
+				view.dispatch({
+					changes: { from: review.undoFrom, to: review.undoTo, insert: combined },
+					selection: { anchor: insertedFrom + generated.length },
+					annotations: Transaction.userEvent.of('input'),
+					scrollIntoView: true,
+				});
+				markNewContent(view, insertedFrom, insertedFrom + generated.length);
+				review = null;
+				close();
+				return;
+			}
+			// Fallback for non-review actions that expose the same control.
+			const insertAt = range.to;
+			const prefix = insertAt > 0 && !view.state.sliceDoc(Math.max(0, insertAt - 2), insertAt).endsWith('\n\n')
+				? view.state.sliceDoc(Math.max(0, insertAt - 1), insertAt) === '\n'
+					? '\n'
+					: '\n\n'
+				: '';
+			const inserted = `${prefix}${generated}`;
+			view.dispatch({
+				changes: { from: insertAt, to: insertAt, insert: inserted },
+				selection: { anchor: insertAt + inserted.length },
+				annotations: Transaction.userEvent.of('input'),
+				scrollIntoView: true,
+			});
+			markNewContent(view, insertAt, insertAt + inserted.length);
+			close();
+		};
+		insertBelowButton.addEventListener('click', insertGeneratedBelow);
+
+		panel.querySelector('[data-ai-close]')?.addEventListener('click', (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			// Close discards the review; it never inserts AI output.
+			close();
+		});
 		panel.addEventListener('keydown', (event) => {
 			if (event.key === 'Escape') {
 				event.stopPropagation();
-				if (review) {
-					clearAiReview(view);
-					view.dispatch({
-						changes: { from: review.undoFrom, to: review.undoTo, insert: review.original },
-						annotations: Transaction.userEvent.of('input'),
-					});
-					review = null;
-				}
+				// close() already discards any review preview; do not accept/insert.
 				close();
 			}
 		});
+		if (hideInstruction) form.hidden = true;
 		const focusInstruction = () => {
+			if (hideInstruction) return;
 			input.focus({ preventScroll: true });
 			// Some browsers move caret back to CodeMirror after the mouseup that opened the panel.
 			window.setTimeout(() => {
@@ -412,18 +534,26 @@ export function bindMarkdownAiAssistant(
 			}, 0);
 		};
 		focusInstruction();
-		if ((action === 'generate' && requestText) || (action !== 'generate' && presetInstruction)) void generate();
+		const shouldAutoStart =
+			panelOptions.autoStart ||
+			(action === 'generate' && Boolean(requestText)) ||
+			(action !== 'generate' && Boolean(presetInstruction) && action !== 'rewrite');
+		if (shouldAutoStart) void generate();
 		placePanel();
 		syncEmptyPrompt();
 	};
 	const showToolbar = () => {
 		if (!host.isConnected) return removeToolbar();
+		// While the AI panel is open, keep the soft selection hold and skip the floating menu.
+		if (panel) return removeToolbar();
 		const range = view.state.selection.main;
 		if (range.empty) {
 			trackedSelection = null;
+			if (!panel) clearSelectionHold(view);
 			return removeToolbar();
 		}
 		trackedSelection = { from: range.from, to: range.to, text: view.state.sliceDoc(range.from, range.to) };
+		holdSelectionHighlight(view, range.from, range.to);
 		const coords = view.coordsAtPos(range.from);
 		removeToolbar();
 		toolbar = document.createElement('div');
@@ -437,9 +567,8 @@ export function bindMarkdownAiAssistant(
 			<span class="ai-menu-divider"></span>
 			<span class="ai-menu-badge"><i data-lucide="sparkles"></i></span>
 			<button type="button" data-action="summarize">${t('总结', 'Summarize')}</button>
-			<button type="button" data-action="polish">${t('润色', 'Polish')}</button>
-			<button type="button" data-action="rewrite">${t('修改', 'Edit')}</button>
-			<button type="button" data-ask title="${t('让 AI 处理选中文本', 'Ask AI to edit the selection')}" aria-label="${t('让 AI 处理选中文本', 'Ask AI to edit the selection')}"><i data-lucide="message-square-text"></i></button>`;
+			<button type="button" data-action="polish" aria-haspopup="menu" aria-expanded="false">${t('润色', 'Polish')}</button>
+			<button type="button" data-action="rewrite">${t('修改', 'Edit')}</button>`;
 		if (coords) {
 			toolbar.style.left = `${Math.max(8, Math.min(coords.left, innerWidth - 340))}px`;
 			toolbar.style.top = `${Math.max(8, coords.top - 48)}px`;
@@ -460,18 +589,79 @@ export function bindMarkdownAiAssistant(
 				view.focus();
 			});
 		});
+		const removePolishMenu = () => document.querySelector('.ai-polish-menu')?.remove();
+
 		toolbar.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((button) =>
 			button.addEventListener('mousedown', (event) => {
 				event.preventDefault();
+				event.stopPropagation();
 				if (!trackedSelection) return;
-				openPanel(button.dataset.action as AiAction, trackedSelection.text, trackedSelection);
+				const action = button.dataset.action as AiAction;
+				if (action === 'summarize') {
+					removePolishMenu();
+					openPanel(
+						'summarize',
+						trackedSelection.text,
+						trackedSelection,
+						zh ? SUMMARIZE_INSTRUCTION_ZH : SUMMARIZE_INSTRUCTION_EN,
+						{ autoStart: true, hideInstruction: true },
+					);
+					return;
+				}
+				if (action === 'polish') {
+					removePolishMenu();
+					const expanded = button.getAttribute('aria-expanded') === 'true';
+					const menuHost = toolbar;
+					if (!menuHost) return;
+					menuHost.querySelectorAll<HTMLButtonElement>('[data-action="polish"]').forEach((item) =>
+						item.setAttribute('aria-expanded', 'false'),
+					);
+					if (expanded) return;
+					button.setAttribute('aria-expanded', 'true');
+					const menu = document.createElement('div');
+					menu.className = 'ai-polish-menu';
+					menu.setAttribute('role', 'menu');
+					const rect = button.getBoundingClientRect();
+					menu.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - 140))}px`;
+					menu.style.top = `${Math.min(innerHeight - 140, rect.bottom + 6)}px`;
+					menu.innerHTML = `
+						<button type="button" role="menuitem" data-polish="formal">${t('正式', 'Formal')}</button>
+						<button type="button" role="menuitem" data-polish="concise">${t('简洁', 'Concise')}</button>
+						<button type="button" role="menuitem" data-polish="witty">${t('风趣', 'Witty')}</button>`;
+					document.body.append(menu);
+					const selection = trackedSelection;
+					menu.querySelectorAll<HTMLButtonElement>('[data-polish]').forEach((item) => {
+						item.addEventListener('mousedown', (menuEvent) => {
+							menuEvent.preventDefault();
+							menuEvent.stopPropagation();
+							const style = item.dataset.polish as PolishStyle;
+							const prompt = POLISH_INSTRUCTIONS[style][zh ? 'zh' : 'en'];
+							removePolishMenu();
+							if (!selection) return;
+							openPanel('polish', selection.text, selection, prompt, {
+								autoStart: true,
+								hideInstruction: true,
+							});
+						});
+					});
+					const onDocDown = (docEvent: Event) => {
+						if (menu.contains(docEvent.target as Node) || button.contains(docEvent.target as Node)) return;
+						removePolishMenu();
+						button.setAttribute('aria-expanded', 'false');
+						document.removeEventListener('mousedown', onDocDown, true);
+					};
+					document.addEventListener('mousedown', onDocDown, true);
+					return;
+				}
+				if (action === 'rewrite') {
+					removePolishMenu();
+					openPanel('rewrite', trackedSelection.text, trackedSelection, '', {
+						autoStart: false,
+						hideInstruction: false,
+					});
+				}
 			}),
 		);
-		toolbar.querySelector('[data-ask]')?.addEventListener('mousedown', (event) => {
-			event.preventDefault();
-			if (!trackedSelection) return;
-			openPanel('rewrite', trackedSelection.text, trackedSelection);
-		});
 	};
 
 	const scheduleToolbar = () => requestAnimationFrame(showToolbar);

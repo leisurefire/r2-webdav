@@ -120,6 +120,51 @@ function calloutTitle(type: string): string {
 	return type.replace(/[-_]+/g, ' ').replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
 }
 
+/** Minimal stroke icons for Obsidian callout types (kept inline for preview HTML). */
+const CALLOUT_ICONS: Record<string, string> = {
+	note: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+	abstract: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/>',
+	info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+	todo: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m9 12 2 2 4-4"/>',
+	tip: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12c.6.6 1 1.5 1 2.4V18h6v-1.6c0-.9.4-1.8 1-2.4A7 7 0 0 0 12 2z"/>',
+	success: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/>',
+	question: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+	warning: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+	failure: '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>',
+	danger: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+	bug: '<rect x="8" y="6" width="8" height="12" rx="2"/><path d="m19 9-3 2"/><path d="m5 9 3 2"/><path d="m19 15-3-2"/><path d="m5 15 3-2"/><path d="M12 6V3"/>',
+	example: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+	quote: '<path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3z"/>',
+};
+
+const CALLOUT_ICON_ALIASES: Record<string, string> = {
+	summary: 'abstract',
+	tldr: 'abstract',
+	hint: 'tip',
+	important: 'tip',
+	check: 'success',
+	done: 'success',
+	help: 'question',
+	faq: 'question',
+	caution: 'warning',
+	attention: 'warning',
+	fail: 'failure',
+	missing: 'failure',
+	error: 'danger',
+	cite: 'quote',
+};
+
+
+function appendCalloutTitle(target: HTMLElement, type: string, label: string): void {
+	const icon = document.createElement('span');
+	icon.className = 'markdown-callout-icon';
+	icon.setAttribute('aria-hidden', 'true');
+	icon.innerHTML = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">${(CALLOUT_ICONS[CALLOUT_ICON_ALIASES[type] ?? type] ?? CALLOUT_ICONS.note)}</svg>`;
+	const text = document.createElement('span');
+	text.textContent = label;
+	target.append(icon, text);
+}
+
 function appendFrontmatter(documentNode: Document, entries: FrontmatterEntry[]): void {
 	if (entries.length === 0) return;
 	const properties = documentNode.createElement('dl');
@@ -149,24 +194,27 @@ function decorateCallouts(documentNode: Document): void {
 		if (paragraph.firstChild?.nodeName === 'BR') paragraph.firstChild.remove();
 		if (!paragraph.textContent?.trim() && paragraph.childElementCount === 0) paragraph.remove();
 
+		const label = match[3]?.trim() || calloutTitle(type);
 		const callout = documentNode.createElement('aside');
 		callout.className = `markdown-callout markdown-callout-${type}`;
-		const title = documentNode.createElement('div');
-		title.className = 'markdown-callout-title';
-		title.textContent = match[3]?.trim() || calloutTitle(type);
+		callout.dataset.callout = type;
 		if (match[2]) {
 			const details = documentNode.createElement('details');
 			details.className = callout.className;
+			details.dataset.callout = type;
 			details.open = match[2] === '+';
 			const summary = documentNode.createElement('summary');
 			summary.className = 'markdown-callout-title';
-			summary.textContent = title.textContent;
+			appendCalloutTitle(summary, type, label);
 			const content = documentNode.createElement('div');
 			while (blockquote.firstChild) content.append(blockquote.firstChild);
 			details.append(summary, content);
 			blockquote.replaceWith(details);
 			return;
 		}
+		const title = documentNode.createElement('div');
+		title.className = 'markdown-callout-title';
+		appendCalloutTitle(title, type, label);
 		callout.append(title);
 		while (blockquote.firstChild) callout.append(blockquote.firstChild);
 		blockquote.replaceWith(callout);

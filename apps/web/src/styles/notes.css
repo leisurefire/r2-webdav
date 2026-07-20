@@ -345,6 +345,10 @@
 	grid-template-columns: minmax(0, 1fr) minmax(150px, 200px);
 }
 
+.note-compose.has-outline.outline-collapsed {
+	grid-template-columns: minmax(0, 1fr) 40px;
+}
+
 .note-document {
 	min-width: 0;
 	min-height: 0;
@@ -392,15 +396,35 @@
 	font-size: 11px;
 }
 
+.note-outline.collapsed {
+	padding: 10px 6px;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0;
+}
+
 .note-outline.collapsed .note-outline-toggle {
-	margin-bottom: 0;
+	width: 28px;
+	min-height: 28px;
+	margin: 0;
+	padding: 6px;
+	justify-content: center;
+	border-radius: 8px;
+	writing-mode: horizontal-tb;
+}
+
+.note-outline.collapsed .note-outline-toggle strong {
+	display: none;
 }
 
 .note-outline.collapsed .note-outline-toggle svg {
-	transform: rotate(-90deg);
+	transform: rotate(90deg);
 }
 
-.note-outline.collapsed > button:not(.note-outline-toggle) {
+.note-outline.collapsed > button:not(.note-outline-toggle),
+.note-outline.collapsed > span {
 	display: none;
 }
 
@@ -688,10 +712,12 @@
 }
 
 .markdown-callout {
+	--callout-color: var(--accent);
 	margin: 12px 0;
-	padding: 10px 12px;
-	border-left: 3px solid var(--accent);
-	background: color-mix(in srgb, var(--accent) 8%, var(--panel-bg));
+	padding: 10px 12px 10px 12px;
+	border-left: 3px solid var(--callout-color);
+	background: color-mix(in srgb, var(--callout-color) 9%, var(--panel-bg));
+	border-radius: 0 8px 8px 0;
 }
 
 .cm-live-quote > .markdown-callout {
@@ -699,31 +725,160 @@
 }
 
 .markdown-callout-title {
-	margin-bottom: 5px;
-	color: var(--ink);
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 6px;
+	color: var(--callout-color);
 	font-weight: 650;
+	font-size: 0.95em;
+}
+
+.markdown-callout-icon {
+	display: inline-flex;
+	width: 16px;
+	height: 16px;
+	flex: none;
+	color: var(--callout-color);
+}
+
+.markdown-callout-icon svg {
+	width: 16px;
+	height: 16px;
+	stroke: currentColor;
+	fill: none;
+	stroke-width: 2;
+	stroke-linecap: round;
+	stroke-linejoin: round;
 }
 
 details.markdown-callout > .markdown-callout-title {
 	cursor: pointer;
+	list-style: none;
+}
+
+details.markdown-callout > .markdown-callout-title::-webkit-details-marker {
+	display: none;
 }
 
 details.markdown-callout > .markdown-callout-title::marker {
-	color: currentColor;
+	content: '';
+}
+
+.markdown-callout-note,
+.markdown-callout-info,
+.markdown-callout-todo {
+	--callout-color: #2563eb;
+}
+
+.markdown-callout-abstract,
+.markdown-callout-summary,
+.markdown-callout-tldr {
+	--callout-color: #0d9488;
+}
+
+.markdown-callout-tip,
+.markdown-callout-hint,
+.markdown-callout-important {
+	--callout-color: #0891b2;
+}
+
+.markdown-callout-success,
+.markdown-callout-check,
+.markdown-callout-done {
+	--callout-color: #16a34a;
+}
+
+.markdown-callout-question,
+.markdown-callout-help,
+.markdown-callout-faq {
+	--callout-color: #db2777;
 }
 
 .markdown-callout-warning,
 .markdown-callout-caution,
 .markdown-callout-attention {
-	border-left-color: #d97706;
-	background: color-mix(in srgb, #d97706 9%, var(--panel-bg));
+	--callout-color: #d97706;
+}
+
+.markdown-callout-failure,
+.markdown-callout-fail,
+.markdown-callout-missing {
+	--callout-color: #dc2626;
 }
 
 .markdown-callout-danger,
-.markdown-callout-error,
-.markdown-callout-failure {
-	border-left-color: #dc2626;
-	background: color-mix(in srgb, #dc2626 8%, var(--panel-bg));
+.markdown-callout-error {
+	--callout-color: #dc2626;
+}
+
+.markdown-callout-bug {
+	--callout-color: #dc2626;
+}
+
+.markdown-callout-example {
+	--callout-color: #7c3aed;
+}
+
+.markdown-callout-quote,
+.markdown-callout-cite {
+	--callout-color: #6b7280;
+}
+
+@media (prefers-color-scheme: dark) {
+	.markdown-callout-note,
+	.markdown-callout-info,
+	.markdown-callout-todo {
+		--callout-color: #93c5fd;
+	}
+
+	.markdown-callout-abstract,
+	.markdown-callout-summary,
+	.markdown-callout-tldr {
+		--callout-color: #5eead4;
+	}
+
+	.markdown-callout-tip,
+	.markdown-callout-hint,
+	.markdown-callout-important {
+		--callout-color: #67e8f9;
+	}
+
+	.markdown-callout-success,
+	.markdown-callout-check,
+	.markdown-callout-done {
+		--callout-color: #86efac;
+	}
+
+	.markdown-callout-question,
+	.markdown-callout-help,
+	.markdown-callout-faq {
+		--callout-color: #f9a8d4;
+	}
+
+	.markdown-callout-warning,
+	.markdown-callout-caution,
+	.markdown-callout-attention {
+		--callout-color: #fbbf24;
+	}
+
+	.markdown-callout-failure,
+	.markdown-callout-fail,
+	.markdown-callout-missing,
+	.markdown-callout-danger,
+	.markdown-callout-error,
+	.markdown-callout-bug {
+		--callout-color: #fca5a5;
+	}
+
+	.markdown-callout-example {
+		--callout-color: #c4b5fd;
+	}
+
+	.markdown-callout-quote,
+	.markdown-callout-cite {
+		--callout-color: #9ca3af;
+	}
 }
 
 .cm-live-image {
@@ -812,6 +967,28 @@ details.markdown-callout > .markdown-callout-title::marker {
 	margin-left: auto;
 }
 
+/* Soft selection hold while AI panel has focus (survives native selection blur). */
+.cm-ai-selection-hold {
+	background: color-mix(in srgb, #3b82f6 18%, transparent);
+	border-radius: 2px;
+	box-decoration-break: clone;
+	-webkit-box-decoration-break: clone;
+}
+
+.cm-editor:not(.cm-focused) .cm-ai-selection-hold {
+	background: color-mix(in srgb, #9ca3af 20%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+	.cm-ai-selection-hold {
+		background: color-mix(in srgb, #60a5fa 24%, transparent);
+	}
+
+	.cm-editor:not(.cm-focused) .cm-ai-selection-hold {
+		background: color-mix(in srgb, #6b7280 28%, transparent);
+	}
+}
+
 /* Fresh paste / AI insert highlight, cleared on next edit or click. */
 .cm-live-new-content {
 	background: color-mix(in srgb, #3b82f6 16%, transparent);
@@ -820,21 +997,23 @@ details.markdown-callout > .markdown-callout-title::marker {
 	-webkit-box-decoration-break: clone;
 }
 
-/* AI review: struck-through original lines, blue-tinted generated lines. */
-.cm-ai-review-deleted,
-.cm-ai-review-deleted .cm-line,
-.cm-line.cm-ai-review-deleted {
-	color: var(--quiet) !important;
+/* AI review: character-level delete/insert marks inside a unified preview. */
+.cm-ai-review-deleted {
+	color: var(--quiet);
 	text-decoration: line-through;
-	text-decoration-color: color-mix(in srgb, var(--quiet) 70%, transparent);
-	background: transparent;
+	text-decoration-color: color-mix(in srgb, var(--quiet) 75%, transparent);
+	background: color-mix(in srgb, #9ca3af 12%, transparent);
+	border-radius: 2px;
+	box-decoration-break: clone;
+	-webkit-box-decoration-break: clone;
 }
 
-.cm-ai-review-inserted,
-.cm-ai-review-inserted .cm-line,
-.cm-line.cm-ai-review-inserted {
-	color: #2563eb !important;
-	background: color-mix(in srgb, #3b82f6 14%, transparent);
+.cm-ai-review-inserted {
+	color: #2563eb;
+	background: color-mix(in srgb, #3b82f6 16%, transparent);
+	border-radius: 2px;
+	box-decoration-break: clone;
+	-webkit-box-decoration-break: clone;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -842,17 +1021,14 @@ details.markdown-callout > .markdown-callout-title::marker {
 		background: color-mix(in srgb, #60a5fa 22%, transparent);
 	}
 
-	.cm-ai-review-inserted,
-	.cm-ai-review-inserted .cm-line,
-	.cm-line.cm-ai-review-inserted {
-		color: #93c5fd !important;
-		background: color-mix(in srgb, #3b82f6 22%, transparent);
+	.cm-ai-review-inserted {
+		color: #93c5fd;
+		background: color-mix(in srgb, #3b82f6 24%, transparent);
 	}
 
-	.cm-ai-review-deleted,
-	.cm-ai-review-deleted .cm-line,
-	.cm-line.cm-ai-review-deleted {
-		color: #9ca3af !important;
+	.cm-ai-review-deleted {
+		color: #9ca3af;
+		background: color-mix(in srgb, #6b7280 18%, transparent);
 	}
 }
 
@@ -1028,14 +1204,45 @@ details.markdown-callout > .markdown-callout-title::marker {
 		border-bottom: 1px solid var(--line);
 		max-height: 38vh;
 		overflow-y: auto;
+		order: -1;
+	}
+
+	.note-compose.has-outline {
+		grid-template-columns: 1fr;
+		grid-template-rows: auto minmax(0, 1fr);
+	}
+
+	.note-compose.has-outline.outline-collapsed {
+		grid-template-columns: 1fr;
+		grid-template-rows: auto minmax(0, 1fr);
 	}
 
 	.note-outline-toggle {
 		margin-bottom: 2px;
 	}
 
+	.note-outline.collapsed {
+		padding: 4px 10px;
+		max-height: none;
+		align-items: stretch;
+		border-bottom: 1px solid var(--line);
+	}
+
 	.note-outline.collapsed .note-outline-toggle {
-		margin-bottom: 0;
+		width: 100%;
+		min-height: 32px;
+		margin: 0;
+		padding: 6px 8px;
+		justify-content: flex-start;
+		gap: 6px;
+	}
+
+	.note-outline.collapsed .note-outline-toggle strong {
+		display: inline;
+	}
+
+	.note-outline.collapsed .note-outline-toggle svg {
+		transform: rotate(-90deg);
 	}
 
 	.note-folder-select {

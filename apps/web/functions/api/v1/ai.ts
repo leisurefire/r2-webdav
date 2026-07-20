@@ -63,14 +63,23 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
 		};
 		if (!MODELS.includes(input.model ?? '') || !input.text?.trim() || input.text.length > 120_000)
 			return fail('Invalid AI request', 400);
-		const language = 'Use the same language as the user text. Return Markdown only, without code fences or commentary.';
+		const language =
+			input.action === 'rewrite'
+				? 'Use the same language as the user text. Do not wrap the whole answer in code fences.'
+				: 'Use the same language as the user text. Return Markdown only, without code fences or commentary.';
 		const task =
 			input.action === 'summarize'
-				? 'Summarize the selected text concisely.'
+				? 'Summarize the selected text concisely in Markdown. Return only the summary body.'
 				: input.action === 'polish'
-					? 'Polish the writing while preserving meaning and Markdown structure.'
+					? 'Polish the writing while preserving meaning and Markdown structure. Return only the polished Markdown.'
 					: input.action === 'rewrite'
-						? 'Rewrite the selected text according to the instruction.'
+						? [
+							'Edit the selected text according to the instruction.',
+							'First line: one short plain-language sentence (no Markdown heading) describing what you changed, e.g. "已按照你的要求添加了代码，请查看" / "Added the requested code snippet."',
+							'Then a blank line.',
+							'Then the full rewritten Markdown only.',
+							'Do not put the summary after the body.',
+						  ].join(' ')
 						: 'Write a useful Markdown note from the request. Start with a single H1 heading (# Title) that captures the topic as the note title, then a blank line, then the body.';
 		const prompt = [
 			task,

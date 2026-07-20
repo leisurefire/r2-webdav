@@ -1816,16 +1816,23 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 					outline.classList.toggle('empty', !hasOutline);
 					if (!hasOutline) {
 						outline.replaceChildren();
+						compose.classList.remove('outline-collapsed');
 						return;
 					}
-					outline.classList.toggle('collapsed', localStorage.getItem('r2_note_outline_collapsed') === '1');
+					const collapsed = localStorage.getItem('r2_note_outline_collapsed') === '1';
+					outline.classList.toggle('collapsed', collapsed);
+					compose.classList.toggle('outline-collapsed', collapsed);
 					const toggle = document.createElement('button');
 					toggle.type = 'button';
 					toggle.className = 'note-outline-toggle';
+					toggle.title = locale === 'zh' ? '折叠/展开大纲' : 'Collapse/expand outline';
+					toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
 					toggle.innerHTML = `<i data-lucide="chevron-down"></i><strong>${locale === 'zh' ? '大纲' : 'Outline'}</strong>`;
 					toggle.addEventListener('click', () => {
-						const collapsed = outline.classList.toggle('collapsed');
-						localStorage.setItem('r2_note_outline_collapsed', collapsed ? '1' : '0');
+						const next = outline.classList.toggle('collapsed');
+						compose.classList.toggle('outline-collapsed', next);
+						toggle.setAttribute('aria-expanded', next ? 'false' : 'true');
+						localStorage.setItem('r2_note_outline_collapsed', next ? '1' : '0');
 					});
 					const buttons = headings.map((heading) => {
 						const button = document.createElement('button');

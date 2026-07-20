@@ -277,6 +277,41 @@
 	height: 12px;
 }
 
+.ai-selection-menu button.active,
+.ai-selection-menu button[aria-expanded='true'] {
+	background: var(--surface);
+}
+
+.ai-polish-menu {
+	position: fixed;
+	z-index: 70;
+	display: flex;
+	flex-direction: column;
+	min-width: 120px;
+	padding: 4px;
+	border-radius: 10px;
+	background: var(--ai-panel-bg);
+	border: 1px solid var(--line);
+	box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+}
+
+.ai-polish-menu button {
+	border: none;
+	background: transparent;
+	color: var(--ink);
+	font: inherit;
+	font-size: 13px;
+	text-align: left;
+	padding: 8px 10px;
+	border-radius: 6px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.ai-polish-menu button:hover {
+	background: var(--surface);
+}
+
 .ai-review-note {
 	padding: 10px 2px;
 	font-size: 13px;
@@ -372,6 +407,10 @@
 	}
 
 	.ai-selection-menu {
+		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+	}
+
+	.ai-polish-menu {
 		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 	}
 
