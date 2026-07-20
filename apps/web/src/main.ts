@@ -1451,6 +1451,13 @@ let noteFoldersLoaded = false;
 let selectedNoteFolderId: string | null | undefined;
 /** Obsidian-style folder expand state; folders start collapsed and only open on user click. */
 const noteExpandedFolders = new Set<string>();
+/** Folder scopes whose note index pages are fully loaded ('root' | folder id | 'archive'). */
+const noteScopesLoaded = new Set<string>();
+/** Folder scopes currently fetching note indexes. */
+const noteScopesLoading = new Set<string>();
+/** Note ids whose full body has been fetched (meta list omits content). */
+const noteContentLoaded = new Set<string>();
+const noteContentLoading = new Set<string>();
 let draggingNoteFolderId: string | null = null;
 let mobileNoteDialogOpen = false;
 let flushMobileNote: (() => Promise<void>) | null = null;
@@ -1633,6 +1640,137 @@ function invalidateNoteCaches(): void {
 		if (key?.startsWith('r2_notes_v3_')) localStorage.removeItem(key);
 	}
 	validatedNotePages.clear();
+}
+
+function resetNoteScopes(): void {
+	noteScopesLoaded.clear();
+	noteScopesLoading.clear();
+}
+
+function noteScopeKey(folderId: string | null | undefined, archived = false): string {
+	if (archived) return 'archive';
+	return folderId === null || folderId === undefined ? 'root' : folderId;
+}
+
+function knownNoteFolderIds(): Set<string> {
+	return new Set(noteFolders.map((folder) => folder.id));
+}
+
+/** Map deleted/unknown folder membership onto root so notes stay visible in the tree. */
+function effectiveNoteFolderId(note: Note): string | null {
+	if (note.archived) return null;
+	const folderId = note.folderId ?? null;
+	if (!folderId) return null;
+	return knownNoteFolderIds().has(folderId) ? folderId : null;
+}
+
+function emptyNotePage(): NotePage {
+	return { items: [], page: 1, pageSize: 50, total: 0, hasMore: false };
+}
+
+function mergeNotesIntoPage(page: NotePage, incoming: Note[], markContentLoaded: boolean): void {
+	const byId = new Map(page.items.map((note) => [note.id, note]));
+	for (const note of incoming) {
+		const existing = byId.get(note.id);
+		if (existing) {
+			const keepContent =
+				!markContentLoaded && noteContentLoaded.has(existing.id) ? existing.content : note.content;
+			Object.assign(existing, note, { content: keepContent });
+			if (markContentLoaded) noteContentLoaded.add(existing.id);
+		} else {
+			page.items.push(note);
+			byId.set(note.id, note);
+			if (markContentLoaded) noteContentLoaded.add(note.id);
+			else if (note.content) noteContentLoaded.add(note.id);
+		}
+	}
+	sortNotes(page.items);
+	page.total = Math.max(page.total, page.items.length);
+	page.hasMore = false;
+}
+
+async function fetchNoteScopePages(
+	folderId: string | null | undefined,
+	archived: boolean,
+): Promise<{ items: Note[]; total: number }> {
+	const items: Note[] = [];
+	let page = 1;
+	let total = 0;
+	let hasMore = true;
+	// Active tree scopes pass folderId null (root) or uuid. Archive passes undefined (no folder filter).
+	const scopeFolder = archived ? undefined : folderId;
+	while (hasMore) {
+		const next = await api.notes(page, archived, scopeFolder, { limit: 50, content: false });
+		items.push(...next.items);
+		total = next.total;
+		hasMore = next.hasMore;
+		page += 1;
+		if (page > 100) break;
+	}
+	return { items, total };
+}
+
+async function ensureFolderNotesLoaded(folderId: string | null, force = false): Promise<void> {
+	const scope = noteScopeKey(folderId, false);
+	if (!force && noteScopesLoaded.has(scope)) return;
+	if (noteScopesLoading.has(scope)) return;
+	noteScopesLoading.add(scope);
+	if (notesData && pageFromPath() === 'notes') replaceNotesSidebar(notesData, currentSelectedNoteId());
+	try {
+		const { items, total } = await fetchNoteScopePages(folderId, false);
+		if (!notesData) notesData = emptyNotePage();
+		const known = knownNoteFolderIds();
+		// Heal orphans first so they participate in the root scope instead of vanishing.
+		for (const note of notesData.items) {
+			if (note.folderId && !known.has(note.folderId)) {
+				note.folderId = null;
+				void api.updateNote(note.id, { folderId: null }).catch(() => undefined);
+			}
+		}
+		// Drop notes that no longer belong to this scope; keep survivors so loaded bodies stay.
+		const fetchedIds = new Set(items.map((item) => item.id));
+		notesData.items = notesData.items.filter((note) => {
+			const membership = note.folderId && known.has(note.folderId) ? note.folderId : null;
+			const inScope = folderId === null ? membership === null : membership === folderId;
+			if (!inScope) return true;
+			return fetchedIds.has(note.id);
+		});
+		mergeNotesIntoPage(notesData, items, false);
+		notesData.total = Math.max(total, notesData.items.length);
+		noteScopesLoaded.add(scope);
+		cacheNotes(notesData, false);
+		if (pageFromPath() === 'notes' && notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
+	} catch (error) {
+		toast(errorMessage(error));
+	} finally {
+		noteScopesLoading.delete(scope);
+		if (pageFromPath() === 'notes' && notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
+	}
+}
+
+async function hydrateExpandedNoteScopes(force = false): Promise<void> {
+	await ensureFolderNotesLoaded(null, force);
+	for (const folderId of [...noteExpandedFolders]) {
+		if (noteFolders.some((folder) => folder.id === folderId)) await ensureFolderNotesLoaded(folderId, force);
+	}
+}
+
+async function ensureNoteContent(note: Note): Promise<Note> {
+	if (noteContentLoaded.has(note.id) || noteContentLoading.has(note.id)) return note;
+	noteContentLoading.add(note.id);
+	try {
+		const full = await api.getNote(note.id);
+		Object.assign(note, full);
+		noteContentLoaded.add(note.id);
+		if (!note.archived && notesData) cacheNotes(notesData, false);
+		if (note.archived && archivedNotesData) cacheNotes(archivedNotesData, true);
+		return note;
+	} catch (error) {
+		toast(errorMessage(error));
+		return note;
+	} finally {
+		noteContentLoading.delete(note.id);
+	}
 }
 
 function cachedNotes(archived = false, folderId: string | null | undefined = undefined): NotePage | null {
@@ -2139,6 +2277,15 @@ function optimisticallyUpdateNote(data: NotePage, note: Note, changes: NoteChang
 		}
 	}
 	sortNotes(data.items);
+	if (previous.folderId !== note.folderId) {
+		// A single moved note must not mark an unloaded destination scope as complete.
+		const target = noteScopeKey(note.folderId ?? null, false);
+		if (noteScopesLoaded.has(target)) {
+			// Destination already fully indexed; membership update is enough.
+		} else if (noteExpandedFolders.has(note.folderId ?? '') || note.folderId == null) {
+			void ensureFolderNotesLoaded(note.folderId ?? null);
+		}
+	}
 	invalidateNoteCaches();
 	if (notesData === data) cacheNotes(data, false);
 	else if (archivedNotesData === data) cacheNotes(data, true, undefined);
@@ -2176,19 +2323,27 @@ async function loadArchivedNotes(force = false): Promise<void> {
 		if (notesData && pageFromPath() === 'notes') replaceNotesSidebar(notesData, currentSelectedNoteId());
 	}
 	const cacheKey = noteCacheKey(true, undefined);
-	if (!force && validatedNotePages.has(cacheKey) && cached) return;
+	if (!force && noteScopesLoaded.has('archive') && cached) return;
+	if (!force && validatedNotePages.has(cacheKey) && cached && noteScopesLoaded.has('archive')) return;
 	validatedNotePages.add(cacheKey);
 	const request = ++archivedNotesRequest;
+	noteScopesLoading.add('archive');
 	try {
-		const data = await api.notes(1, true);
+		const { items, total } = await fetchNoteScopePages(undefined, true);
 		if (request !== archivedNotesRequest || pageFromPath() !== 'notes') return;
-		mergePendingNoteStates(data, true, undefined);
-		archivedNotesData = data;
-		cacheNotes(data, true, undefined);
+		const page = emptyNotePage();
+		mergeNotesIntoPage(page, items, false);
+		page.total = total;
+		mergePendingNoteStates(page, true, undefined);
+		archivedNotesData = page;
+		noteScopesLoaded.add('archive');
+		cacheNotes(page, true, undefined);
 		if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
 	} catch (error) {
 		validatedNotePages.delete(cacheKey);
 		if (!cached) toast(errorMessage(error));
+	} finally {
+		noteScopesLoading.delete('archive');
 	}
 }
 
@@ -2581,7 +2736,17 @@ function noteCardMarkup(note: Note, selected?: Note): string {
 function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 	const caret = (expanded: boolean) =>
 		`<i class="tree-caret-icon" data-lucide="${expanded ? 'chevron-down' : 'chevron-right'}" aria-hidden="true"></i>`;
-	const notesFor = (folderId: string | null) => data.items.filter((note) => (note.folderId ?? null) === folderId);
+	const notesFor = (folderId: string | null) =>
+		data.items.filter((note) => !note.archived && effectiveNoteFolderId(note) === folderId);
+	const scopeStatus = (folderId: string | null, noteCount: number) => {
+		const scope = noteScopeKey(folderId, false);
+		const loading = noteScopesLoading.has(scope);
+		const loaded = noteScopesLoaded.has(scope);
+		if (loading || (!loaded && noteCount > 0)) {
+			return `<div class="note-scope-status muted">${locale === 'zh' ? '加载中…' : 'Loading…'}</div>`;
+		}
+		return '';
+	};
 	type NoteTreeNode = {
 		kind: 'folder' | 'note' | 'archive';
 		key: string;
@@ -2590,6 +2755,7 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 		active: boolean;
 		children: NoteTreeNode[];
 		note?: Note;
+		statusHtml?: string;
 	};
 	const noteNodes = (items: Note[]): NoteTreeNode[] =>
 		items.map((note) => ({
@@ -2605,14 +2771,35 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 	// Pinned root notes stay above folders; unpinned root notes stay below folders.
 	const pinnedRootNotes = rootNotes.filter((note) => note.pinned);
 	const unpinnedRootNotes = rootNotes.filter((note) => !note.pinned);
-	const folderNode = (node: ReturnType<typeof buildNoteFolderTree>[number]): NoteTreeNode => ({
-		kind: 'folder',
-		key: node.folder.id,
-		name: node.folder.name,
-		expanded: noteExpandedFolders.has(node.folder.id),
-		active: false,
-		children: [...node.children.map(folderNode), ...noteNodes(notesFor(node.folder.id))],
-	});
+	const folderNode = (node: ReturnType<typeof buildNoteFolderTree>[number]): NoteTreeNode => {
+		const folderNotes = notesFor(node.folder.id);
+		const status = scopeStatus(node.folder.id, node.folder.noteCount);
+		return {
+			kind: 'folder',
+			key: node.folder.id,
+			name: node.folder.name,
+			expanded: noteExpandedFolders.has(node.folder.id),
+			active: false,
+			children: [
+				...node.children.map(folderNode),
+				...noteNodes(folderNotes),
+				...(status
+					? [
+							{
+								kind: 'note' as const,
+								key: `status-${node.folder.id}`,
+								name: '',
+								expanded: false,
+								active: false,
+								children: [],
+								note: undefined,
+								statusHtml: status,
+							},
+						]
+					: []),
+			],
+		};
+	};
 	const folderTree = buildNoteFolderTree(noteFolders).map(folderNode);
 	const archiveTree: NoteTreeNode[] = [
 		{
@@ -2629,7 +2816,10 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 			nodes,
 			(node) => node.children,
 			(node, depth, children) => {
-				if (node.kind === 'note') return node.note ? noteCardMarkup(node.note, selected) : '';
+				if (node.kind === 'note') {
+					if (node.statusHtml) return node.statusHtml;
+					return node.note ? noteCardMarkup(node.note, selected) : '';
+				}
 				const folder = node.kind === 'folder';
 				const icon = folder
 					? `<span class="note-tree-leading" aria-hidden="true"><i class="tree-folder-icon" data-lucide="${node.expanded ? 'folder-open' : 'folder'}"></i>${caret(node.expanded)}</span>`
@@ -2643,10 +2833,14 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 				return `<div class="note-tree-node ${folder ? 'note-folder-card' : 'note-tree-special'} ${node.kind === 'archive' ? 'archive-tree-item' : ''} ${node.active ? 'active' : ''} ${node.expanded ? 'expanded' : ''}" data-note-folder-drop="${html(drop)}" style="--tree-depth:${depth}"${draggable}><button type="button" class="collection-tree-row" ${filter}>${icon}<span>${html(node.name)}</span></button>${actions}${node.expanded && children ? `<div class="notes-tree-children">${children}</div>` : ''}</div>`;
 			},
 		);
+	const rootStatus =
+		noteScopesLoading.has('root') || !noteScopesLoaded.has('root')
+			? `<div class="note-scope-status muted">${locale === 'zh' ? '加载中…' : 'Loading…'}</div>`
+			: '';
 	const pinnedRootMarkup = pinnedRootNotes.length
 		? `<div class="notes-tree-children notes-tree-root notes-tree-root-pinned" data-note-folder-drop="root">${pinnedRootNotes.map((note) => noteCardMarkup(note, selected)).join('')}</div>`
 		: '';
-	const unpinnedRootMarkup = `<div class="notes-tree-children notes-tree-root notes-tree-root-unpinned" data-note-folder-drop="root">${unpinnedRootNotes.map((note) => noteCardMarkup(note, selected)).join('')}</div>`;
+	const unpinnedRootMarkup = `<div class="notes-tree-children notes-tree-root notes-tree-root-unpinned" data-note-folder-drop="root">${unpinnedRootNotes.map((note) => noteCardMarkup(note, selected)).join('')}${rootStatus}</div>`;
 	const folderMarkup = renderFolderish(folderTree);
 	const archiveMarkup = renderFolderish(archiveTree);
 	return `<aside class="notes-folders" aria-label="${locale === 'zh' ? '便签目录' : 'Note folders'}">
@@ -2664,6 +2858,7 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 			// Root is always visible; only clear the create-target marker.
 			selectedNoteFolderId = value === 'root' ? null : undefined;
 			if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
+			void ensureFolderNotesLoaded(null);
 			return;
 		}
 		// Obsidian behavior: click expands a closed folder, click again collapses it.
@@ -2671,13 +2866,17 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 		if (noteExpandedFolders.has(value)) {
 			noteExpandedFolders.delete(value);
 			if (selectedNoteFolderId === value) selectedNoteFolderId = undefined;
-		} else {
-			noteExpandedFolders.add(value);
-			// Remember as create-target only; do not open/select any note.
-			selectedNoteFolderId = value;
+			if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
+			else void renderNotes(currentSelectedNoteId(), false);
+			return;
 		}
+		noteExpandedFolders.add(value);
+		// Remember as create-target only; do not open/select any note.
+		selectedNoteFolderId = value;
 		if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
 		else void renderNotes(currentSelectedNoteId(), false);
+		// Intent: expanding a folder loads that folder's note index (not global recency).
+		void ensureFolderNotesLoaded(value);
 	};
 	content
 		.querySelectorAll<HTMLElement>('[data-note-folder-filter]')
@@ -2739,14 +2938,39 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 			)
 				return;
 			try {
-				await api.deleteNoteFolder(folder.id);
+				const parentId = folder.parentId;
+				const selectedId = currentSelectedNoteId();
+				// Optimistic reparent so notes never disappear behind a global page-1 reload.
+				if (notesData) {
+					for (const note of notesData.items) {
+						if (note.folderId === folder.id) note.folderId = parentId;
+					}
+				}
+				for (const child of noteFolders) {
+					if (child.parentId === folder.id) child.parentId = parentId;
+				}
+				if (parentId) {
+					const parent = noteFolders.find((item) => item.id === parentId);
+					if (parent) parent.noteCount += folder.noteCount;
+				}
 				noteFolders = noteFolders.filter((item) => item.id !== folder.id);
 				noteExpandedFolders.delete(folder.id);
-				if (selectedNoteFolderId === folder.id) selectedNoteFolderId = undefined;
-				invalidateNoteCaches();
-				await renderNotes(undefined, true);
+				if (parentId) noteExpandedFolders.add(parentId);
+				if (selectedNoteFolderId === folder.id) selectedNoteFolderId = parentId ?? null;
+				noteScopesLoaded.delete(folder.id);
+				noteScopesLoaded.delete(noteScopeKey(parentId, false));
+				if (notesData) {
+					cacheNotes(notesData, false);
+					paintNotes(notesData, selectedId);
+				}
+				await api.deleteNoteFolder(folder.id);
+				await loadNoteFolders(true);
+				await ensureFolderNotesLoaded(parentId, true);
+				if (notesData) paintNotes(notesData, selectedId);
 			} catch (error) {
 				toast(errorMessage(error));
+				invalidateNoteCaches();
+				await renderNotes(currentSelectedNoteId(), true);
 			}
 		}),
 	);
@@ -2965,20 +3189,46 @@ function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?: Note):
 		data.items.find((item) => item.id === noteId) ?? archivedNotesData?.items.find((item) => item.id === noteId);
 	content.querySelectorAll<HTMLElement>('[data-note]').forEach((node) => {
 		node.addEventListener('click', () => {
+			const noteId = node.dataset.note;
 			const note =
-				data.items.find((item) => item.id === node.dataset.note) ??
-				archivedNotesData?.items.find((item) => item.id === node.dataset.note);
+				data.items.find((item) => item.id === noteId) ??
+				archivedNotesData?.items.find((item) => item.id === noteId);
 			// Only a note click switches the open document; also reveal its folder.
 			if (note) {
-				if (note.folderId) {
+				if (note.folderId && knownNoteFolderIds().has(note.folderId)) {
 					for (const folder of noteFolderPath(noteFolders, note.folderId)) noteExpandedFolders.add(folder.id);
 					selectedNoteFolderId = note.folderId;
 				} else {
 					selectedNoteFolderId = null;
 				}
 				if (note.archived) archiveExpanded = true;
+				// Paint immediately with cached meta, then hydrate body if needed.
+				paintNotes(note.archived ? (archivedNotesData ?? data) : (notesData ?? data), note.id, true);
+				void ensureNoteContent(note).then((full) => {
+					if (currentSelectedNoteId() === full.id && pageFromPath() === 'notes') {
+						paintNotes(full.archived ? (archivedNotesData ?? data) : (notesData ?? data), full.id, false);
+					}
+				});
+				return;
 			}
-			paintNotes(data, node.dataset.note, true);
+			if (noteId) {
+				void api
+					.getNote(noteId)
+					.then((full) => {
+						noteContentLoaded.add(full.id);
+						if (full.archived) {
+							if (!archivedNotesData) archivedNotesData = emptyNotePage();
+							mergeNotesIntoPage(archivedNotesData, [full], true);
+							archiveExpanded = true;
+							paintNotes(notesData ?? emptyNotePage(), full.id, true);
+						} else {
+							if (!notesData) notesData = emptyNotePage();
+							mergeNotesIntoPage(notesData, [full], true);
+							paintNotes(notesData, full.id, true);
+						}
+					})
+					.catch((error) => toast(errorMessage(error)));
+			}
 		});
 	});
 	content.querySelectorAll<HTMLElement>('[data-note-card-id]').forEach((card) => {
@@ -3074,12 +3324,13 @@ function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?: Note):
 				folderId,
 			};
 			if (!notesData) {
-				notesData = { items: [note], page: 1, pageSize: 20, total: 1, hasMore: false };
+				notesData = { items: [note], page: 1, pageSize: 50, total: 1, hasMore: false };
 			} else {
 				notesData.items.unshift(note);
 				notesData.total += 1;
 				sortNotes(notesData.items);
 			}
+			noteContentLoaded.add(note.id);
 			if (folderId) {
 				const folder = noteFolders.find((item) => item.id === folderId);
 				if (folder) folder.noteCount += 1;
@@ -3155,6 +3406,15 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 		archivedSelected ??
 		data.items.find((note) => note.pinned) ??
 		data.items[0];
+	if (selected && !noteContentLoaded.has(selected.id) && !noteContentLoading.has(selected.id)) {
+		void ensureNoteContent(selected).then((full) => {
+			if (!noteContentLoaded.has(full.id)) return;
+			if (noteCommitStates.get(full.id)?.pending || noteCommitStates.get(full.id)?.active) return;
+			if (currentSelectedNoteId() === full.id && pageFromPath() === 'notes') {
+				paintNotes(full.archived ? (archivedNotesData ?? data) : (notesData ?? data), full.id, false);
+			}
+		});
+	}
 	const selectedData = archivedSelected ? archivedNotesData! : data;
 	const folderSidebar = notesFolderSidebarMarkup(data, selected);
 	const context = sidebarContext();
@@ -3205,30 +3465,22 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 }
 
 async function loadMoreNotes(selectedId?: string, scrollTop = 0): Promise<void> {
-	const loadingArchive = Boolean(archiveExpanded && archivedNotesData?.hasMore);
-	const current = loadingArchive ? archivedNotesData : notesData;
-	if (!current?.hasMore || notesLoadingMore) return;
+	// Scopes are fully fetched on expand; scroll only hydrates archive when still paginated.
+	if (!archiveExpanded || !archivedNotesData?.hasMore || notesLoadingMore) return;
 	notesLoadingMore = true;
 	const status = document.querySelector<HTMLElement>('.notes-load-status');
-	if (status) {
-		status.innerHTML = loadingMarkup(true);
-	}
-	// Active notes always use the unscoped tree page so root notes stay available.
-	const folderId = undefined;
+	if (status) status.innerHTML = loadingMarkup(true);
+	const current = archivedNotesData;
 	try {
-		const next = await api.notes(current.page + 1, loadingArchive, folderId);
-		if (
-			(loadingArchive ? archivedNotesData !== current || !archiveExpanded : notesData !== current) ||
-			pageFromPath() !== 'notes'
-		)
-			return;
-		const knownIds = new Set(current.items.map((note) => note.id));
-		current.items.push(...next.items.filter((note) => !knownIds.has(note.id)));
+		const next = await api.notes(current.page + 1, true, undefined, { limit: 50, content: false });
+		if (archivedNotesData !== current || !archiveExpanded || pageFromPath() !== 'notes') return;
+		mergeNotesIntoPage(current, next.items, false);
 		current.page = next.page;
 		current.pageSize = next.pageSize;
 		current.total = next.total;
 		current.hasMore = next.hasMore;
-		cacheNotes(current, loadingArchive, folderId);
+		if (!next.hasMore) noteScopesLoaded.add('archive');
+		cacheNotes(current, true);
 		if (notesData) replaceNotesSidebar(notesData, selectedId);
 		const list = document.querySelector<HTMLElement>('[data-notes-tree]');
 		if (list) list.scrollTop = scrollTop;
@@ -3244,34 +3496,68 @@ async function loadMoreNotes(selectedId?: string, scrollTop = 0): Promise<void> 
 async function renderNotes(selectedId?: string, forceSync = false, openMobile = false): Promise<void> {
 	shell('notes', t('notes'));
 	await loadNoteFolders(forceSync);
-	// Always load the full active note set so root/uncategorized notes never disappear
-	// when a folder is selected in the tree.
-	const treeFolderId = undefined as string | null | undefined;
-	const cached = forceSync ? null : cachedNotes(false, treeFolderId);
+	// Tree indexes load by intent: root always, expanded folders on demand.
+	const treeFolderId = null as string | null;
+	const cached = forceSync ? null : cachedNotes(false);
 	if (cached) {
-		mergePendingNoteStates(cached, false, treeFolderId);
+		mergePendingNoteStates(cached, false, undefined);
 		notesData = cached;
-		paintNotes(cached, selectedId);
+		// Cached pages are treated as a partial index until scopes revalidate.
+		paintNotes(cached, selectedId, openMobile);
+	} else if (!notesData) {
+		notesData = emptyNotePage();
+		paintNotes(notesData, selectedId, openMobile);
 	}
-	const cacheKey = noteCacheKey(false, treeFolderId);
-	if (!forceSync && validatedNotePages.has(cacheKey) && cached) {
+	const cacheKey = noteCacheKey(false);
+	if (!forceSync && validatedNotePages.has(cacheKey) && cached && noteScopesLoaded.has('root')) {
 		notesData = cached;
+		await hydrateExpandedNoteScopes(false);
+		if (selectedId) {
+			const selected =
+				notesData.items.find((note) => note.id === selectedId) ??
+				archivedNotesData?.items.find((note) => note.id === selectedId);
+			if (selected) await ensureNoteContent(selected);
+		}
 		if (archiveExpanded) await loadArchivedNotes(false);
 		return;
 	}
 	validatedNotePages.add(cacheKey);
 	const request = ++notesRequest;
 	try {
-		const data = await api.notes(1, false, treeFolderId);
+		if (forceSync) resetNoteScopes();
+		await hydrateExpandedNoteScopes(forceSync);
 		if (request !== notesRequest) return;
-		mergePendingNoteStates(data, false, treeFolderId);
-		notesData = data;
-		cacheNotes(data, false, treeFolderId);
-		if (pageFromPath() === 'notes') paintNotes(data, selectedId, openMobile);
+		if (!notesData) notesData = emptyNotePage();
+		mergePendingNoteStates(notesData, false, undefined);
+		cacheNotes(notesData, false);
+		if (selectedId) {
+			let selected =
+				notesData.items.find((note) => note.id === selectedId) ??
+				archivedNotesData?.items.find((note) => note.id === selectedId);
+			if (!selected) {
+				try {
+					const full = await api.getNote(selectedId);
+					noteContentLoaded.add(full.id);
+					if (full.archived) {
+						if (!archivedNotesData) archivedNotesData = emptyNotePage();
+						mergeNotesIntoPage(archivedNotesData, [full], true);
+						archiveExpanded = true;
+					} else {
+						mergeNotesIntoPage(notesData, [full], true);
+					}
+					selected = full;
+				} catch {
+					// Selected note may have been deleted.
+				}
+			} else {
+				await ensureNoteContent(selected);
+			}
+		}
+		if (pageFromPath() === 'notes') paintNotes(notesData, selectedId, openMobile);
 		if (archiveExpanded) await loadArchivedNotes(forceSync);
 	} catch (error) {
 		validatedNotePages.delete(cacheKey);
-		if (!cached)
+		if (!cached && !(notesData?.items.length))
 			document.querySelector('#page-content')!.innerHTML =
 				`<div class="error-banner">${html(errorMessage(error))}</div>`;
 		else toast(errorMessage(error));

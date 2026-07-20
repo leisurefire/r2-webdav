@@ -1992,3 +1992,10 @@ details.markdown-callout > .markdown-callout-title::marker {
 		display: none !important;
 	}
 }
+
+
+.note-scope-status {
+	padding: 0.35rem 0.75rem 0.55rem;
+	font-size: 0.8rem;
+	opacity: 0.7;
+}

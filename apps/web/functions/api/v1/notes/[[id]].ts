@@ -145,6 +145,9 @@ async function listNotes(request: Request, env: Env, owner: string): Promise<Res
 	const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
 	const pageSize = Math.min(50, Math.max(1, Number.parseInt(url.searchParams.get('limit') ?? '20', 10) || 20));
 	const archived = url.searchParams.get('archived') === '1' ? 1 : 0;
+	// content=0|false|meta returns index rows without bodies for tree loading.
+	const contentParam = (url.searchParams.get('content') ?? '1').toLowerCase();
+	const includeContent = !(contentParam === '0' || contentParam === 'false' || contentParam === 'meta');
 	const folderFilter = url.searchParams.get('folder');
 	if (folderFilter && folderFilter !== 'root' && !/^[0-9a-f-]{36}$/i.test(folderFilter)) {
 		return error('BAD_REQUEST', 'Invalid folder ID', 400);
@@ -157,9 +160,12 @@ async function listNotes(request: Request, env: Env, owner: string): Promise<Res
 		where += ' AND folder_id = ?';
 		bindings.push(folderFilter);
 	}
+	const select = includeContent
+		? 'id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at, folder_id'
+		: "id, title, '' AS content, is_pinned, is_archived, created_at, updated_at, accessed_at, folder_id";
 	const [rows, count] = await Promise.all([
 		env.NOTES_DB.prepare(
-			`SELECT id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at, folder_id
+			`SELECT ${select}
 			 FROM r2_webdav_notes WHERE ${where}
 			 ORDER BY is_pinned DESC, updated_at DESC LIMIT ? OFFSET ?`,
 		)
@@ -177,6 +183,16 @@ async function listNotes(request: Request, env: Env, owner: string): Promise<Res
 		total,
 		hasMore: offset + rows.results.length < total,
 	} satisfies NotePage);
+}
+
+async function getNote(env: Env, owner: string, id: string): Promise<Response> {
+	const row = await env.NOTES_DB.prepare(
+		'SELECT id, title, content, is_pinned, is_archived, created_at, updated_at, accessed_at, folder_id FROM r2_webdav_notes WHERE id = ? AND user_id = ?',
+	)
+		.bind(id, owner)
+		.first<NoteRow>();
+	if (!row) return error('NOT_FOUND', 'Note not found', 404);
+	return data(note(row));
 }
 
 async function createNote(request: Request, env: Env, owner: string): Promise<Response> {
@@ -365,12 +381,13 @@ async function deleteFolder(env: Env, owner: string, id: string): Promise<Respon
 		.bind(id, owner)
 		.first<{ parent_id: string | null }>();
 	if (!existing) return error('NOT_FOUND', 'Folder not found', 404);
+	const now = new Date().toISOString();
+	// Reparent notes/subfolders one level up, then drop the folder. Touch updated_at so
+	// recently dissolved notes can still surface in recency-ordered indexes.
 	await env.NOTES_DB.batch([
-		env.NOTES_DB.prepare('UPDATE r2_webdav_notes SET folder_id = ? WHERE folder_id = ? AND user_id = ?').bind(
-			existing.parent_id,
-			id,
-			owner,
-		),
+		env.NOTES_DB.prepare(
+			'UPDATE r2_webdav_notes SET folder_id = ?, updated_at = ? WHERE folder_id = ? AND user_id = ?',
+		).bind(existing.parent_id, now, id, owner),
 		env.NOTES_DB.prepare('UPDATE r2_webdav_note_folders SET parent_id = ? WHERE parent_id = ? AND user_id = ?').bind(
 			existing.parent_id,
 			id,
@@ -407,6 +424,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, params }) =>
 		if (id && !/^[0-9a-f-]{36}$/i.test(id)) return error('BAD_REQUEST', 'Invalid note ID', 400);
 		if (!id && request.method === 'GET') return listNotes(request, env, owner);
 		if (!id && request.method === 'POST') return createNote(request, env, owner);
+		if (id && request.method === 'GET') return getNote(env, owner, id);
 		if (id && request.method === 'PATCH') return updateNote(request, env, owner, id);
 		if (id && request.method === 'DELETE') return deleteNote(env, owner, id);
 		return error('NOT_FOUND', 'Notes endpoint not found', 404);

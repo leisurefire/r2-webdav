@@ -264,6 +264,52 @@ describe('authentication and file API', () => {
 			).data.total,
 		).toBe(1);
 	});
+
+	it('lists meta-only indexes, reads a note body, and reparents notes when dissolving a folder', async () => {
+		const token = await login();
+		const headers = { 'Content-Type': 'application/json' };
+		const folderRes = await pagesNotes(token, '/folders', {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({ name: 'Art' }),
+		});
+		expect(folderRes.status).toBe(201);
+		const folder = await folderRes.json<{ ok: true; data: { id: string } }>();
+		const created = await pagesNotes(token, '', {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				title: 'Caravaggio',
+				content: 'Dramatic light and shadow.',
+				folderId: folder.data.id,
+			}),
+		});
+		expect(created.status).toBe(201);
+		const note = await created.json<{ ok: true; data: { id: string } }>();
+
+		const meta = await pagesNotes(token, `?folder=${folder.data.id}&content=0&limit=50`).then((response) =>
+			response.json<{ ok: true; data: { items: Array<{ id: string; content: string }> } }>(),
+		);
+		expect(meta.data.items).toHaveLength(1);
+		expect(meta.data.items[0].id).toBe(note.data.id);
+		expect(meta.data.items[0].content).toBe('');
+
+		const full = await pagesNotes(token, `/${note.data.id}`).then((response) =>
+			response.json<{ ok: true; data: { content: string; folderId: string | null } }>(),
+		);
+		expect(full.data.content).toBe('Dramatic light and shadow.');
+
+		expect((await pagesNotes(token, `/folders/${folder.data.id}`, { method: 'DELETE' })).status).toBe(200);
+		const root = await pagesNotes(token, '?folder=root&content=0').then((response) =>
+			response.json<{ ok: true; data: { items: Array<{ id: string; folderId: string | null }> } }>(),
+		);
+		expect(root.data.items.some((item) => item.id === note.data.id && item.folderId === null)).toBe(true);
+		const after = await pagesNotes(token, `/${note.data.id}`).then((response) =>
+			response.json<{ ok: true; data: { content: string; folderId: string | null } }>(),
+		);
+		expect(after.data.folderId).toBeNull();
+		expect(after.data.content).toBe('Dramatic light and shadow.');
+	});
 });
 
 describe('DAV protocols', () => {

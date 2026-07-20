@@ -285,9 +285,19 @@ export const api = {
 	deleteDevice(id: string): Promise<{ deleted: boolean; current: boolean }> {
 		return request(`/auth/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
 	},
-	notes(page = 1, archived = false, folderId?: string | null): Promise<NotePage> {
+	notes(
+		page = 1,
+		archived = false,
+		folderId?: string | null,
+		options: { limit?: number; content?: boolean } = {},
+	): Promise<NotePage> {
 		const folder = folderId === null ? '&folder=root' : folderId ? `&folder=${encodeURIComponent(folderId)}` : '';
-		return notesRequest(`?page=${page}&limit=20&archived=${archived ? '1' : '0'}${folder}`);
+		const pageSize = Math.min(50, Math.max(1, options.limit ?? 50));
+		const content = options.content === false ? '&content=0' : '';
+		return notesRequest(`?page=${page}&limit=${pageSize}&archived=${archived ? '1' : '0'}${folder}${content}`);
+	},
+	getNote(id: string): Promise<Note> {
+		return notesRequest(`/${encodeURIComponent(id)}`);
 	},
 	noteFolders(): Promise<NoteFolder[]> {
 		return notesRequest('/folders');
