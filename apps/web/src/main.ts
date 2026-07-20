@@ -1448,22 +1448,16 @@ function noteFolderSelectMarkup(selectedFolderId: string | null | undefined): st
 	return `<select class="note-folder-select" data-note-folder-select aria-label="${label}" title="${label}"><option value="" ${selectedFolderId ? '' : 'selected'}>${locale === 'zh' ? '根目录' : 'Root'}</option>${noteFolders.map((folder) => `<option value="${html(folder.id)}" ${selectedFolderId === folder.id ? 'selected' : ''}>${html(folder.name)}</option>`).join('')}</select>`;
 }
 
-function noteLocationMarkup(note: Note): string {
-	const folder = note.folderId ? noteFolders.find((item) => item.id === note.folderId)?.name : undefined;
-	const parts = [folder, note.title].filter((part): part is string => Boolean(part?.trim()));
-	return `<div class="collection-path note-location" title="${html(parts.join(' / '))}">${parts.map((part, index) => `${index ? '<span aria-hidden="true">/</span>' : ''}<span>${html(part)}</span>`).join('')}</div>`;
-}
-
 function noteEditorMarkup(selected: Note, mobile = false): string {
 	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'}" data-note-editor-id="${html(selected.id)}">
 		<form data-note-form>
-			<div class="note-editor-head">${mobile ? `<button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>` : ''}<span class="note-save-status" data-note-save-status aria-live="polite"></span>${noteFolderSelectMarkup(selected.folderId)}<time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
+			<div class="note-editor-head">${mobile ? `<button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>` : ''}<div class="collection-path note-location note-head-path">${noteFolderSelectMarkup(selected.folderId)}<span aria-hidden="true">/</span><span>${html(selected.title)}</span></div><span class="note-save-status" data-note-save-status aria-live="polite"></span><time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
 				<button type="button" class="row-action" data-note-export title="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}" aria-label="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}"><i data-lucide="file-down"></i></button>
 				<button type="button" class="row-action ${selected.pinned ? 'active' : ''}" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}" aria-label="${selected.pinned ? t('unpin') : t('pin')}" aria-pressed="${selected.pinned}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
 				<button type="button" class="row-action" data-note-archive title="${selected.archived ? t('restore') : t('archive')}" aria-label="${selected.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
 				<button type="button" class="row-action danger" data-note-delete title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button>
 			</div></div>
-			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-heading"><div class="note-location-wrap">${noteLocationMarkup(selected)}</div><input data-note-title value="${html(selected.title)}" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}"></div><div class="note-source" data-note-source aria-label="${t('markdown')}"></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
+			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-heading"><input data-note-title value="${html(selected.title)}" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}"></div><div class="note-source" data-note-source aria-label="${t('markdown')}"></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
 		</form>
 	</section>`;
 }
@@ -1552,8 +1546,6 @@ function syncNoteMetadata(note: Note): void {
 	syncNoteTitle(note);
 	document.querySelectorAll<HTMLElement>('[data-note-editor-id]').forEach((editor) => {
 		if (editor.dataset.noteEditorId !== note.id) return;
-		const location = editor.querySelector<HTMLElement>('.note-location-wrap');
-		if (location) location.innerHTML = noteLocationMarkup(note);
 		const folder = editor.querySelector<HTMLSelectElement>('[data-note-folder-select]');
 		if (folder) folder.value = note.folderId ?? '';
 		const time = editor.querySelector<HTMLTimeElement>('.note-editor-head > time');
@@ -1827,8 +1819,15 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 						outline.replaceChildren();
 						return;
 					}
-					const title = document.createElement('strong');
-					title.textContent = locale === 'zh' ? '大纲' : 'Outline';
+					outline.classList.toggle('collapsed', localStorage.getItem('r2_note_outline_collapsed') === '1');
+					const toggle = document.createElement('button');
+					toggle.type = 'button';
+					toggle.className = 'note-outline-toggle';
+					toggle.innerHTML = `<i data-lucide="chevron-down"></i><strong>${locale === 'zh' ? '大纲' : 'Outline'}</strong>`;
+					toggle.addEventListener('click', () => {
+						const collapsed = outline.classList.toggle('collapsed');
+						localStorage.setItem('r2_note_outline_collapsed', collapsed ? '1' : '0');
+					});
 					const buttons = headings.map((heading) => {
 						const button = document.createElement('button');
 						button.type = 'button';
@@ -1837,7 +1836,8 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 						button.addEventListener('click', () => scrollToMarkdownHeading(view, heading.id));
 						return button;
 					});
-					outline.replaceChildren(title, ...buttons);
+					outline.replaceChildren(toggle, ...buttons);
+					refreshIcons();
 				},
 				onImageTooLarge: () =>
 					toast(locale === 'zh' ? '图片超过 256 KB，暂不允许粘贴' : 'Images over 256 KB cannot be pasted yet'),

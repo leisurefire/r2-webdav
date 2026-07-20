@@ -359,10 +359,49 @@
 	overflow: auto;
 }
 
-.note-outline > strong {
-	display: block;
-	margin: 0 8px 10px;
+.note-outline-toggle {
+	width: 100%;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 28px;
+	margin: 0 0 8px;
+	padding: 4px 8px;
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--ink);
 	font-size: 11px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.note-outline-toggle:hover {
+	background: var(--surface);
+}
+
+.note-outline-toggle svg {
+	width: 13px;
+	height: 13px;
+	flex: none;
+	color: var(--quiet);
+	transition: transform 140ms ease;
+}
+
+.note-outline-toggle strong {
+	font-size: 11px;
+}
+
+.note-outline.collapsed .note-outline-toggle {
+	margin-bottom: 0;
+}
+
+.note-outline.collapsed .note-outline-toggle svg {
+	transform: rotate(-90deg);
+}
+
+.note-outline.collapsed > button:not(.note-outline-toggle) {
+	display: none;
 }
 
 .note-outline > span {
@@ -751,6 +790,47 @@ details.markdown-callout > .markdown-callout-title::marker {
 	flex-wrap: wrap;
 }
 
+.note-head-path {
+	flex: 1;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+}
+
+.note-head-path .note-folder-select {
+	flex: none;
+	max-width: 140px;
+}
+
+.note-head-path > span:last-child {
+	background: transparent;
+	color: var(--ink);
+	font-weight: 600;
+}
+
+.note-editor-head .note-actions {
+	margin-left: auto;
+}
+
+/* Fresh paste / AI insert highlight, cleared on next edit or click. */
+.cm-live-new-content {
+	background: color-mix(in srgb, var(--accent) 16%, transparent);
+	border-radius: 2px;
+}
+
+/* AI review: struck-through original lines, blue-tinted generated lines. */
+.cm-ai-review-deleted {
+	color: var(--quiet);
+	text-decoration: line-through;
+	text-decoration-color: color-mix(in srgb, var(--quiet) 70%, transparent);
+	background: transparent;
+}
+
+.cm-ai-review-inserted {
+	color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
 .note-heading {
 	min-width: 0;
 	flex: 1;
@@ -916,28 +996,21 @@ details.markdown-callout > .markdown-callout-title::marker {
 	}
 
 	.note-outline {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		padding: 7px 10px;
+		display: block;
+		padding: 4px 10px 6px;
 		border-left: 0;
 		border-right: 0;
 		border-bottom: 1px solid var(--line);
-		overflow-x: auto;
+		max-height: 38vh;
+		overflow-y: auto;
 	}
 
-	.note-outline > strong,
-	.note-outline > span {
-		flex: none;
-		margin: 0;
-		white-space: nowrap;
+	.note-outline-toggle {
+		margin-bottom: 2px;
 	}
 
-	.note-outline button {
-		width: auto;
-		flex: none;
-		padding: 5px 8px;
-		white-space: nowrap;
+	.note-outline.collapsed .note-outline-toggle {
+		margin-bottom: 0;
 	}
 
 	.note-folder-select {

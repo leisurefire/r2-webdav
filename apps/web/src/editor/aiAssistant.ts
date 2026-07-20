@@ -1,3 +1,4 @@
+import { Transaction } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
 import {
 	ArrowUp,
@@ -15,7 +16,7 @@ import {
 	type IconNode,
 } from 'lucide';
 import { aiModelForAction, api, type AiAction } from '../api/client';
-import { toggleMarkdownWrap } from './markdownLivePreview';
+import { clearAiReview, markNewContent, showAiReview, toggleMarkdownWrap } from './markdownLivePreview';
 import { renderMarkdown } from './markdownRenderer';
 
 type Locale = 'en' | 'zh';
@@ -124,7 +125,6 @@ export function bindMarkdownAiAssistant(
 			polish: t('AI 润色', 'Polish'),
 			rewrite: t('AI 修改', 'Edit with AI'),
 		}[action];
-		const showInstruction = action === 'generate' || action === 'rewrite';
 		panel.innerHTML = `<div class="ai-panel-shell ai-shimmer-border">
 			<header class="ai-panel-head">
 				<span class="ai-mark"><i data-lucide="sparkles"></i></span>
@@ -133,29 +133,20 @@ export function bindMarkdownAiAssistant(
 				<span class="toolbar-spacer"></span>
 				<button class="row-action" type="button" data-ai-close aria-label="${t('关闭', 'Close')}"><i data-lucide="x"></i></button>
 			</header>
-			${
-				showInstruction
-					? `<form class="ai-instruction-row" data-ai-form>
-						<input class="ai-instruction" data-ai-instruction aria-label="${t('告诉 AI 你想写什么', 'Tell AI what you want')}" placeholder="${action === 'generate' ? t('告诉 AI 你想写什么…', 'Tell AI what to write…') : t('告诉 AI 你想怎样修改…', 'Tell AI how to edit…')}">
-						<button class="ai-send" type="submit" aria-label="${t('生成', 'Generate')}" title="${t('生成', 'Generate')}"><i data-lucide="arrow-up"></i></button>
-					</form>`
-					: ''
-			}
-			<div class="ai-result" data-ai-result>
-				<div class="ai-thinking"><i data-lucide="sparkles"></i><span>${showInstruction ? t('输入要求后按回车生成', 'Type a request and press Enter') : t('准备生成…', 'Preparing…')}</span></div>
-			</div>
-			<footer class="ai-panel-actions">
-				<button class="button" type="button" data-ai-retry hidden><i data-lucide="rotate-ccw"></i><span>${t('重新生成', 'Retry')}</span></button>
+			<form class="ai-instruction-row" data-ai-form>
+				<textarea class="ai-instruction" data-ai-instruction rows="1" aria-label="${t('告诉 AI 你想写什么', 'Tell AI what you want')}" placeholder="${t('告诉 AI 你想做什么…', 'Tell AI what to do…')}"></textarea>
+				<button class="ai-send" type="submit" aria-label="${t('生成', 'Generate')}" title="${t('生成', 'Generate')}"><i data-lucide="arrow-up"></i></button>
+			</form>
+			<div class="ai-result" data-ai-result hidden></div>
+			<footer class="ai-panel-actions" data-ai-actions hidden>
+				<button class="row-action" type="button" data-ai-edit title="${t('重新编辑要求', 'Edit request')}" aria-label="${t('重新编辑要求', 'Edit request')}"><i data-lucide="rotate-ccw"></i></button>
+				<button class="button" type="button" data-ai-undo hidden>${t('撤销', 'Undo')}</button><button class="button" type="button" data-ai-insert-below hidden>${t('在下面插入', 'Insert below')}</button>
 				<span class="toolbar-spacer"></span>
-				<button class="button primary" type="button" data-ai-apply disabled><i data-lucide="check"></i><span>${
-					action === 'generate' || action === 'summarize' ? t('插入', 'Insert') : t('替换选区', 'Replace selection')
-				}</span></button>
+				<button class="button primary" type="button" data-ai-main></button>
 			</footer>
 		</div>`;
 		host.append(panel);
 		paintIcons(panel);
-		// Desktop: anchor the panel to the cursor/selection like Notion does.
-		// Mobile CSS pins it to the bottom of the editor instead.
 		const cursorCoords = view.coordsAtPos(range.from);
 		const hostRect = host.getBoundingClientRect();
 		if (cursorCoords && !window.matchMedia('(max-width: 720px)').matches) {
@@ -163,25 +154,79 @@ export function bindMarkdownAiAssistant(
 			panel.style.left = `${Math.max(12, Math.min(cursorCoords.left - hostRect.left, hostRect.width - shellWidth - 12))}px`;
 			panel.style.bottom = 'auto';
 			const maxHeight = Math.min(hostRect.height * 0.56, 460);
-			let top = cursorCoords.bottom - hostRect.top + 10;
-			if (top + maxHeight > hostRect.height - 12) top = Math.max(12, cursorCoords.top - hostRect.top - maxHeight - 10);
+			const isReviewAction = action === 'polish' || action === 'rewrite';
+			let top = isReviewAction
+				? Math.max(12, cursorCoords.top - hostRect.top - panel.offsetHeight - 10)
+				: cursorCoords.bottom - hostRect.top + 10;
+			if (!isReviewAction && top + maxHeight > hostRect.height - 12)
+				top = Math.max(12, cursorCoords.top - hostRect.top - maxHeight - 10);
 			panel.style.top = `${top}px`;
 		}
 
+		const form = panel.querySelector<HTMLFormElement>('[data-ai-form]')!;
+		const input = panel.querySelector<HTMLTextAreaElement>('[data-ai-instruction]')!;
 		const resultNode = panel.querySelector<HTMLElement>('[data-ai-result]')!;
-		const apply = panel.querySelector<HTMLButtonElement>('[data-ai-apply]')!;
-		const retry = panel.querySelector<HTMLButtonElement>('[data-ai-retry]')!;
-		const instruction = panel.querySelector<HTMLInputElement>('[data-ai-instruction]');
-		if (instruction && presetInstruction) instruction.value = presetInstruction;
+		const actionsNode = panel.querySelector<HTMLElement>('[data-ai-actions]')!;
+		const mainButton = panel.querySelector<HTMLButtonElement>('[data-ai-main]')!;
+		const editButton = panel.querySelector<HTMLButtonElement>('[data-ai-edit]')!;
+		const undoButton = panel.querySelector<HTMLButtonElement>('[data-ai-undo]')!;
+		const insertBelowButton = panel.querySelector<HTMLButtonElement>('[data-ai-insert-below]')!;
+		input.value = presetInstruction;
+
+		type Stage = 'input' | 'busy' | 'done';
+		let stage: Stage = 'input';
 		let result = '';
+		let streamText = '';
 		let controller: AbortController | null = null;
+		let accepted = false;
+		let review: { insertedFrom: number; undoFrom: number; undoTo: number; original: string } | null = null;
+
+		const padToSameLines = (source: string, generated: string): [string, string] => {
+			const sourceLines = source.split('\n').length;
+			const generatedLines = generated.split('\n').length;
+			if (sourceLines === generatedLines) return [source, generated];
+			const pad = (value: string, count: number) => value + '\n'.repeat(Math.max(0, count - value.split('\n').length));
+			const total = Math.max(sourceLines, generatedLines);
+			return [pad(source, total), pad(generated, total)];
+		};
+
+		const setStage = (next: Stage) => {
+			stage = next;
+			form.hidden = next !== 'input';
+			resultNode.hidden = next === 'input';
+			actionsNode.hidden = next === 'input';
+			editButton.hidden = next !== 'done';
+			panel?.classList.toggle('busy', next === 'busy');
+			if (next === 'busy') {
+				mainButton.disabled = false;
+				mainButton.innerHTML = `<i data-lucide="x"></i><span>${t('终止', 'Stop')}</span>`;
+			} else if (next === 'done') {
+				mainButton.disabled = false;
+				mainButton.innerHTML = `<i data-lucide="check"></i><span>${action === 'generate' || action === 'summarize' ? t('在下方插入', 'Insert below') : t('接受', 'Accept')}</span>`;
+			}
+			paintIcons(actionsNode);
+		};
+
+		const close = () => {
+			controller?.abort();
+			clearAiReview(view);
+			removePanel();
+			view.focus();
+		};
+
+		const showResult = (value: string) => {
+			resultNode.innerHTML = `<article class="ai-markdown-preview">${renderMarkdown(value)}</article>`;
+			resultNode.scrollTop = resultNode.scrollHeight;
+		};
 
 		const generate = async () => {
+			const request = input.value.trim() || requestText;
+			if (!request) return;
 			controller?.abort();
 			controller = new AbortController();
 			result = '';
-			apply.disabled = true;
-			retry.hidden = true;
+			streamText = '';
+			setStage('busy');
 			resultNode.innerHTML = `<div class="ai-thinking"><i data-lucide="sparkles"></i><span>${t('正在生成…', 'Writing…')}</span></div>`;
 			paintIcons(resultNode);
 			try {
@@ -189,43 +234,96 @@ export function bindMarkdownAiAssistant(
 					{
 						model: aiModelForAction(action),
 						action,
-						text: requestText,
-						instruction: instruction?.value.trim() || undefined,
+						text: requestText || request,
+						instruction: input.value.trim() || undefined,
 						context: view.state.doc.toString(),
 					},
 					(token) => {
-						result += token;
-						resultNode.innerHTML = `<article class="ai-markdown-preview">${renderMarkdown(normalizeAiMarkdown(result))}</article>`;
-						resultNode.scrollTop = resultNode.scrollHeight;
+						streamText += token;
+						showResult(normalizeAiMarkdown(streamText));
 					},
 					controller.signal,
 				);
-				result = normalizeAiMarkdown(result);
+				result = normalizeAiMarkdown(streamText);
 				if (!result) throw new Error(t('AI 没有返回内容', 'AI returned no content'));
-				resultNode.innerHTML = `<article class="ai-markdown-preview">${renderMarkdown(result)}</article>`;
-				apply.disabled = false;
-				retry.hidden = false;
+				if (action === 'polish' || action === 'rewrite') {
+					const [paddedSource, paddedGenerated] = padToSameLines(requestText, result);
+					const lineCount = paddedGenerated.split('\n').length;
+					const original = view.state.sliceDoc(range.from, range.to);
+					view.dispatch({
+						changes: { from: range.from, to: range.to, insert: `${paddedSource}\n${paddedGenerated}` },
+						annotations: Transaction.userEvent.of('input'),
+					});
+					review = {
+						insertedFrom: range.from + paddedSource.length + 1,
+						undoFrom: range.from,
+						undoTo: range.from + paddedSource.length + 1 + paddedGenerated.length,
+						original,
+					};
+					showAiReview(view, { deletedFrom: range.from, insertedFrom: review.insertedFrom, lineCount });
+					resultNode.innerHTML = `<div class="ai-review-note">${t('已按照你的要求进行了更改。', 'Done. Changes applied as requested.')}</div>`;
+				} else {
+					showResult(result);
+				}
+				setStage('done');
 			} catch (error) {
 				if (controller.signal.aborted) return;
 				resultNode.innerHTML = `<div class="ai-error">${t('生成失败，请重试', 'Generation failed. Please retry.')}</div>`;
-				retry.hidden = false;
+				setStage('done');
+				editButton.hidden = false;
 				onError(error);
 			}
 		};
 
-		const close = () => {
-			controller?.abort();
-			removePanel();
-			view.focus();
-		};
-		panel.querySelector('[data-ai-close]')?.addEventListener('click', close);
-		retry.addEventListener('click', () => void generate());
-		panel.querySelector('[data-ai-form]')?.addEventListener('submit', (event) => {
+		form.addEventListener('submit', (event) => {
 			event.preventDefault();
-			if (action === 'generate') requestText = instruction?.value.trim() || requestText;
-			if (requestText) void generate();
+			void generate();
 		});
-		apply.addEventListener('click', () => {
+		const autosize = () => {
+			input.style.height = 'auto';
+			input.style.height = Math.min(input.scrollHeight, 132) + 'px';
+		};
+		input.addEventListener('input', autosize);
+		autosize();
+		input.addEventListener('keydown', (event) => {
+			if (event.key === 'Enter' && !event.shiftKey) {
+				event.preventDefault();
+				void generate();
+			}
+		});
+		editButton.addEventListener('click', () => {
+			clearAiReview(view);
+			if (review) {
+				view.dispatch({
+					changes: { from: review.undoFrom, to: review.undoTo, insert: review.original },
+					annotations: Transaction.userEvent.of('input'),
+				});
+				review = null;
+			}
+			result = '';
+			streamText = '';
+			setStage('input');
+			input.focus();
+		});
+		mainButton.addEventListener('click', () => {
+			if (stage === 'busy') {
+				controller?.abort();
+				setStage('input');
+				return;
+			}
+			if (stage !== 'done') return;
+			if (review) {
+				// Accept: keep only the generated lines.
+				view.dispatch({
+					changes: { from: review.undoFrom, to: review.undoTo, insert: result },
+					annotations: Transaction.userEvent.of('input'),
+				});
+				clearAiReview(view);
+				markNewContent(view, review.undoFrom, review.undoFrom + result.length);
+				review = null;
+				close();
+				return;
+			}
 			let value = result;
 			let title: string | null = null;
 			if (action === 'generate') {
@@ -242,25 +340,34 @@ export function bindMarkdownAiAssistant(
 			view.dispatch({
 				changes: { from: insertAt, to: replaceTo, insert: inserted },
 				selection: { anchor: insertAt + inserted.length },
+				annotations: Transaction.userEvent.of('input'),
 				scrollIntoView: true,
 			});
-			if (title) options.onTitleChange?.(title);
+			markNewContent(view, insertAt, insertAt + inserted.length);
 			close();
 		});
+		panel.querySelector('[data-ai-close]')?.addEventListener('click', close);
 		panel.addEventListener('keydown', (event) => {
 			if (event.key === 'Escape') {
 				event.stopPropagation();
+				if (review) {
+					clearAiReview(view);
+					view.dispatch({
+						changes: { from: review.undoFrom, to: review.undoTo, insert: review.original },
+						annotations: Transaction.userEvent.of('input'),
+					});
+					review = null;
+				}
 				close();
 			}
 		});
-		if (instruction) {
-			instruction.focus();
+		if (presetInstruction || action === 'generate') {
+			input.focus();
 			if (action === 'generate' ? Boolean(requestText) : Boolean(presetInstruction)) void generate();
 		} else {
-			void generate();
+			input.focus();
 		}
 	};
-
 	const showToolbar = () => {
 		if (!host.isConnected) return removeToolbar();
 		const range = view.state.selection.main;
@@ -284,10 +391,7 @@ export function bindMarkdownAiAssistant(
 			<button type="button" data-action="summarize">${t('总结', 'Summarize')}</button>
 			<button type="button" data-action="polish">${t('润色', 'Polish')}</button>
 			<button type="button" data-action="rewrite">${t('修改', 'Edit')}</button>
-			<form class="ai-menu-ask" data-ai-ask>
-				<input aria-label="${t('让 AI 处理选中文本', 'Ask AI to edit the selection')}" placeholder="${t('让 AI…', 'Ask AI…')}">
-				<button type="submit" aria-label="${t('发送', 'Send')}" title="${t('发送', 'Send')}"><i data-lucide="message-square-text"></i></button>
-			</form>`;
+			<button type="button" data-ask title="${t('让 AI 处理选中文本', 'Ask AI to edit the selection')}" aria-label="${t('让 AI 处理选中文本', 'Ask AI to edit the selection')}"><i data-lucide="message-square-text"></i></button>`;
 		if (coords) {
 			toolbar.style.left = `${Math.max(8, Math.min(coords.left, innerWidth - 340))}px`;
 			toolbar.style.top = `${Math.max(8, coords.top - 48)}px`;
@@ -315,12 +419,10 @@ export function bindMarkdownAiAssistant(
 				openPanel(button.dataset.action as AiAction, trackedSelection.text, trackedSelection);
 			}),
 		);
-		toolbar.querySelector('[data-ai-ask]')?.addEventListener('submit', (event) => {
+		toolbar.querySelector('[data-ask]')?.addEventListener('mousedown', (event) => {
 			event.preventDefault();
-			const input = toolbar?.querySelector<HTMLInputElement>('.ai-menu-ask input');
-			const instruction = input?.value.trim();
-			if (!instruction || !trackedSelection) return;
-			openPanel('rewrite', trackedSelection.text, trackedSelection, instruction);
+			if (!trackedSelection) return;
+			openPanel('rewrite', trackedSelection.text, trackedSelection);
 		});
 	};
 

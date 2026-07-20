@@ -104,7 +104,7 @@
 
 .ai-instruction-row {
 	display: flex;
-	align-items: center;
+	align-items: flex-end;
 	gap: 8px;
 	padding: 4px 12px 8px;
 }
@@ -116,8 +116,13 @@
 	background: transparent;
 	font: inherit;
 	font-size: 14px;
+	line-height: 1.5;
 	color: var(--ink);
 	padding: 6px 2px;
+	min-height: 32px;
+	max-height: 132px;
+	resize: none;
+	overflow-y: auto;
 }
 
 .ai-instruction:focus {
@@ -263,32 +268,14 @@
 	height: 12px;
 }
 
-.ai-menu-ask {
-	display: flex;
-	align-items: center;
-	gap: 2px;
-	margin-left: 2px;
-}
-
-.ai-menu-ask input {
-	width: 110px;
-	border: none;
-	background: transparent;
-	font: inherit;
+.ai-review-note {
+	padding: 10px 2px;
 	font-size: 13px;
-	color: var(--ink);
-	padding: 5px 2px;
+	color: var(--muted);
 }
 
-.ai-menu-ask input:focus {
-	outline: none;
-}
-
-.ai-menu-ask input::placeholder {
-	background: linear-gradient(90deg, #7c3aed, #2563eb, #06b6d4, #ec4899);
-	-webkit-background-clip: text;
-	background-clip: text;
-	color: transparent;
+.ai-panel-actions .button {
+	min-height: 30px;
 }
 
 /* Empty document prompt */
@@ -341,19 +328,6 @@
 		row-gap: 4px;
 		padding: 8px;
 		border-radius: 14px;
-	}
-
-	.ai-menu-ask {
-		flex: 1 1 100%;
-		border-top: 1px solid var(--soft-line);
-		padding-top: 6px;
-		margin-top: 4px;
-	}
-
-	.ai-menu-ask input {
-		flex: 1;
-		width: auto;
-		padding: 6px 2px;
 	}
 
 	.ai-panel {

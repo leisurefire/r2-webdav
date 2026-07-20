@@ -1,4 +1,11 @@
-import { EditorSelection, EditorState, StateField, Transaction, type SelectionRange } from '@codemirror/state';
+import {
+	EditorSelection,
+	EditorState,
+	StateEffect,
+	StateField,
+	Transaction,
+	type SelectionRange,
+} from '@codemirror/state';
 import { defaultKeymap, deleteCharBackward, deleteCharForward, history, historyKeymap } from '@codemirror/commands';
 import {
 	EditorView,
@@ -1371,6 +1378,12 @@ export function createMarkdownLivePreview(
 		...defaultKeymap,
 		...historyKeymap,
 	]);
+	const clearNewOnPointer = EditorView.domEventHandlers({
+		mousedown(event, view) {
+			if (view.state.field(newContentField, false) === Decoration.none) return;
+			view.dispatch({ effects: newContentEffect.of({ from: 0, to: 0 }) });
+		},
+	});
 	const clipboardHandlers = EditorView.domEventHandlers({
 		paste(event, view) {
 			if ((event.target as HTMLElement | null)?.closest('.cm-live-table textarea')) return false;
@@ -1396,6 +1409,7 @@ export function createMarkdownLivePreview(
 							selection: { anchor: range.from + markdown.length },
 							annotations: Transaction.userEvent.of('input.paste'),
 							scrollIntoView: true,
+							effects: newContentEffect.of({ from: range.from, to: range.from + markdown.length }),
 						});
 						view.focus();
 					})
@@ -1420,6 +1434,7 @@ export function createMarkdownLivePreview(
 				selection: { anchor: selection.from + insert.length },
 				annotations: Transaction.userEvent.of('input.paste'),
 				scrollIntoView: true,
+				effects: newContentEffect.of({ from: selection.from, to: selection.from + insert.length }),
 			});
 			view.focus();
 			return true;
@@ -1431,6 +1446,9 @@ export function createMarkdownLivePreview(
 			markdownLanguageSupport,
 			syntaxHighlighting(markdownLivePreviewHighlightStyle),
 			livePreviewField,
+			newContentField,
+			aiReviewField,
+			clearNewOnPointer,
 			EditorView.mouseSelectionStyle.of(livePreviewMouseSelectionStyle),
 			history(),
 			editingKeymap,
@@ -1475,4 +1493,93 @@ export function createMarkdownLivePreview(
 	const view = new EditorView({ state, parent });
 	options.onHeadingsChange?.(renderMarkdownDocument(view.state.doc.toString()).headings);
 	return view;
+}
+
+/**
+ * Temporary highlight for freshly pasted or AI-inserted content.
+ * The highlight clears on any further user edit or pointer interaction.
+ */
+const newContentEffect = StateEffect.define<{ from: number; to: number }>();
+
+const newContentField = StateField.define<DecorationSet>({
+	create: () => Decoration.none,
+	update(deco, transaction) {
+		let next = deco.map(transaction.changes);
+		for (const effect of transaction.effects) {
+			if (effect.is(newContentEffect)) {
+				if (effect.value.to > effect.value.from)
+					next = next.update({
+						add: [Decoration.mark({ class: 'cm-live-new-content' }).range(effect.value.from, effect.value.to)],
+					});
+			}
+		}
+		const touches = (from: number, to: number) => {
+			let hit = false;
+			next.between(from, to, () => {
+				hit = true;
+			});
+			return hit;
+		};
+		if (
+			transaction.docChanged &&
+			!transaction.isUserEvent('input.paste') &&
+			!transaction.effects.some((effect) => effect.is(newContentEffect))
+		)
+			next = Decoration.none;
+		return next;
+	},
+	provide: (field) => EditorView.decorations.from(field),
+});
+
+/**
+ * AI review mode: shows the rewritten Markdown inline. Deleted source lines get a
+ * strike style, newly generated lines get a blue theme highlight. Line lengths are
+ * forced equal by the caller so the mapping stays a simple split.
+ */
+const aiReviewSetEffect = StateEffect.define<{ deletedFrom: number; insertedFrom: number; count: number } | null>();
+
+const aiReviewField = StateField.define<DecorationSet>({
+	create: () => Decoration.none,
+	update(_deco, transaction) {
+		let active: { deletedFrom: number; insertedFrom: number; count: number } | null = null;
+		for (const effect of transaction.effects) if (effect.is(aiReviewSetEffect)) active = effect.value;
+		if (!active || active.count <= 0) return Decoration.none;
+		const ranges = [];
+		for (let index = 0; index < active.count; index += 1) {
+			const deletedLine = transaction.state.doc.line(active.deletedFrom + index);
+			const insertedLine = transaction.state.doc.line(active.insertedFrom + index);
+			ranges.push(Decoration.line({ class: 'cm-ai-review-deleted' }).range(deletedLine.from));
+			ranges.push(Decoration.line({ class: 'cm-ai-review-inserted' }).range(insertedLine.from));
+		}
+		return Decoration.set(ranges, true);
+	},
+	provide: (field) => EditorView.decorations.from(field),
+});
+
+/** Highlight a freshly inserted range (paste or AI insert) until the next edit/click. */
+export function markNewContent(view: EditorView, from: number, to: number): void {
+	if (to <= from) return;
+	view.dispatch({ effects: newContentEffect.of({ from, to }) });
+}
+
+export interface AiReviewRange {
+	deletedFrom: number;
+	insertedFrom: number;
+	lineCount: number;
+}
+
+/** Show the AI review decoration for a rewrite preview. */
+export function showAiReview(view: EditorView, range: AiReviewRange): void {
+	view.dispatch({
+		effects: aiReviewSetEffect.of({
+			deletedFrom: range.deletedFrom,
+			insertedFrom: range.insertedFrom,
+			count: range.lineCount,
+		}),
+	});
+}
+
+/** Clear the AI review decoration (accept, undo, or abort). */
+export function clearAiReview(view: EditorView): void {
+	view.dispatch({ effects: aiReviewSetEffect.of(null) });
 }

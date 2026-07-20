@@ -43,8 +43,15 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
 			const response = await fetch(`${UPSTREAM}/models`, { headers: { Authorization: `Bearer ${env.API_KEY}` } });
 			if (!response.ok) return fail('AI model service is unavailable', 502);
 			const payload = (await response.json()) as { data?: Array<{ id?: string }> };
-			const available = new Set((payload.data ?? []).map((item) => item.id).filter((id): id is string => Boolean(id)));
-			return json({ ok: true, data: { models: MODELS.filter((model) => available.has(model)) } });
+			const available = new Set(
+				(payload.data ?? [])
+					.map((item) => (typeof item.id === 'string' ? item.id.trim().toLowerCase() : null))
+					.filter((id): id is string => Boolean(id)),
+			);
+			const models = MODELS.filter((model) => available.has(model.toLowerCase()));
+			// If the gateway renames the curated models, fall back to the full upstream list
+			// so the client always gets something selectable instead of an empty list.
+			return json({ ok: true, data: { models: models.length ? models : [...available] } });
 		}
 		if (request.method !== 'POST') return fail('Method not allowed', 405);
 		const input = (await request.json()) as {
