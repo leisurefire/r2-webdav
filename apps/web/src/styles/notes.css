@@ -378,88 +378,93 @@
 	overflow: hidden;
 }
 
-/* Notion-style section marks: thin rail of bars at the upper-right. */
+/* Notion-style section marks: bare thin bars at the upper-right. */
 .note-outline {
 	position: absolute;
 	top: 18px;
-	right: 10px;
+	right: 8px;
 	z-index: 4;
-	display: flex;
-	flex-direction: row-reverse;
-	align-items: flex-start;
-	gap: 8px;
+	display: block;
+	width: auto;
 	max-height: min(52vh, 420px);
+	background: transparent;
 	pointer-events: none;
 }
 
 .note-outline-rail {
 	pointer-events: auto;
+	position: relative;
+	z-index: 1;
 	display: flex;
 	flex-direction: column;
 	align-items: flex-end;
 	justify-content: flex-start;
-	gap: 4px;
-	min-width: 18px;
-	padding: 8px 4px;
-	border-radius: 999px;
-	background: color-mix(in srgb, var(--panel-bg) 78%, transparent);
-	backdrop-filter: blur(8px);
-	box-shadow: 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
+	gap: 5px;
+	min-width: 14px;
+	max-height: min(52vh, 420px);
+	overflow-x: hidden;
+	overflow-y: auto;
+	scrollbar-width: none;
+	padding: 2px 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+.note-outline-rail::-webkit-scrollbar {
+	width: 0;
+	height: 0;
 }
 
 .note-outline-mark {
 	display: block;
-	width: calc(18px - (var(--outline-level, 1) - 1) * 2.2px);
-	min-width: 8px;
+	width: calc(14px - (var(--outline-level, 1) - 1) * 1.6px);
+	min-width: 7px;
 	height: 2px;
 	padding: 0;
 	border: 0;
 	border-radius: 999px;
-	background: color-mix(in srgb, var(--muted) 55%, transparent);
+	background: color-mix(in srgb, var(--muted) 50%, transparent);
 	cursor: pointer;
-	transition:
-		background 140ms ease,
-		width 140ms ease,
-		transform 140ms ease;
+	transition: background 140ms ease;
 }
 
 .note-outline-mark:hover {
 	background: color-mix(in srgb, var(--ink) 55%, transparent);
-	transform: scaleY(1.35);
 }
 
 .note-outline-mark.active {
+	/* Color only — keep the same width as inactive marks. */
 	background: var(--accent);
-	width: calc(20px - (var(--outline-level, 1) - 1) * 2px);
-	min-width: 10px;
 }
 
+/* Float the list over the marks so moving onto the panel keeps hover open. */
 .note-outline-panel {
 	pointer-events: none;
+	position: absolute;
+	top: 0;
+	right: 0;
+	z-index: 2;
 	opacity: 0;
 	visibility: hidden;
-	transform: translateX(6px);
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
-	min-width: 140px;
-	max-width: min(240px, 42vw);
+	gap: 1px;
+	width: min(220px, 48vw);
+	max-width: min(220px, 48vw);
 	max-height: min(52vh, 420px);
-	overflow-x: auto;
+	overflow-x: hidden;
 	overflow-y: auto;
-	scrollbar-gutter: stable;
 	scrollbar-width: thin;
-	scrollbar-color: color-mix(in srgb, var(--quiet) 45%, transparent) transparent;
-	padding: 8px;
+	scrollbar-color: color-mix(in srgb, var(--quiet) 40%, transparent) transparent;
+	padding: 6px;
 	border: 1px solid var(--line);
-	border-radius: 10px;
-	background: color-mix(in srgb, var(--panel-bg) 94%, transparent);
-	box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+	border-radius: 8px;
+	background: color-mix(in srgb, var(--panel-bg) 96%, transparent);
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
 	backdrop-filter: blur(10px);
 	transition:
-		opacity 140ms ease,
-		transform 140ms ease,
-		visibility 140ms ease;
+		opacity 120ms ease,
+		visibility 120ms ease;
 }
 
 .note-outline.open .note-outline-panel,
@@ -468,13 +473,12 @@
 	pointer-events: auto;
 	opacity: 1;
 	visibility: visible;
-	transform: translateX(0);
 }
 
 .note-outline-item {
 	display: block;
-	width: max-content;
-	min-width: 100%;
+	width: 100%;
+	min-width: 0;
 	min-height: 28px;
 	margin: 0;
 	padding: 5px 8px 5px calc(8px + (var(--outline-level, 1) - 1) * 10px);
@@ -486,16 +490,15 @@
 	line-height: 1.35;
 	text-align: left;
 	cursor: pointer;
-	white-space: nowrap;
 }
 
 .note-outline-item > span {
-	display: inline-block;
-	max-width: 200px;
+	display: block;
+	min-width: 0;
+	width: 100%;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	vertical-align: bottom;
 }
 
 .note-outline-item:hover {
@@ -509,8 +512,8 @@
 }
 
 .note-outline-panel::-webkit-scrollbar {
-	width: 8px;
-	height: 8px;
+	width: 6px;
+	height: 0;
 }
 
 .note-outline-panel::-webkit-scrollbar-track {
@@ -518,10 +521,14 @@
 }
 
 .note-outline-panel::-webkit-scrollbar-thumb {
-	border: 2px solid transparent;
+	border: 1px solid transparent;
 	border-radius: 999px;
 	background-clip: padding-box;
-	background-color: color-mix(in srgb, var(--quiet) 38%, transparent);
+	background-color: color-mix(in srgb, var(--quiet) 36%, transparent);
+}
+
+.note-outline-panel::-webkit-scrollbar-corner {
+	background: transparent;
 }
 
 .note-mode.active {
@@ -1326,13 +1333,9 @@ details.markdown-callout > .markdown-callout-title::marker {
 	}
 
 	.note-outline-panel {
-		min-width: 132px;
-		max-width: min(70vw, 220px);
+		width: min(200px, 72vw);
+		max-width: min(200px, 72vw);
 		max-height: min(46vh, 320px);
-	}
-
-	.note-outline-item > span {
-		max-width: 180px;
 	}
 
 	.note-heading > input {

@@ -1929,6 +1929,18 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 						})
 						.filter((item): item is { id: string; from: number } => item !== null);
 
+					const centerInScrollable = (container: HTMLElement, target: HTMLElement | null | undefined) => {
+						if (!target || container.scrollHeight <= container.clientHeight + 1) return;
+						const containerRect = container.getBoundingClientRect();
+						const targetRect = target.getBoundingClientRect();
+						const top =
+							container.scrollTop +
+							(targetRect.top - containerRect.top) -
+							(container.clientHeight - targetRect.height) / 2;
+						container.scrollTop = Math.max(0, Math.min(top, container.scrollHeight - container.clientHeight));
+					};
+
+					let lastActiveId: string | null = null;
 					const setActive = (activeId: string | null) => {
 						for (const button of markButtons) {
 							button.classList.toggle('active', button.dataset.headingId === activeId);
@@ -1936,6 +1948,13 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 						for (const button of itemButtons) {
 							button.classList.toggle('active', button.dataset.headingId === activeId);
 						}
+						if (activeId === lastActiveId) return;
+						lastActiveId = activeId;
+						// Keep the current section visible/centered when the rail or panel overflows.
+						const activeMark = markButtons.find((button) => button.dataset.headingId === activeId);
+						const activeItem = itemButtons.find((button) => button.dataset.headingId === activeId);
+						centerInScrollable(rail, activeMark);
+						centerInScrollable(panel, activeItem);
 					};
 
 					const refreshActive = () => {
@@ -1993,7 +2012,17 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 
 					outline.replaceChildren(rail, panel);
 
-					const openPanel = () => outline.classList.add('open');
+					const syncOutlineScroll = () => {
+						const activeMark = markButtons.find((button) => button.classList.contains('active'));
+						const activeItem = itemButtons.find((button) => button.classList.contains('active'));
+						centerInScrollable(rail, activeMark);
+						centerInScrollable(panel, activeItem);
+					};
+					const openPanel = () => {
+						outline.classList.add('open');
+						// Panel may have been hidden; re-center after it participates in layout.
+						requestAnimationFrame(syncOutlineScroll);
+					};
 					const closePanel = () => {
 						if (!outline.matches(':hover') && !outline.contains(document.activeElement))
 							outline.classList.remove('open');

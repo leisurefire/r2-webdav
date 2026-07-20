@@ -67,26 +67,32 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
 			input.action === 'rewrite'
 				? 'Use the same language as the user text. Do not wrap the whole answer in code fences.'
 				: 'Use the same language as the user text. Return Markdown only, without code fences or commentary.';
+		const selectionAction =
+			input.action === 'summarize' || input.action === 'polish' || input.action === 'rewrite';
 		const task =
 			input.action === 'summarize'
-				? 'Summarize the selected text concisely in Markdown. Return only the summary body.'
+				? 'Summarize ONLY the selected text below. Do not use or invent content outside that selection. Return only the summary body.'
 				: input.action === 'polish'
-					? 'Polish the writing while preserving meaning and Markdown structure. Return only the polished Markdown.'
+					? 'Polish ONLY the selected text below while preserving meaning and Markdown structure. Do not expand to other document content. Return only the polished Markdown.'
 					: input.action === 'rewrite'
 						? [
-							'Edit the selected text according to the instruction.',
-							'First line: one short plain-language sentence (no Markdown heading) describing what you changed, e.g. "已按照你的要求添加了代码，请查看" / "Added the requested code snippet."',
-							'Then a blank line.',
-							'Then the full rewritten Markdown only.',
-							'Do not put the summary after the body.',
+								'Edit ONLY the selected text below according to the instruction.',
+								'Do not rewrite or include content outside the selection.',
+								'First line: one short plain-language sentence (no Markdown heading) describing what you changed, e.g. "已按照你的要求添加了代码，请查看" / "Added the requested code snippet."',
+								'Then a blank line.',
+								'Then the full rewritten Markdown for the selection only.',
+								'Do not put the summary after the body.',
 						  ].join(' ')
-						: 'Write a useful Markdown note from the request. Start with a single H1 heading (# Title) that captures the topic as the note title, then a blank line, then the body.';
+						: 'Write a useful Markdown note from the request. Start with a single H1 heading (# Title) that captures the topic as the note title, then a blank line, then the body. Use document context only as background reference when provided.';
 		const prompt = [
 			task,
 			language,
 			input.instruction ? `Instruction: ${input.instruction}` : '',
-			input.context ? `Document context:\n${input.context.slice(0, 20_000)}` : '',
-			`Text or request:\n${input.text}`,
+			// Full-document context is only for generate (blank-line / empty-doc writing).
+			!selectionAction && input.context
+				? `Document context (background only; do not rewrite the whole document unless asked):\n${input.context.slice(0, 20_000)}`
+				: '',
+			selectionAction ? `Selected text:\n${input.text}` : `Request:\n${input.text}`,
 		]
 			.filter(Boolean)
 			.join('\n\n');

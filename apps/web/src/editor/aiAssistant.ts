@@ -170,6 +170,13 @@ export function bindMarkdownAiAssistant(
 	) => {
 		removeToolbar();
 		removePanel();
+		// Freeze the exact selected slice once; never re-read a broader range later.
+		const clampedFrom = Math.max(0, Math.min(range.from, view.state.doc.length));
+		const clampedTo = Math.max(clampedFrom, Math.min(range.to, view.state.doc.length));
+		range = { from: clampedFrom, to: clampedTo };
+		if (action === 'summarize' || action === 'polish' || action === 'rewrite') {
+			requestText = view.state.sliceDoc(range.from, range.to);
+		}
 		// Keep a soft selection highlight while the panel steals focus.
 		if (range.to > range.from) holdSelectionHighlight(view, range.from, range.to);
 		else clearSelectionHold(view);
@@ -316,8 +323,12 @@ export function bindMarkdownAiAssistant(
 		};
 
 		const generate = async () => {
-			const request = input.value.trim() || requestText;
-			if (!request) return;
+			const instruction = input.value.trim() || presetInstruction || undefined;
+			// Selection actions must operate on the frozen selection only — never the whole note.
+			const selectionAction = action === 'summarize' || action === 'polish' || action === 'rewrite';
+			const selectedText = selectionAction ? requestText : '';
+			const request = selectionAction ? selectedText : input.value.trim() || requestText;
+			if (!request.trim()) return;
 			controller?.abort();
 			controller = new AbortController();
 			result = '';
@@ -326,16 +337,18 @@ export function bindMarkdownAiAssistant(
 			resultNode.innerHTML = `<div class="ai-thinking"><i data-lucide="sparkles"></i><span>${t('正在生成…', 'Writing…')}</span></div>`;
 			paintIcons(resultNode);
 			try {
-				const instruction = input.value.trim() || presetInstruction || undefined;
 				// Rewrite: keep a stable loading state (no token streaming in the panel).
 				const streamIntoPanel = action !== 'rewrite';
+				// Generate (empty doc / blank line) may include the full note as background context.
+				// Summarize / polish / rewrite only submit the selected text.
+				const documentContext = selectionAction ? undefined : view.state.doc.toString() || undefined;
 				await api.ai(
 					{
 						model: aiModelForAction(action),
 						action,
-						text: requestText || request,
-						instruction,
-						context: view.state.doc.toString(),
+						text: request,
+						instruction: selectionAction ? instruction : instruction && instruction !== request ? instruction : undefined,
+						context: documentContext,
 					},
 					(token) => {
 						streamText += token;
@@ -354,7 +367,8 @@ export function bindMarkdownAiAssistant(
 				}
 				if (!result) throw new Error(t('AI 没有返回内容', 'AI returned no content'));
 				if (action === 'polish' || action === 'rewrite') {
-					const original = view.state.sliceDoc(range.from, range.to);
+					// Prefer the frozen selection snapshot so a wider live range cannot leak in.
+					const original = requestText || view.state.sliceDoc(range.from, range.to);
 					const preview = buildAiReviewPreview(original, result);
 					view.dispatch({
 						changes: { from: range.from, to: range.to, insert: preview.text },
@@ -552,7 +566,12 @@ export function bindMarkdownAiAssistant(
 			if (!panel) clearSelectionHold(view);
 			return removeToolbar();
 		}
-		trackedSelection = { from: range.from, to: range.to, text: view.state.sliceDoc(range.from, range.to) };
+		// Snapshot the document slice for the current CodeMirror selection only.
+		trackedSelection = {
+			from: range.from,
+			to: range.to,
+			text: view.state.sliceDoc(range.from, range.to),
+		};
 		holdSelectionHighlight(view, range.from, range.to);
 		const coords = view.coordsAtPos(range.from);
 		removeToolbar();
@@ -686,10 +705,21 @@ export function bindMarkdownAiAssistant(
 	// doc changes (AI insert, select-all + delete) do not fire DOM 'input'; the caller wires this sync into the editor's onChange.
 	view.dom.addEventListener('input', syncEmptyPrompt);
 	emptyPrompt.addEventListener('click', () => openPanel('generate', '', { from: 0, to: 0 }));
+	/** Cursor is on a blank line (empty doc or a newly opened empty line). */
+	const isBlankLineAtCursor = (): boolean => {
+		const selection = view.state.selection.main;
+		if (!selection.empty) return false;
+		const line = view.state.doc.lineAt(selection.head);
+		return line.text.trim().length === 0;
+	};
 	view.dom.addEventListener('keydown', (event) => {
-		if (event.key !== ' ' || view.state.doc.length !== 0 || panel) return;
+		if (event.key !== ' ' || panel) return;
+		if (event.ctrlKey || event.metaKey || event.altKey) return;
+		if (!isBlankLineAtCursor()) return;
 		event.preventDefault();
-		openPanel('generate', '', { from: 0, to: 0 });
+		const head = view.state.selection.main.head;
+		// Context for blank-line generate is the full note; the space itself is not inserted.
+		openPanel('generate', '', { from: head, to: head });
 	});
 	return () => syncEmptyPrompt();
 }
