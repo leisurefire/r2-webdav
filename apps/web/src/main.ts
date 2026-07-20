@@ -25,6 +25,7 @@ import {
 	Music,
 	PanelLeftClose,
 	PanelLeftOpen,
+	Pencil,
 	Pin,
 	PinOff,
 	Plus,
@@ -32,6 +33,7 @@ import {
 	Save,
 	Settings,
 	Smartphone,
+	Sparkles,
 	StickyNote,
 	Trash2,
 	Upload,
@@ -52,7 +54,16 @@ import type {
 	NotePage,
 } from '@r2-webdav/shared-types';
 import { Lunar, Solar } from 'lunar-typescript';
-import { API_BASE, ApiError, api, hasSession } from './api/client';
+import {
+	API_BASE,
+	ApiError,
+	aiModelForAction,
+	api,
+	availableAiModels,
+	hasSession,
+	saveAiModelForAction,
+	saveAvailableAiModels,
+} from './api/client';
 import { bindBookmarkPreviews } from './bookmarks/previews';
 import { renderMarkdown, renderMarkdownDocument } from './editor/markdownRenderer';
 import './styles.css';
@@ -83,6 +94,15 @@ const messages = {
 		settingsConnection: 'Connection',
 		settingsLanguage: 'Language',
 		settingsLanguageHint: 'Choose the language used across TrueSpace.',
+		settingsAi: 'AI assistant',
+		settingsAiHint: 'Choose which model handles each AI action in the note editor.',
+		aiActionGenerate: 'Writing',
+		aiActionSummarize: 'Summarize',
+		aiActionPolish: 'Polish',
+		aiActionRewrite: 'Edit with AI',
+		aiPullModels: 'Pull models',
+		aiPullModelsBusy: 'Pulling…',
+		aiPullModelsDone: 'Model list updated',
 		webdavUrl: 'WebDAV URL',
 		caldavUrl: 'CalDAV URL',
 		copy: 'Copy',
@@ -140,6 +160,15 @@ const messages = {
 		settingsConnection: '连接',
 		settingsLanguage: '语言',
 		settingsLanguageHint: '选择工作区界面使用的语言。',
+		settingsAi: 'AI 助手',
+		settingsAiHint: '为便签编辑器中的不同 AI 任务分别选择模型。',
+		aiActionGenerate: '写作',
+		aiActionSummarize: '总结',
+		aiActionPolish: '润色',
+		aiActionRewrite: '修改',
+		aiPullModels: '拉取模型',
+		aiPullModelsBusy: '正在拉取…',
+		aiPullModelsDone: '模型列表已更新',
 		webdavUrl: 'WebDAV 地址',
 		caldavUrl: 'CalDAV 地址',
 		copy: '复制',
@@ -244,6 +273,7 @@ function refreshIcons(): void {
 			Music,
 			PanelLeftClose,
 			PanelLeftOpen,
+			Pencil,
 			Pin,
 			PinOff,
 			Plus,
@@ -251,6 +281,7 @@ function refreshIcons(): void {
 			Save,
 			Settings,
 			Smartphone,
+			Sparkles,
 			StickyNote,
 			Trash2,
 			Upload,
@@ -398,7 +429,7 @@ function breadcrumbMarkup(path: string): string {
 function openTextDialog(title: string, label: string, initial = ''): Promise<string | null> {
 	return new Promise((resolve) => {
 		const dialog = document.createElement('dialog');
-		dialog.innerHTML = `<form method="dialog" class="dialog-body"><h2>${html(title)}</h2><div class="field"><label for="dialog-value">${html(label)}</label><input class="input" id="dialog-value" value="${html(initial)}" required autocomplete="off"></div><div class="dialog-actions"><button class="button" value="cancel">Cancel</button><button class="button primary" value="confirm">Save</button></div></form>`;
+		dialog.innerHTML = `<form method="dialog" class="dialog-body"><h2>${html(title)}</h2><div class="field"><label for="dialog-value">${html(label)}</label><input class="input" id="dialog-value" value="${html(initial)}" required autocomplete="off"></div><div class="dialog-actions"><button class="button" value="cancel" formnovalidate>${locale === 'zh' ? '取消' : 'Cancel'}</button><button class="button primary" value="confirm">${locale === 'zh' ? '保存' : 'Save'}</button></div></form>`;
 		document.body.append(dialog);
 		dialog.addEventListener('close', () => {
 			const value =
@@ -1426,13 +1457,13 @@ function noteLocationMarkup(note: Note): string {
 function noteEditorMarkup(selected: Note, mobile = false): string {
 	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'}" data-note-editor-id="${html(selected.id)}">
 		<form data-note-form>
-			<div class="note-editor-head">${mobile ? `<button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>` : ''}<div class="note-heading"><div class="note-location-wrap">${noteLocationMarkup(selected)}</div><input data-note-title value="${html(selected.title)}" maxlength="200" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}"></div><span class="note-save-status" data-note-save-status aria-live="polite"></span>${noteFolderSelectMarkup(selected.folderId)}<time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
+			<div class="note-editor-head">${mobile ? `<button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>` : ''}<span class="note-save-status" data-note-save-status aria-live="polite"></span>${noteFolderSelectMarkup(selected.folderId)}<time>${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time><div class="note-actions">
 				<button type="button" class="row-action" data-note-export title="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}" aria-label="${locale === 'zh' ? '导出 Markdown' : 'Export Markdown'}"><i data-lucide="file-down"></i></button>
 				<button type="button" class="row-action ${selected.pinned ? 'active' : ''}" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}" aria-label="${selected.pinned ? t('unpin') : t('pin')}" aria-pressed="${selected.pinned}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
 				<button type="button" class="row-action" data-note-archive title="${selected.archived ? t('restore') : t('archive')}" aria-label="${selected.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
 				<button type="button" class="row-action danger" data-note-delete title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button>
 			</div></div>
-			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-source" data-note-source aria-label="${t('markdown')}"></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
+			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-heading"><div class="note-location-wrap">${noteLocationMarkup(selected)}</div><input data-note-title value="${html(selected.title)}" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}"></div><div class="note-source" data-note-source aria-label="${t('markdown')}"></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
 		</form>
 	</section>`;
 }
@@ -1782,6 +1813,7 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 			const view = createMarkdownLivePreview(source, draftContent, {
 				onChange: (value, immediate) => {
 					draftContent = value.replaceAll('\r', '');
+					syncAiEmptyPrompt?.();
 					optimisticallyUpdateNote(data, selected, { content: draftContent });
 					reorderVisibleNoteCards(data);
 					if (immediate) void flushNoteCommit(selected.id);
@@ -1811,9 +1843,17 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 					toast(locale === 'zh' ? '图片超过 256 KB，暂不允许粘贴' : 'Images over 256 KB cannot be pasted yet'),
 				onImageReadError: () => toast(locale === 'zh' ? '无法读取粘贴的图片' : 'Could not read the pasted image'),
 			});
-			void import('./editor/aiAssistant').then(({ bindMarkdownAiAssistant }) =>
-				bindMarkdownAiAssistant(view, source, locale, (error) => toast(errorMessage(error))),
-			);
+			let syncAiEmptyPrompt: (() => void) | undefined;
+			void import('./editor/aiAssistant').then(({ bindMarkdownAiAssistant }) => {
+				syncAiEmptyPrompt = bindMarkdownAiAssistant(view, source, locale, {
+					onError: (error) => toast(errorMessage(error)),
+					onTitleChange: (nextTitle) => {
+						optimisticallyUpdateNote(data, selected, { title: nextTitle });
+						syncNoteTitle(selected, title);
+						reorderVisibleNoteCards(data);
+					},
+				});
+			});
 		})
 		.catch(() => {
 			const status = root.querySelector<HTMLElement>('[data-note-save-status]');
@@ -1997,9 +2037,10 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 		try {
 			const created = await api.createNoteFolder(name);
 			noteFolders.push(created);
-			selectedNoteFolderId = created.id;
-			invalidateNoteCaches();
-			await renderNotes(undefined, true);
+			noteFoldersLoaded = true;
+			// Stay in the current view instead of jumping into the empty folder,
+			// which made the note list look like it was wiped.
+			if (notesData) paintNotes(notesData, currentSelectedNoteId());
 		} catch (error) {
 			toast(errorMessage(error));
 		}
@@ -2453,6 +2494,20 @@ function renderSettings(): void {
 		<section class="settings-section"><h2 class="settings-section-heading"><i data-lucide="languages"></i><span>${t('settingsLanguage')}</span></h2>
 			<div class="field"><label for="language-select">${t('settingsLanguage')}</label><select class="input" id="language-select"><option value="en" ${locale === 'en' ? 'selected' : ''}>${t('english')}</option><option value="zh" ${locale === 'zh' ? 'selected' : ''}>${t('chinese')}</option></select><p class="muted">${t('settingsLanguageHint')}</p></div>
 		</section>
+		<section class="settings-section"><h2 class="settings-section-heading"><i data-lucide="sparkles"></i><span>${t('settingsAi')}</span></h2>
+			${(['generate', 'summarize', 'polish', 'rewrite'] as const)
+				.map(
+					(action) =>
+						`<div class="field"><label for="ai-model-${action}">${t(`aiAction${action[0].toUpperCase()}${action.slice(1)}` as MessageKey)}</label><select class="input" id="ai-model-${action}" data-ai-model-action="${action}">${availableAiModels()
+							.map(
+								(model) =>
+									`<option value="${html(model)}" ${model === aiModelForAction(action) ? 'selected' : ''}>${html(model)}</option>`,
+							)
+							.join('')}</select></div>`,
+				)
+				.join('')}
+			<div class="field"><button class="button" id="ai-pull-models"><i data-lucide="refresh-cw"></i><span>${t('aiPullModels')}</span></button><p class="muted">${t('settingsAiHint')}</p></div>
+		</section>
 	</div>`,
 	);
 	document.querySelector<HTMLSelectElement>('#language-select')?.addEventListener('change', (event) => {
@@ -2467,6 +2522,35 @@ function renderSettings(): void {
 			toast(t('copied'));
 		}),
 	);
+	document.querySelectorAll<HTMLSelectElement>('[data-ai-model-action]').forEach((select) =>
+		select.addEventListener('change', () => {
+			saveAiModelForAction(
+				select.dataset.aiModelAction as 'generate' | 'summarize' | 'polish' | 'rewrite',
+				select.value,
+			);
+		}),
+	);
+	document.querySelector<HTMLButtonElement>('#ai-pull-models')?.addEventListener('click', async (event) => {
+		const button = event.currentTarget as HTMLButtonElement;
+		const label = button.querySelector('span');
+		button.disabled = true;
+		if (label) label.textContent = t('aiPullModelsBusy');
+		try {
+			const models = await api.aiModels();
+			if (!models.length) throw new Error(locale === 'zh' ? '服务未返回可用模型' : 'No supported models returned');
+			saveAvailableAiModels(models);
+			document.querySelectorAll<HTMLSelectElement>('[data-ai-model-action]').forEach((select) => {
+				const current = select.value;
+				select.replaceChildren(...models.map((model) => new Option(model, model, false, model === current)));
+			});
+			toast(t('aiPullModelsDone'));
+		} catch (error) {
+			toast(errorMessage(error));
+		} finally {
+			button.disabled = false;
+			if (label) label.textContent = t('aiPullModels');
+		}
+	});
 	refreshIcons();
 }
 

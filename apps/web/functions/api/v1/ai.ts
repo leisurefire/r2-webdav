@@ -64,7 +64,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
 					? 'Polish the writing while preserving meaning and Markdown structure.'
 					: input.action === 'rewrite'
 						? 'Rewrite the selected text according to the instruction.'
-						: 'Write a useful Markdown note from the request.';
+						: 'Write a useful Markdown note from the request. Start with a single H1 heading (# Title) that captures the topic as the note title, then a blank line, then the body.';
 		const prompt = [
 			task,
 			language,

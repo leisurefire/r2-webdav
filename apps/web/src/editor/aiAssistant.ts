@@ -6,39 +6,41 @@ import {
 	Code,
 	Italic,
 	MessageSquareText,
-	RefreshCw,
 	RotateCcw,
 	Sigma,
 	Sparkles,
 	WandSparkles,
 	X,
-	createIcons,
+	createElement,
+	type IconNode,
 } from 'lucide';
-import { api, type AiModel } from '../api/client';
+import { aiModelForAction, api, type AiAction } from '../api/client';
+import { toggleMarkdownWrap } from './markdownLivePreview';
 import { renderMarkdown } from './markdownRenderer';
 
-type AiAction = 'generate' | 'summarize' | 'polish' | 'rewrite';
 type Locale = 'en' | 'zh';
 
-const FALLBACK_MODELS: AiModel[] = ['deepseek-v4-flash', 'deepseek-v4-pro', 'kimi-k3'];
-const MODEL_KEY = 'r2_ai_model';
+const AI_ICONS: Record<string, IconNode> = {
+	'arrow-up': ArrowUp,
+	bold: Bold,
+	check: Check,
+	code: Code,
+	italic: Italic,
+	'message-square-text': MessageSquareText,
+	'rotate-ccw': RotateCcw,
+	sigma: Sigma,
+	sparkles: Sparkles,
+	'wand-sparkles': WandSparkles,
+	x: X,
+};
 
-function icons(): void {
-	createIcons({
-		icons: {
-			ArrowUp,
-			Bold,
-			Check,
-			Code,
-			Italic,
-			MessageSquareText,
-			RefreshCw,
-			RotateCcw,
-			Sigma,
-			Sparkles,
-			WandSparkles,
-			X,
-		},
+// Replace icons only inside the given subtree: calling the global createIcons()
+// with a partial icon set warns about every other data-lucide element on the page.
+function paintIcons(root: ParentNode): void {
+	root.querySelectorAll<HTMLElement>('[data-lucide]').forEach((element) => {
+		const node = AI_ICONS[element.dataset.lucide ?? ''];
+		if (!node) return;
+		element.replaceWith(createElement(node));
 	});
 }
 
@@ -48,16 +50,11 @@ export function normalizeAiMarkdown(value: string): string {
 	return (fenced?.[1] ?? trimmed).replaceAll('\r', '');
 }
 
-function selectedModel(): AiModel {
-	const stored = localStorage.getItem(MODEL_KEY);
-	return FALLBACK_MODELS.includes(stored as AiModel) ? (stored as AiModel) : FALLBACK_MODELS[0];
-}
-
-function modelOptions(): string {
-	const current = selectedModel();
-	return FALLBACK_MODELS.map(
-		(model) => `<option value="${model}"${model === current ? ' selected' : ''}>${model}</option>`,
-	).join('');
+/** Extract a leading "# Title" from generated Markdown so it can drive the note title. */
+export function splitAiTitle(value: string): { title: string; body: string } | null {
+	const match = /^#\s+(.+?)\s*#*\s*(?:\n+|$)([\s\S]*)$/.exec(value.trim());
+	if (!match) return null;
+	return { title: match[1].trim(), body: match[2].trim() };
 }
 
 interface AiRange {
@@ -65,14 +62,44 @@ interface AiRange {
 	to: number;
 }
 
+export interface MarkdownAiOptions {
+	onError: (error: unknown) => void;
+	onTitleChange?: (title: string) => void;
+}
+
+const FORMAT_BUTTONS: Array<{ id: string; marker: string; icon: string; zh: string; en: string }> = [
+	{ id: 'bold', marker: '**', icon: 'bold', zh: '粗体', en: 'Bold' },
+	{ id: 'italic', marker: '*', icon: 'italic', zh: '斜体', en: 'Italic' },
+	{ id: 'code', marker: '`', icon: 'code', zh: '行内代码', en: 'Inline code' },
+	{ id: 'formula', marker: '$', icon: 'sigma', zh: '公式', en: 'Formula' },
+];
+
+/** How much of [from, to) is wrapped by paired markers: none, partially, or fully. */
+function markerCoverage(view: EditorView, from: number, to: number, marker: string): 'none' | 'partial' | 'full' {
+	const doc = view.state.doc.toString();
+	const char = marker === '**' ? '\\*' : marker === '`' ? '`' : marker === '$' ? '\\$' : '\\*';
+	const run = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const paired = new RegExp(`(?<!${char})${run}(?!${char})([^\\n]+?)(?<!${char})${run}(?!${char})`, 'g');
+	let covered = 0;
+	let match: RegExpExecArray | null;
+	while ((match = paired.exec(doc))) {
+		const start = Math.max(match.index, from);
+		const end = Math.min(match.index + match[0].length, to);
+		if (end > start) covered += end - start;
+	}
+	if (covered >= to - from) return 'full';
+	return covered > 0 ? 'partial' : 'none';
+}
+
 export function bindMarkdownAiAssistant(
 	view: EditorView,
 	host: HTMLElement,
 	locale: Locale,
-	onError: (error: unknown) => void,
-): void {
+	options: MarkdownAiOptions,
+): () => void {
 	const zh = locale === 'zh';
 	const t = (zhText: string, enText: string): string => (zh ? zhText : enText);
+	const onError = options.onError;
 	let panel: HTMLElement | null = null;
 	let toolbar: HTMLElement | null = null;
 	let trackedSelection: (AiRange & { text: string }) | null = null;
@@ -84,17 +111,6 @@ export function bindMarkdownAiAssistant(
 	const removeToolbar = () => {
 		toolbar?.remove();
 		toolbar = null;
-	};
-
-	const applyWrap = (before: string, after: string) => {
-		const target = trackedSelection;
-		if (!target) return;
-		view.dispatch({
-			changes: { from: target.from, to: target.to, insert: `${before}${target.text}${after}` },
-			selection: { anchor: target.from + before.length, head: target.from + before.length + target.text.length },
-			scrollIntoView: true,
-		});
-		view.focus();
 	};
 
 	const openPanel = (action: AiAction, requestText: string, range: AiRange, presetInstruction = '') => {
@@ -113,9 +129,8 @@ export function bindMarkdownAiAssistant(
 			<header class="ai-panel-head">
 				<span class="ai-mark"><i data-lucide="sparkles"></i></span>
 				<span class="ai-panel-title">${actionLabel}</span>
+				<span class="ai-panel-model">${aiModelForAction(action)}</span>
 				<span class="toolbar-spacer"></span>
-				<select class="ai-model" data-ai-model aria-label="${t('模型', 'Model')}">${modelOptions()}</select>
-				<button class="row-action" type="button" data-ai-models title="${t('从服务拉取模型', 'Pull models from service')}" aria-label="${t('从服务拉取模型', 'Pull models from service')}"><i data-lucide="refresh-cw"></i></button>
 				<button class="row-action" type="button" data-ai-close aria-label="${t('关闭', 'Close')}"><i data-lucide="x"></i></button>
 			</header>
 			${
@@ -138,12 +153,24 @@ export function bindMarkdownAiAssistant(
 			</footer>
 		</div>`;
 		host.append(panel);
-		icons();
+		paintIcons(panel);
+		// Desktop: anchor the panel to the cursor/selection like Notion does.
+		// Mobile CSS pins it to the bottom of the editor instead.
+		const cursorCoords = view.coordsAtPos(range.from);
+		const hostRect = host.getBoundingClientRect();
+		if (cursorCoords && !window.matchMedia('(max-width: 720px)').matches) {
+			const shellWidth = Math.min(640, hostRect.width - 24);
+			panel.style.left = `${Math.max(12, Math.min(cursorCoords.left - hostRect.left, hostRect.width - shellWidth - 12))}px`;
+			panel.style.bottom = 'auto';
+			const maxHeight = Math.min(hostRect.height * 0.56, 460);
+			let top = cursorCoords.bottom - hostRect.top + 10;
+			if (top + maxHeight > hostRect.height - 12) top = Math.max(12, cursorCoords.top - hostRect.top - maxHeight - 10);
+			panel.style.top = `${top}px`;
+		}
 
 		const resultNode = panel.querySelector<HTMLElement>('[data-ai-result]')!;
 		const apply = panel.querySelector<HTMLButtonElement>('[data-ai-apply]')!;
 		const retry = panel.querySelector<HTMLButtonElement>('[data-ai-retry]')!;
-		const model = panel.querySelector<HTMLSelectElement>('[data-ai-model]')!;
 		const instruction = panel.querySelector<HTMLInputElement>('[data-ai-instruction]');
 		if (instruction && presetInstruction) instruction.value = presetInstruction;
 		let result = '';
@@ -156,11 +183,11 @@ export function bindMarkdownAiAssistant(
 			apply.disabled = true;
 			retry.hidden = true;
 			resultNode.innerHTML = `<div class="ai-thinking"><i data-lucide="sparkles"></i><span>${t('正在生成…', 'Writing…')}</span></div>`;
-			icons();
+			paintIcons(resultNode);
 			try {
 				await api.ai(
 					{
-						model: model.value as AiModel,
+						model: aiModelForAction(action),
 						action,
 						text: requestText,
 						instruction: instruction?.value.trim() || undefined,
@@ -198,30 +225,26 @@ export function bindMarkdownAiAssistant(
 			if (action === 'generate') requestText = instruction?.value.trim() || requestText;
 			if (requestText) void generate();
 		});
-		model.addEventListener('change', () => localStorage.setItem(MODEL_KEY, model.value));
-		panel.querySelector('[data-ai-models]')?.addEventListener('click', async () => {
-			const button = panel!.querySelector<HTMLButtonElement>('[data-ai-models]')!;
-			button.disabled = true;
-			try {
-				const available = await api.aiModels();
-				model.replaceChildren(...available.map((id) => new Option(id, id, false, id === model.value)));
-				if (!available.length) throw new Error(t('服务未返回可用模型', 'No supported models returned'));
-			} catch (error) {
-				onError(error);
-			} finally {
-				button.disabled = false;
-			}
-		});
 		apply.addEventListener('click', () => {
+			let value = result;
+			let title: string | null = null;
+			if (action === 'generate') {
+				const split = splitAiTitle(result);
+				if (split) {
+					title = split.title;
+					value = split.body;
+				}
+			}
 			const insertAt = action === 'summarize' ? range.to : range.from;
 			const replaceTo = action === 'summarize' || action === 'generate' ? insertAt : range.to;
 			const prefix = action === 'summarize' && insertAt > 0 ? '\n\n' : '';
-			const value = `${prefix}${result}`;
+			const inserted = `${prefix}${value}`;
 			view.dispatch({
-				changes: { from: insertAt, to: replaceTo, insert: value },
-				selection: { anchor: insertAt + value.length },
+				changes: { from: insertAt, to: replaceTo, insert: inserted },
+				selection: { anchor: insertAt + inserted.length },
 				scrollIntoView: true,
 			});
+			if (title) options.onTitleChange?.(title);
 			close();
 		});
 		panel.addEventListener('keydown', (event) => {
@@ -250,11 +273,12 @@ export function bindMarkdownAiAssistant(
 		removeToolbar();
 		toolbar = document.createElement('div');
 		toolbar.className = 'ai-selection-menu';
+		const formatButtons = FORMAT_BUTTONS.map(
+			(button) =>
+				`<button type="button" data-format="${button.id}" data-marker="${button.marker}" title="${t(button.zh, button.en)}" aria-label="${t(button.zh, button.en)}" aria-pressed="false"><i data-lucide="${button.icon}"></i></button>`,
+		).join('');
 		toolbar.innerHTML = `
-			<button type="button" data-format="bold" title="${t('粗体', 'Bold')}" aria-label="${t('粗体', 'Bold')}"><i data-lucide="bold"></i></button>
-			<button type="button" data-format="italic" title="${t('斜体', 'Italic')}" aria-label="${t('斜体', 'Italic')}"><i data-lucide="italic"></i></button>
-			<button type="button" data-format="code" title="${t('行内代码', 'Inline code')}" aria-label="${t('行内代码', 'Inline code')}"><i data-lucide="code"></i></button>
-			<button type="button" data-format="formula" title="${t('公式', 'Formula')}" aria-label="${t('公式', 'Formula')}"><i data-lucide="sigma"></i></button>
+			${formatButtons}
 			<span class="ai-menu-divider"></span>
 			<span class="ai-menu-badge"><i data-lucide="sparkles"></i></span>
 			<button type="button" data-action="summarize">${t('总结', 'Summarize')}</button>
@@ -269,21 +293,21 @@ export function bindMarkdownAiAssistant(
 			toolbar.style.top = `${Math.max(8, coords.top - 48)}px`;
 		}
 		document.body.append(toolbar);
-		icons();
-		toolbar.querySelectorAll<HTMLButtonElement>('[data-format]').forEach((button) =>
+		paintIcons(toolbar);
+		// Highlight a format button only when the whole selection is already wrapped;
+		// partial coverage stays neutral and pressing it wraps everything together.
+		toolbar.querySelectorAll<HTMLButtonElement>('[data-format]').forEach((button) => {
+			const marker = button.dataset.marker ?? '**';
+			const active = markerCoverage(view, range.from, range.to, marker) === 'full';
+			button.classList.toggle('active', active);
+			button.setAttribute('aria-pressed', String(active));
 			button.addEventListener('mousedown', (event) => {
 				event.preventDefault();
-				const marks: Record<string, [string, string]> = {
-					bold: ['**', '**'],
-					italic: ['*', '*'],
-					code: ['`', '`'],
-					formula: ['$', '$'],
-				};
-				const [before, after] = marks[button.dataset.format ?? 'bold'] ?? ['**', '**'];
 				removeToolbar();
-				applyWrap(before, after);
-			}),
-		);
+				toggleMarkdownWrap(view, marker);
+				view.focus();
+			});
+		});
 		toolbar.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((button) =>
 			button.addEventListener('mousedown', (event) => {
 				event.preventDefault();
@@ -316,9 +340,10 @@ export function bindMarkdownAiAssistant(
 	emptyPrompt.className = 'ai-empty-prompt';
 	emptyPrompt.innerHTML = `<i data-lucide="wand-sparkles"></i><span>${t('开始创作，或者按下空格来唤起AI输入框', 'Start writing, or press Space to ask AI')}</span>`;
 	host.append(emptyPrompt);
-	icons();
+	paintIcons(emptyPrompt);
 	const syncEmptyPrompt = () => emptyPrompt.classList.toggle('visible', view.state.doc.length === 0);
 	syncEmptyPrompt();
+	// doc changes (AI insert, select-all + delete) do not fire DOM 'input'; the caller wires this sync into the editor's onChange.
 	view.dom.addEventListener('input', syncEmptyPrompt);
 	emptyPrompt.addEventListener('click', () => openPanel('generate', '', { from: 0, to: 0 }));
 	view.dom.addEventListener('keydown', (event) => {
@@ -326,4 +351,5 @@ export function bindMarkdownAiAssistant(
 		event.preventDefault();
 		openPanel('generate', '', { from: 0, to: 0 });
 	});
+	return () => syncEmptyPrompt();
 }

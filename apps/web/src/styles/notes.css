@@ -176,7 +176,33 @@
 	gap: 0;
 	margin-left: 16px;
 	padding: 1px 0 3px 12px;
+}
+
+.note-tree-node {
+	position: relative;
+}
+
+/* Vertical connector: full height for middle rows, stops at the tick for the
+   last leaf so the tree shows an L-shape instead of a T-junction. */
+.notes-tree-children > .note-card::after,
+.notes-tree-children > .note-tree-node::after,
+.notes-tree-children > .bookmark-tree-node::after {
+	content: '';
+	position: absolute;
+	left: -12px;
+	top: 0;
+	bottom: 0;
 	border-left: 1px solid var(--line);
+	pointer-events: none;
+}
+
+.notes-tree-children > .note-card:last-child::after {
+	bottom: calc(100% - 17px);
+}
+
+.notes-tree-children > .note-tree-node:last-child::after,
+.notes-tree-children > .bookmark-tree-node:last-child::after {
+	bottom: calc(100% - 17px);
 }
 
 .notes-tree-root {
@@ -231,15 +257,6 @@
 	font-size: 12px;
 	font-weight: 400;
 	line-height: 1.2;
-}
-
-.notes-tree-children .note-card::before {
-	content: '';
-	position: absolute;
-	left: -12px;
-	top: 17px;
-	width: 12px;
-	border-top: 1px solid var(--line);
 }
 
 .notes-tree-children .note-card-title {
@@ -552,7 +569,8 @@
 }
 
 .cm-live-frontmatter {
-	padding: 8px 12px;
+	padding: 0;
+	border: 0;
 	background: transparent;
 }
 
@@ -950,4 +968,24 @@ details.markdown-callout > .markdown-callout-title::marker {
 	.note-card-actions {
 		display: flex;
 	}
+}
+
+/* In-page title: the heading lives inside the document area above the editor. */
+.note-document {
+	display: flex;
+	flex-direction: column;
+}
+
+.note-document > .note-heading {
+	flex: none;
+	padding: 18px 12px 6px;
+}
+
+.note-document > .note-source {
+	flex: 1;
+	min-height: 0;
+}
+
+.note-document > .note-heading > input::placeholder {
+	color: var(--quiet);
 }

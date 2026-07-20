@@ -209,7 +209,7 @@ export function parsedDeleteRange(state: EditorState, direction: DeleteDirection
 	return result;
 }
 
-function toggleMarkdownWrap(view: EditorView, marker: string): boolean {
+export function toggleMarkdownWrap(view: EditorView, marker: string): boolean {
 	const selection = view.state.selection.main;
 	const { from, to } = selection;
 	const selected = view.state.sliceDoc(from, to);
@@ -500,14 +500,7 @@ function pointerPosition(view: EditorView, event: MouseEvent): PointerPosition {
 		if (Number.isFinite(from) && Number.isFinite(to) && to >= from) {
 			const source = view.state.sliceDoc(from, to);
 			const mode: SourcePointerMode = sourceTarget.dataset.sourceMode === 'geometry' ? 'geometry' : 'text';
-			const mapped = sourcePositionAtPointer(
-				sourceTarget,
-				from,
-				source,
-				event.clientX,
-				event.clientY,
-				mode,
-			);
+			const mapped = sourcePositionAtPointer(sourceTarget, from, source, event.clientX, event.clientY, mode);
 			const pos = sourceTarget.dataset.sourceInterior === 'true' ? clampToSourceInterior(from, source, mapped) : mapped;
 			return { pos, assoc: pos <= from ? 1 : -1 };
 		}
@@ -680,20 +673,25 @@ class LinkWidget extends SourceWidget {
 		const content = parsedWidgetContent(this.source, 'LinkWidget');
 		const contentFrom = content?.from ?? 0;
 		const contentTo = content?.to ?? this.source.length;
-		bindSourceNavigation(
-			anchor,
-			this.from + contentFrom,
-			this.source.slice(contentFrom, contentTo),
-			'text',
-		);
+		bindSourceNavigation(anchor, this.from + contentFrom, this.source.slice(contentFrom, contentTo), 'text');
+		// Keep the click from becoming a source-edit cursor move: without this the
+		// widget is swapped back to raw Markdown on mousedown and no click fires.
+		anchor.addEventListener('mousedown', (event) => {
+			if (event.button !== 0) return;
+			event.preventDefault();
+			event.stopPropagation();
+		});
 		anchor.addEventListener('click', (event) => {
 			const href = anchor.getAttribute('href') ?? '';
 			if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
 			event.preventDefault();
-			if (!href.startsWith('#')) return;
-			const position = headingPositionForHash(view, href);
-			if (position === null) return;
-			view.dispatch({ effects: EditorView.scrollIntoView(position, { y: 'start' }) });
+			event.stopPropagation();
+			if (href.startsWith('#')) {
+				const position = headingPositionForHash(view, href);
+				if (position !== null) view.dispatch({ effects: EditorView.scrollIntoView(position, { y: 'start' }) });
+				return;
+			}
+			if (/^[a-z][a-z0-9+.-]*:/i.test(href)) window.open(href, '_blank', 'noopener,noreferrer');
 		});
 		return anchor;
 	}
@@ -911,7 +909,6 @@ class BlockWidget extends SourceWidget {
 	}
 }
 
-
 class WikiLinkWidget extends SourceWidget {
 	constructor(
 		private readonly source: string,
@@ -997,7 +994,8 @@ function isInsideStructuralBlock(from: number, to: number, blocks: StructuralBlo
 function collectInlineFormatBlocks(state: EditorState, structuralBlocks: StructuralBlock[]): InlineFormatBlock[] {
 	const candidates: InlineFormatBlock[] = [];
 	const add = (candidate: InlineFormatBlock) => {
-		if (candidate.to <= candidate.from || isInsideStructuralBlock(candidate.from, candidate.to, structuralBlocks)) return;
+		if (candidate.to <= candidate.from || isInsideStructuralBlock(candidate.from, candidate.to, structuralBlocks))
+			return;
 		candidates.push(candidate);
 	};
 	const tree = syntaxTree(state);
@@ -1069,9 +1067,7 @@ function collectInlineFormatBlocks(state: EditorState, structuralBlocks: Structu
 
 function selectionTouchesRange(state: EditorState, from: number, to: number): boolean {
 	return state.selection.ranges.some((selection) =>
-		selection.empty
-			? selection.from >= from && selection.from <= to
-			: selection.from < to && selection.to > from,
+		selection.empty ? selection.from >= from && selection.from <= to : selection.from < to && selection.to > from,
 	);
 }
 
@@ -1179,20 +1175,11 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 					inline.from,
 					inline.to,
 					Decoration.replace({
-						widget: new LinkWidget(
-							source,
-							inline.from,
-							inline.to,
-							resolvedLinks.get(`${inline.from}:${inline.to}`),
-						),
+						widget: new LinkWidget(source, inline.from, inline.to, resolvedLinks.get(`${inline.from}:${inline.to}`)),
 					}),
 				);
 			} else if (inline.kind === 'image')
-				add(
-					inline.from,
-					inline.to,
-					Decoration.replace({ widget: new ImageWidget(source, inline.from, inline.to) }),
-				);
+				add(inline.from, inline.to, Decoration.replace({ widget: new ImageWidget(source, inline.from, inline.to) }));
 			else if (inline.kind === 'wikilink' || inline.kind === 'embed') {
 				const wiki = collectWikiLinkRanges(source)[0];
 				if (wiki)
@@ -1489,4 +1476,3 @@ export function createMarkdownLivePreview(
 	options.onHeadingsChange?.(renderMarkdownDocument(view.state.doc.toString()).headings);
 	return view;
 }
-

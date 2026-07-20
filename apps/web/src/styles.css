@@ -1094,7 +1094,8 @@ dialog {
 	width: min(480px, calc(100vw - 32px));
 	padding: 0;
 	border: 1px solid var(--line);
-	border-radius: var(--card-radius);
+	border-radius: 10px;
+	box-shadow: 0 24px 64px rgba(15, 23, 42, 0.2);
 }
 
 dialog::backdrop {
@@ -2198,7 +2199,7 @@ dialog::backdrop {
 	max-height: none;
 	padding: 0;
 	border: 1px solid var(--line);
-	border-radius: 8px;
+	border-radius: 10px;
 	overflow: hidden;
 }
 

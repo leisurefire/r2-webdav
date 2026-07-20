@@ -30,9 +30,37 @@ export class ApiError extends Error {
 }
 
 export type AiModel = 'deepseek-v4-flash' | 'deepseek-v4-pro' | 'kimi-k3';
+export type AiAction = 'generate' | 'summarize' | 'polish' | 'rewrite';
+
+export const AI_MODEL_FALLBACK: AiModel[] = ['deepseek-v4-flash', 'deepseek-v4-pro', 'kimi-k3'];
+const AI_MODELS_KEY = 'r2_ai_models';
+const AI_MODEL_ACTION_PREFIX = 'r2_ai_model_';
+
+export function availableAiModels(): string[] {
+	try {
+		const stored = JSON.parse(localStorage.getItem(AI_MODELS_KEY) ?? '[]') as unknown;
+		const models = Array.isArray(stored) ? stored.filter((item): item is string => typeof item === 'string') : [];
+		return models.length ? models : [...AI_MODEL_FALLBACK];
+	} catch {
+		return [...AI_MODEL_FALLBACK];
+	}
+}
+
+export function saveAvailableAiModels(models: string[]): void {
+	localStorage.setItem(AI_MODELS_KEY, JSON.stringify(models));
+}
+
+export function aiModelForAction(action: AiAction): string {
+	const stored = localStorage.getItem(`${AI_MODEL_ACTION_PREFIX}${action}`);
+	return stored && availableAiModels().includes(stored) ? stored : AI_MODEL_FALLBACK[0];
+}
+
+export function saveAiModelForAction(action: AiAction, model: string): void {
+	localStorage.setItem(`${AI_MODEL_ACTION_PREFIX}${action}`, model);
+}
 
 export interface AiRequest {
-	model: AiModel;
+	model: string;
 	action: 'generate' | 'summarize' | 'polish' | 'rewrite';
 	text: string;
 	instruction?: string;
