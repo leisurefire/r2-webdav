@@ -12,6 +12,7 @@ import {
 	Decoration,
 	WidgetType,
 	keymap,
+	lineNumbers,
 	type DecorationSet,
 	type MouseSelectionStyle,
 	type ViewUpdate,
@@ -362,9 +363,16 @@ export function scrollToMarkdownHeading(view: EditorView, hash: string): boolean
 	if (position === null) return false;
 	view.dispatch({
 		selection: { anchor: position },
-		effects: EditorView.scrollIntoView(position, { y: 'start' }),
 	});
 	view.focus();
+	requestAnimationFrame(() => {
+		const coords = view.coordsAtPos(position);
+		if (!coords) return;
+		const scroller = view.scrollDOM;
+		const scrollerRect = scroller.getBoundingClientRect();
+		const top = scroller.scrollTop + coords.top - scrollerRect.top - 18;
+		scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+	});
 	return true;
 }
 
@@ -1494,6 +1502,7 @@ export function createMarkdownLivePreview(
 			editingKeymap,
 			clipboardHandlers,
 			EditorView.clipboardInputFilter.of(normalizeClipboardText),
+			lineNumbers(),
 			EditorView.lineWrapping,
 			EditorView.theme(
 				{
@@ -1673,4 +1682,3 @@ export function holdSelectionHighlight(view: EditorView, from: number, to: numbe
 export function clearSelectionHold(view: EditorView): void {
 	view.dispatch({ effects: selectionHoldEffect.of(null) });
 }
-

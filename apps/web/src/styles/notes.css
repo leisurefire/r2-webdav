@@ -1380,6 +1380,165 @@ details.markdown-callout > .markdown-callout-title::marker {
 	}
 }
 
+/* The tree remains readable when row actions float above the labels. */
+.notes-folders {
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	padding: 0;
+}
+
+.notes-folders-head {
+	padding-inline: 0;
+}
+
+.notes-folder-tools {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.note-folder-actions,
+.notes-tree-children .note-card-actions {
+	opacity: 1;
+	background: transparent;
+}
+
+.note-folder-actions {
+	top: 2px;
+	right: 2px;
+}
+
+.note-folder-card > .collection-tree-row,
+.notes-tree-children .note-card-open {
+	padding-right: 8px;
+}
+
+.note-folder-actions .action-menu-popover,
+.notes-tree-children .note-card-actions .action-menu-popover {
+	right: 0;
+	top: calc(100% + 2px);
+}
+
+.notes-tree-children .note-card-actions {
+	top: 1px;
+	right: 2px;
+	bottom: auto;
+	padding: 0;
+	background: transparent;
+}
+
+.notes-tree-children .note-card-actions .row-action,
+.note-folder-actions .row-action,
+.notes-folder-tools > .row-action {
+	width: 28px;
+	height: 28px;
+	background: var(--panel-bg);
+}
+
+.notes-tree-children .note-card-actions .row-action:hover,
+.note-folder-actions .row-action:hover,
+.notes-folder-tools > .row-action:hover {
+	background: var(--hover-bg);
+}
+
+.notes-tree-children .note-card:has(.action-menu.open),
+.note-folder-card:has(.action-menu.open) {
+	z-index: 15;
+}
+
+.notes-tree-children > .note-tree-node:last-child::after {
+	bottom: 0;
+}
+
+.notes-tree-children > .note-tree-node:last-child:not(.expanded)::after,
+.notes-tree-children > .bookmark-tree-node:last-child:not(.expanded)::after {
+	bottom: calc(100% - 17px);
+}
+
+.note-compose.has-outline .note-source .cm-content,
+.note-compose.has-outline .note-heading {
+	padding-right: 54px;
+}
+
+.note-outline {
+	right: 8px;
+	width: 22px;
+	max-height: min(56vh, 460px);
+}
+
+.note-outline-rail {
+	min-width: 22px;
+	max-height: min(56vh, 460px);
+	gap: 6px;
+}
+
+.note-outline-mark {
+	width: calc(20px - (var(--outline-level, 1) - 1) * 2px);
+	min-width: 8px;
+	height: 3px;
+}
+
+.note-outline-panel {
+	top: -6px;
+	right: -6px;
+	width: min(246px, 54vw);
+	max-width: min(246px, 54vw);
+	max-height: min(56vh, 460px);
+	padding: 8px;
+	border: 1px solid var(--line);
+	background: var(--panel-bg);
+	backdrop-filter: none;
+}
+
+.note-source .cm-gutters {
+	display: flex;
+	border-right: 1px solid var(--soft-line);
+	background: transparent;
+	color: var(--quiet);
+	font-size: 11px;
+}
+
+.note-source .cm-lineNumbers .cm-gutterElement {
+	min-width: 34px;
+	padding: 0 8px 0 4px;
+	text-align: right;
+}
+
+.note-source .cm-activeLineGutter {
+	background: color-mix(in srgb, var(--accent) 8%, transparent);
+	color: var(--muted);
+}
+
+.notes-layout {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.notes-layout > .note-editor {
+	flex: 1;
+	min-height: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+}
+
+.notes-inner-toolbar {
+	flex: none;
+	padding: 0;
+}
+
+.notes-mobile-sidebar {
+	display: none;
+}
+
+.sidebar-context > .notes-folders {
+	width: 100%;
+	min-height: 0;
+	flex: 1;
+}
+
 /* In-page title: the heading lives inside the document area above the editor. */
 .note-document {
 	display: flex;

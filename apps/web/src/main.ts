@@ -16,6 +16,7 @@ import {
 	Film,
 	Folder,
 	FolderInput,
+	FolderMinus,
 	FolderOpen,
 	FolderPlus,
 	Image,
@@ -24,6 +25,7 @@ import {
 	Laptop,
 	LogOut,
 	Music,
+	MoreHorizontal,
 	PanelLeftClose,
 	PanelLeftOpen,
 	Pencil,
@@ -33,6 +35,7 @@ import {
 	RefreshCw,
 	Save,
 	Settings,
+	SortAsc,
 	Smartphone,
 	Sparkles,
 	StickyNote,
@@ -80,7 +83,7 @@ import './styles/notes.css';
 import './styles/ai.css';
 import './styles/responsive.css';
 
-type Page = 'files' | 'calendar' | 'notes' | 'devices' | 'settings';
+type Page = 'files' | 'calendar' | 'notes' | 'links' | 'devices' | 'settings';
 const app = document.querySelector<HTMLDivElement>('#app')!;
 type Locale = 'en' | 'zh';
 let locale: Locale =
@@ -92,6 +95,7 @@ const messages = {
 		files: 'Files',
 		calendar: 'Calendar',
 		notes: 'Notes',
+		links: 'Links',
 		devices: 'Devices',
 		settings: 'Settings',
 		filesDesc: 'Browse and manage everything in your file space.',
@@ -125,7 +129,6 @@ const messages = {
 		language: '中文',
 		newNote: 'New note',
 		active: 'Active',
-		bookmarks: 'Link collection',
 		archived: 'Archived',
 		noNotes: 'No notes here yet',
 		save: 'Save changes',
@@ -158,6 +161,7 @@ const messages = {
 		files: '文件',
 		calendar: '日历',
 		notes: '便签',
+		links: '链接',
 		devices: '设备',
 		settings: '设置',
 		filesDesc: '浏览和管理文件空间中的全部内容。',
@@ -191,7 +195,6 @@ const messages = {
 		language: 'English',
 		newNote: '新建便签',
 		active: '便签',
-		bookmarks: '链接收藏',
 		archived: '已归档',
 		noNotes: '这里还没有便签',
 		save: '保存更改',
@@ -224,6 +227,7 @@ type MessageKey = keyof (typeof messages)['en'];
 const t = (key: MessageKey): string => messages[locale][key];
 document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
 let currentPath = '';
+let filePathHighlight: string | null = null;
 let sidebarCollapsed = localStorage.getItem('r2_sidebar_collapsed') === '1';
 let calendarCursor = new Date();
 calendarCursor.setDate(1);
@@ -272,6 +276,7 @@ function refreshIcons(): void {
 			Film,
 			Folder,
 			FolderInput,
+			FolderMinus,
 			FolderOpen,
 			FolderPlus,
 			Image,
@@ -280,6 +285,7 @@ function refreshIcons(): void {
 			Laptop,
 			LogOut,
 			Music,
+			MoreHorizontal,
 			PanelLeftClose,
 			PanelLeftOpen,
 			Pencil,
@@ -289,6 +295,7 @@ function refreshIcons(): void {
 			RefreshCw,
 			Save,
 			Settings,
+			SortAsc,
 			Smartphone,
 			Sparkles,
 			StickyNote,
@@ -323,7 +330,7 @@ function loadingMarkup(compact = false): string {
 
 function pageFromPath(): Page {
 	const page = location.pathname.slice(1) as Page;
-	return ['files', 'calendar', 'notes', 'devices', 'settings'].includes(page) ? page : 'files';
+	return ['files', 'calendar', 'notes', 'links', 'devices', 'settings'].includes(page) ? page : 'files';
 }
 
 function navigate(path: string): void {
@@ -341,8 +348,10 @@ function shell(page: Page, _title: string, content = loadingMarkup()): void {
 			<nav class="nav" aria-label="Primary navigation">
 				<button class="nav-button ${page === 'files' ? 'active' : ''}" data-route="/files" title="${t('files')}"><i data-lucide="folder"></i><span>${t('files')}</span></button>
 				<button class="nav-button ${page === 'calendar' ? 'active' : ''}" data-route="/calendar" title="${t('calendar')}"><i data-lucide="calendar-days"></i><span>${t('calendar')}</span></button>
-				<button class="nav-button ${page === 'notes' ? 'active' : ''}" data-route="/notes" title="${bookmarkHub ? (locale === 'zh' ? '收藏空间' : 'Collection') : t('notes')}"><i data-lucide="sticky-note"></i><span>${bookmarkHub ? (locale === 'zh' ? '收藏空间' : 'Collection') : t('notes')}</span></button>
+				<button class="nav-button ${page === 'notes' ? 'active' : ''}" data-route="/notes" title="${t('notes')}"><i data-lucide="sticky-note"></i><span>${t('notes')}</span></button>
+				<button class="nav-button ${page === 'links' ? 'active' : ''}" data-route="/links" title="${t('links')}"><i data-lucide="bookmark"></i><span>${t('links')}</span></button>
 			</nav>
+			<section class="sidebar-context" id="sidebar-context" aria-live="polite"></section>
 			<div class="sidebar-footer"><div class="account-menu-wrap">
 				<div class="account-popover" id="account-popover" hidden>
 					<button data-route="/settings"><i data-lucide="settings"></i><span>${t('settings')}</span></button>
@@ -399,6 +408,40 @@ function shell(page: Page, _title: string, content = loadingMarkup()): void {
 	refreshIcons();
 }
 
+function sidebarContext(): HTMLElement | null {
+	return document.querySelector<HTMLElement>('#sidebar-context');
+}
+
+function closeActionMenus(except?: HTMLElement): void {
+	document.querySelectorAll<HTMLElement>('[data-action-menu].open').forEach((menu) => {
+		if (menu === except) return;
+		menu.classList.remove('open');
+		menu.querySelector<HTMLElement>('[data-menu-toggle]')?.setAttribute('aria-expanded', 'false');
+	});
+}
+
+document.addEventListener('click', (event) => {
+	const target = event.target instanceof Element ? event.target : null;
+	const toggle = target?.closest<HTMLElement>('[data-menu-toggle]');
+	if (toggle) {
+		event.preventDefault();
+		event.stopPropagation();
+		const menu = toggle.closest<HTMLElement>('[data-action-menu]');
+		if (!menu) return;
+		const opening = !menu.classList.contains('open');
+		closeActionMenus(menu);
+		menu.classList.toggle('open', opening);
+		toggle.setAttribute('aria-expanded', String(opening));
+		return;
+	}
+	if (target?.closest('[data-menu-popover]')) closeActionMenus();
+	else closeActionMenus();
+});
+
+document.addEventListener('keydown', (event) => {
+	if (event.key === 'Escape') closeActionMenus();
+});
+
 function formatBytes(size: number): string {
 	if (size < 1024) return `${size} B`;
 	const units = ['KB', 'MB', 'GB', 'TB'];
@@ -423,16 +466,47 @@ function breadcrumbMarkup(path: string): string {
 	const parts = path ? path.split('/') : [];
 	let built = '';
 	const crumbs = [
-		`<button class="crumb ${parts.length === 0 ? 'current' : ''}" data-path="">${locale === 'zh' ? '我的文件' : 'My files'}</button>`,
+		`<button class="crumb ${parts.length === 0 ? 'current' : ''} ${filePathHighlight === '' ? 'path-highlight' : ''}" data-path="">${locale === 'zh' ? '我的文件' : 'My files'}</button>`,
 	];
 	parts.forEach((part, index) => {
 		built = built ? `${built}/${part}` : part;
 		crumbs.push('<span class="crumb-separator">/</span>');
 		crumbs.push(
-			`<button class="crumb ${index === parts.length - 1 ? 'current' : ''}" data-path="${html(built)}">${html(part)}</button>`,
+			`<button class="crumb ${index === parts.length - 1 ? 'current' : ''} ${filePathHighlight === built ? 'path-highlight' : ''}" data-path="${html(built)}">${html(part)}</button>`,
 		);
 	});
 	return crumbs.join('');
+}
+
+function fileSidebarMarkup(listing: FileListing): string {
+	const pathRows: string[] = [];
+	let built = '';
+	pathRows.push(
+		`<button class="context-tree-row ${listing.path === '' ? 'active' : ''} ${filePathHighlight === '' ? 'path-highlight' : ''}" data-file-tree-path="" style="--tree-depth:0"><i data-lucide="database"></i><span>${locale === 'zh' ? '我的文件' : 'My files'}</span></button>`,
+	);
+	listing.path
+		.split('/')
+		.filter(Boolean)
+		.forEach((part, index) => {
+			built = built ? `${built}/${part}` : part;
+			pathRows.push(
+				`<button class="context-tree-row ${built === listing.path ? 'active' : ''} ${filePathHighlight === built ? 'path-highlight' : ''}" data-file-tree-path="${html(built)}" style="--tree-depth:${index + 1}"><i data-lucide="folder-open"></i><span>${html(part)}</span></button>`,
+			);
+		});
+	const childDepth = listing.path ? listing.path.split('/').length + 1 : 1;
+	for (const entry of listing.entries) {
+		if (entry.type !== 'directory') continue;
+		pathRows.push(
+			`<button class="context-tree-row" data-file-tree-path="${html(entry.path)}" style="--tree-depth:${childDepth}"><i data-lucide="folder"></i><span>${html(entry.name)}</span></button>`,
+		);
+	}
+	return `<div class="sidebar-context-head"><strong>${locale === 'zh' ? '存储库结构' : 'Storage structure'}</strong></div><nav class="context-tree" aria-label="${locale === 'zh' ? '存储库结构' : 'Storage structure'}">${pathRows.join('')}</nav>`;
+}
+
+function openFileDirectory(path: string, highlight = false): void {
+	currentPath = path;
+	filePathHighlight = highlight ? path : null;
+	void renderFiles();
 }
 
 function openTextDialog(title: string, label: string, initial = ''): Promise<string | null> {
@@ -618,7 +692,7 @@ async function openFilePreview(entry: FileEntry): Promise<void> {
 			});
 		} else if (ext === 'md' || type === 'text/markdown') {
 			const value = await blob.text();
-			body.innerHTML = `<article class="file-markdown-preview">${renderMarkdown(value)}</article><div class="file-preview-actions"><button class="button primary" data-migrate-md><i data-lucide="file-down"></i><span>${locale === 'zh' ? '迁移到收藏空间' : 'Move to collection'}</span></button></div>`;
+			body.innerHTML = `<article class="file-markdown-preview">${renderMarkdown(value)}</article><div class="file-preview-actions"><button class="button primary" data-migrate-md><i data-lucide="file-down"></i><span>${locale === 'zh' ? '迁移到便签' : 'Move to notes'}</span></button></div>`;
 			body.querySelector('[data-migrate-md]')?.addEventListener('click', async () => {
 				if (
 					!(await confirmAction(
@@ -635,7 +709,7 @@ async function openFilePreview(entry: FileEntry): Promise<void> {
 					await api.deleteFile(entry.path);
 					await api.clearFilePreview(entry.path);
 					dialog.close();
-					toast(locale === 'zh' ? '已迁移到收藏空间' : 'Moved to collection');
+					toast(locale === 'zh' ? '已迁移到便签' : 'Moved to notes');
 					navigate('/notes');
 				} catch (error) {
 					toast(errorMessage(error));
@@ -669,10 +743,13 @@ function paintFiles(listing: FileListing): void {
 		.map(
 			(entry) => `<article class="file-card">
 				<button class="file-card-open" data-open="${html(entry.path)}" data-type="${entry.type}"><span class="file-card-icon"><i data-lucide="${fileIcon(entry)}"></i></span><span class="file-card-copy"><strong>${html(entry.name)}</strong><small>${entry.type === 'file' ? formatBytes(entry.size) : locale === 'zh' ? '文件夹' : 'Folder'} · ${new Date(entry.modifiedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</small></span></button>
-				<div class="file-card-actions">
-					${entry.type === 'file' ? `<button class="row-action" data-download="${html(entry.path)}" title="${locale === 'zh' ? '下载' : 'Download'}" aria-label="${locale === 'zh' ? '下载' : 'Download'}"><i data-lucide="download"></i></button>` : ''}
-					<button class="row-action" data-rename="${html(entry.path)}" title="${locale === 'zh' ? '重命名' : 'Rename'}" aria-label="${locale === 'zh' ? '重命名' : 'Rename'}"><i data-lucide="pencil"></i></button>
-					<button class="row-action danger" data-delete="${html(entry.path)}" title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button>
+				<div class="file-card-actions action-menu" data-action-menu>
+					<button class="row-action" data-menu-toggle title="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-label="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
+					<div class="action-menu-popover" data-menu-popover role="menu">
+						${entry.type === 'file' ? `<button data-download="${html(entry.path)}" role="menuitem"><i data-lucide="download"></i><span>${locale === 'zh' ? '下载' : 'Download'}</span></button>` : ''}
+						<button data-rename="${html(entry.path)}" role="menuitem"><i data-lucide="pencil"></i><span>${locale === 'zh' ? '重命名' : 'Rename'}</span></button>
+						<button class="danger" data-delete="${html(entry.path)}" role="menuitem"><i data-lucide="trash-2"></i><span>${t('delete')}</span></button>
+					</div>
 				</div>
 			</article>`,
 		)
@@ -683,18 +760,19 @@ function paintFiles(listing: FileListing): void {
 			<input type="file" id="file-input" hidden multiple>
 		</div><div id="upload-status"></div><button class="button primary floating-primary-action" id="upload" title="${locale === 'zh' ? '上传' : 'Upload'}" aria-label="${locale === 'zh' ? '上传' : 'Upload'}"><i data-lucide="upload"></i><span>${locale === 'zh' ? '上传' : 'Upload'}</span></button>
 		${rows ? `<div class="file-grid">${rows}</div>` : `<div class="empty-state"><div><i data-lucide="folder-open"></i><div>${locale === 'zh' ? '此文件夹为空' : 'This folder is empty'}</div></div></div>`}`;
+	const context = sidebarContext();
+	if (context) context.innerHTML = fileSidebarMarkup(listing);
 	refreshIcons();
-	content.querySelectorAll<HTMLElement>('[data-path]').forEach((item) =>
-		item.addEventListener('click', () => {
-			currentPath = item.dataset.path!;
-			void renderFiles();
-		}),
-	);
+	content
+		.querySelectorAll<HTMLElement>('[data-path]')
+		.forEach((item) => item.addEventListener('click', () => openFileDirectory(item.dataset.path!, true)));
+	context
+		?.querySelectorAll<HTMLElement>('[data-file-tree-path]')
+		.forEach((item) => item.addEventListener('click', () => openFileDirectory(item.dataset.fileTreePath!, true)));
 	content.querySelectorAll<HTMLElement>('[data-open]').forEach((item) =>
 		item.addEventListener('click', async () => {
 			if (item.dataset.type === 'directory') {
-				currentPath = item.dataset.open!;
-				await renderFiles();
+				openFileDirectory(item.dataset.open!);
 			} else {
 				const entry = listing.entries.find((candidate) => candidate.path === item.dataset.open);
 				if (entry) await openFilePreview(entry);
@@ -1175,6 +1253,40 @@ function paintCalendarGrid(calendar: CalendarSummary, gridStart: Date): void {
 			}
 		}),
 	);
+	paintCalendarSidebar(calendar);
+}
+
+function paintCalendarSidebar(calendar: CalendarSummary): void {
+	const context = sidebarContext();
+	if (!context || pageFromPath() !== 'calendar') return;
+	const now = Date.now();
+	const events = [...calendarCache.events.values()];
+	const upcoming = events
+		.filter((event) => Date.parse(event.end) >= now)
+		.sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
+	const recent = (
+		upcoming.length ? upcoming : events.sort((left, right) => Date.parse(right.start) - Date.parse(left.start))
+	).slice(0, 8);
+	context.innerHTML = `<div class="sidebar-context-head"><strong>${locale === 'zh' ? '最近日程' : 'Recent schedule'}</strong></div><div class="recent-events">${
+		recent.length
+			? recent
+					.map(
+						(event) =>
+							`<button class="recent-event" data-recent-event="${html(eventCacheKey(event))}"><span class="recent-event-date">${new Date(event.start).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en', { month: 'short', day: 'numeric' })}</span><span class="recent-event-copy"><strong>${html(event.title)}</strong><small>${event.allDay ? (locale === 'zh' ? '全天' : 'All day') : new Date(event.start).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en', { hour: '2-digit', minute: '2-digit' })}</small></span></button>`,
+					)
+					.join('')
+			: `<div class="sidebar-context-empty">${locale === 'zh' ? '暂无日程' : 'No events'}</div>`
+	}</div>`;
+	context.querySelectorAll<HTMLElement>('[data-recent-event]').forEach((item) =>
+		item.addEventListener('click', async () => {
+			const event = calendarCache.events.get(item.dataset.recentEvent!);
+			if (event && (await eventDialog(calendar, event))) {
+				invalidateCalendarCache();
+				await renderCalendar(true);
+			}
+		}),
+	);
+	refreshIcons();
 }
 
 async function renderCalendar(forceSync = false): Promise<void> {
@@ -1264,8 +1376,17 @@ async function renderCalendar(forceSync = false): Promise<void> {
 	}
 }
 
-type NotesView = 'active' | 'bookmarks';
-let notesView: NotesView = 'active';
+type NoteSort = 'name-asc' | 'name-desc' | 'modified-desc' | 'modified-asc' | 'created-desc' | 'created-asc';
+const noteSortValues: NoteSort[] = [
+	'name-asc',
+	'name-desc',
+	'modified-desc',
+	'modified-asc',
+	'created-desc',
+	'created-asc',
+];
+const savedNoteSort = localStorage.getItem('r2_note_sort') as NoteSort | null;
+let noteSort: NoteSort = savedNoteSort && noteSortValues.includes(savedNoteSort) ? savedNoteSort : 'modified-desc';
 let notesData: NotePage | null = null;
 let archivedNotesData: NotePage | null = null;
 let archiveExpanded = false;
@@ -1301,13 +1422,6 @@ function cacheBookmarks(value: BookmarkHub | null): void {
 	localStorage.setItem('r2_bookmarks_checked', '1');
 	if (value) localStorage.setItem('r2_bookmarks_cache', JSON.stringify(value));
 	else localStorage.removeItem('r2_bookmarks_cache');
-	const nav = document.querySelector<HTMLElement>('[data-route="/notes"]');
-	const label = value ? (locale === 'zh' ? '收藏空间' : 'Collection') : t('notes');
-	if (nav) {
-		nav.title = label;
-		const text = nav.querySelector('span');
-		if (text) text.textContent = label;
-	}
 }
 
 async function pullBookmarks(force = false): Promise<void> {
@@ -1507,7 +1621,6 @@ function notePathMarkup(note: Note): string {
 }
 
 function revealNoteFolderInTree(folderId: string | null): void {
-	notesView = 'active';
 	if (folderId) {
 		for (const folder of noteFolderPath(noteFolders, folderId)) noteExpandedFolders.add(folder.id);
 		selectedNoteFolderId = folderId;
@@ -1617,10 +1730,25 @@ function paintNoteSaveStatus(noteId: string, state: NoteSaveState): void {
 }
 
 function sortNotes(items: Note[]): void {
-	items.sort(
-		(left, right) =>
-			Number(right.pinned) - Number(left.pinned) || Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
-	);
+	const collator = new Intl.Collator(locale === 'zh' ? 'zh-CN' : 'en', { numeric: true, sensitivity: 'base' });
+	items.sort((left, right) => {
+		const pinned = Number(right.pinned) - Number(left.pinned);
+		if (pinned) return pinned;
+		switch (noteSort) {
+			case 'name-asc':
+				return collator.compare(left.title, right.title);
+			case 'name-desc':
+				return collator.compare(right.title, left.title);
+			case 'modified-asc':
+				return Date.parse(left.updatedAt) - Date.parse(right.updatedAt);
+			case 'created-desc':
+				return Date.parse(right.createdAt) - Date.parse(left.createdAt);
+			case 'created-asc':
+				return Date.parse(left.createdAt) - Date.parse(right.createdAt);
+			default:
+				return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+		}
+	});
 }
 
 function syncNoteTitle(note: Note, source?: HTMLInputElement): void {
@@ -1921,6 +2049,43 @@ async function loadArchivedNotes(force = false): Promise<void> {
 	}
 }
 
+async function deleteNote(selected: Note): Promise<void> {
+	if (!(await confirmAction(`${t('delete')}?`, selected.title, t('delete')))) return;
+	const deleted = { ...selected };
+	const source = selected.archived ? archivedNotesData : notesData;
+	const snapshot = source ? { ...source, items: [...source.items] } : null;
+	discardNoteCommit(selected.id);
+	if (source) {
+		source.items = source.items.filter((item) => item.id !== selected.id);
+		source.total = Math.max(0, source.total - 1);
+	}
+	if (!selected.archived && selected.folderId) {
+		const folder = noteFolders.find((item) => item.id === selected.folderId);
+		if (folder) folder.noteCount = Math.max(0, folder.noteCount - 1);
+	}
+	invalidateNoteCaches();
+	if (notesData) cacheNotes(notesData, false);
+	if (archivedNotesData) cacheNotes(archivedNotesData, true, undefined);
+	if (mobileNoteDialogOpen) history.back();
+	if (notesData) paintNotes(notesData, currentSelectedNoteId() === selected.id ? undefined : currentSelectedNoteId());
+	void trackNoteNetworkOp(
+		api.deleteNote(deleted.id).catch((error) => {
+			if (snapshot && source) {
+				source.items = snapshot.items;
+				source.total = snapshot.total;
+				if (!deleted.archived && deleted.folderId) {
+					const folder = noteFolders.find((item) => item.id === deleted.folderId);
+					if (folder) folder.noteCount += 1;
+				}
+				if (notesData) cacheNotes(notesData, false);
+				if (archivedNotesData) cacheNotes(archivedNotesData, true, undefined);
+				paintNotes(notesData ?? source, deleted.id);
+			}
+			toast(errorMessage(error));
+		}),
+	);
+}
+
 function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobile: boolean): void {
 	const source = root.querySelector<HTMLElement>('[data-note-source]')!;
 	let draftContent = selected.content.replaceAll('\r', '');
@@ -2177,43 +2342,7 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 	root
 		.querySelector('[data-note-archive]')
 		?.addEventListener('click', () => updateStructure({ archived: !selected.archived }));
-	root.querySelector('[data-note-delete]')?.addEventListener('click', async () => {
-		if (!(await confirmAction(`${t('delete')}?`, selected.title, t('delete')))) return;
-		const deleted = { ...selected };
-		const source = selected.archived ? archivedNotesData : notesData;
-		const snapshot = source ? { ...source, items: [...source.items] } : null;
-		discardNoteCommit(selected.id);
-		if (source) {
-			source.items = source.items.filter((item) => item.id !== selected.id);
-			source.total = Math.max(0, source.total - 1);
-		}
-		if (!selected.archived && selected.folderId) {
-			const folder = noteFolders.find((item) => item.id === selected.folderId);
-			if (folder) folder.noteCount = Math.max(0, folder.noteCount - 1);
-		}
-		invalidateNoteCaches();
-		if (notesData) cacheNotes(notesData, false);
-		if (archivedNotesData) cacheNotes(archivedNotesData, true, undefined);
-		if (mobileNoteDialogOpen) history.back();
-		if (notesData) paintNotes(notesData, currentSelectedNoteId() === selected.id ? undefined : currentSelectedNoteId());
-		void trackNoteNetworkOp(
-			api.deleteNote(deleted.id).catch((error) => {
-				// Restore the note if the server delete fails.
-				if (snapshot && source) {
-					source.items = snapshot.items;
-					source.total = snapshot.total;
-					if (!deleted.archived && deleted.folderId) {
-						const folder = noteFolders.find((item) => item.id === deleted.folderId);
-						if (folder) folder.noteCount += 1;
-					}
-					if (notesData) cacheNotes(notesData, false);
-					if (archivedNotesData) cacheNotes(archivedNotesData, true, undefined);
-					paintNotes(notesData ?? source, deleted.id);
-				}
-				toast(errorMessage(error));
-			}),
-		);
-	});
+	root.querySelector('[data-note-delete]')?.addEventListener('click', () => void deleteNote(selected));
 	root.querySelector('[data-note-close]')?.addEventListener('click', () => {
 		if (mobileNoteDialogOpen) history.back();
 		else
@@ -2228,18 +2357,40 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 	}
 }
 
-function notesTabsMarkup(): string {
-	return `<div class="segment-control" role="tablist"><button class="${notesView !== 'bookmarks' ? 'active' : ''}" data-note-view="active">${t('active')}</button>${bookmarkHub ? `<button class="${notesView === 'bookmarks' ? 'active' : ''}" data-note-view="bookmarks">${t('bookmarks')}</button>` : ''}</div>`;
+function noteSortMenuMarkup(): string {
+	const labels: Record<NoteSort, string> =
+		locale === 'zh'
+			? {
+					'name-asc': '文件名 A-Z',
+					'name-desc': '文件名 Z-A',
+					'modified-desc': '修改时间：新到旧',
+					'modified-asc': '修改时间：旧到新',
+					'created-desc': '创建时间：新到旧',
+					'created-asc': '创建时间：旧到新',
+				}
+			: {
+					'name-asc': 'Name A-Z',
+					'name-desc': 'Name Z-A',
+					'modified-desc': 'Modified: newest',
+					'modified-asc': 'Modified: oldest',
+					'created-desc': 'Created: newest',
+					'created-asc': 'Created: oldest',
+				};
+	return `<div class="action-menu note-sort-menu" data-action-menu><button class="row-action" data-menu-toggle title="${locale === 'zh' ? '排序方式' : 'Sort notes'}" aria-label="${locale === 'zh' ? '排序方式' : 'Sort notes'}" aria-expanded="false"><i data-lucide="sort-asc"></i></button><div class="action-menu-popover" data-menu-popover role="menu">${noteSortValues.map((value) => `<button class="${noteSort === value ? 'selected' : ''}" data-note-sort-value="${value}" role="menuitemradio" aria-checked="${noteSort === value}"><span>${labels[value]}</span>${noteSort === value ? '<i data-lucide="check"></i>' : ''}</button>`).join('')}</div></div>`;
 }
 
 function noteCardMarkup(note: Note, selected?: Note): string {
 	return `<article class="note-card ${note.id === selected?.id ? 'active' : ''}" draggable="true" data-note-card-id="${html(note.id)}"><button class="note-card-open" data-note="${html(note.id)}">
 		<div class="note-card-title"><span class="note-card-leading" aria-hidden="true">${note.pinned ? '<i data-lucide="pin"></i>' : ''}</span><span class="note-card-label">${html(note.title)}</span></div>
 	</button>
-	<div class="note-card-actions">
-			<button class="row-action" data-note-card-move="${html(note.id)}" title="${locale === 'zh' ? '移动到目录' : 'Move to folder'}" aria-label="${locale === 'zh' ? '移动到目录' : 'Move to folder'}"><i data-lucide="folder-input"></i></button>
-			<button class="row-action" data-note-card-pin="${html(note.id)}" title="${note.pinned ? t('unpin') : t('pin')}" aria-label="${note.pinned ? t('unpin') : t('pin')}"><i data-lucide="${note.pinned ? 'pin-off' : 'pin'}"></i></button>
-			<button class="row-action" data-note-card-archive="${html(note.id)}" title="${note.archived ? t('restore') : t('archive')}" aria-label="${note.archived ? t('restore') : t('archive')}"><i data-lucide="archive"></i></button>
+	<div class="note-card-actions action-menu" data-action-menu>
+			<button class="row-action" data-menu-toggle title="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-label="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
+			<div class="action-menu-popover" data-menu-popover role="menu">
+				<button data-note-card-move="${html(note.id)}" role="menuitem"><i data-lucide="folder-input"></i><span>${locale === 'zh' ? '移动到目录' : 'Move to folder'}</span></button>
+				<button data-note-card-pin="${html(note.id)}" role="menuitem"><i data-lucide="${note.pinned ? 'pin-off' : 'pin'}"></i><span>${note.pinned ? t('unpin') : t('pin')}</span></button>
+				<button data-note-card-archive="${html(note.id)}" role="menuitem"><i data-lucide="archive"></i><span>${note.archived ? t('restore') : t('archive')}</span></button>
+				<button class="danger" data-note-card-delete="${html(note.id)}" role="menuitem"><i data-lucide="trash-2"></i><span>${t('delete')}</span></button>
+			</div>
 		</div>
 	</article>`;
 }
@@ -2294,17 +2445,17 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 		renderTreeNodes(
 			nodes,
 			(node) => node.children,
-			(node, _depth, children) => {
+			(node, depth, children) => {
 				if (node.kind === 'note') return node.note ? noteCardMarkup(node.note, selected) : '';
 				const folder = node.kind === 'folder';
 				const icon = caret(node.expanded);
 				const actions = folder
-					? `<div class="note-folder-actions"><button class="row-action" data-move-note-folder="${html(node.key)}" title="${locale === 'zh' ? '移动目录' : 'Move folder'}" aria-label="${locale === 'zh' ? '移动目录' : 'Move folder'}"><i data-lucide="folder-input"></i></button><button class="row-action" data-rename-note-folder="${html(node.key)}" title="${locale === 'zh' ? '重命名' : 'Rename'}" aria-label="${locale === 'zh' ? '重命名' : 'Rename'}"><i data-lucide="pencil"></i></button><button class="row-action danger" data-delete-note-folder="${html(node.key)}" title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button></div>`
+					? `<div class="note-folder-actions action-menu" data-action-menu><button class="row-action" data-menu-toggle title="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-label="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button><div class="action-menu-popover" data-menu-popover role="menu"><button data-move-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="folder-input"></i><span>${locale === 'zh' ? '移动目录' : 'Move folder'}</span></button><button data-rename-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="pencil"></i><span>${locale === 'zh' ? '重命名' : 'Rename'}</span></button><button class="danger" data-delete-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="folder-minus"></i><span>${locale === 'zh' ? '解散' : 'Dissolve'}</span></button></div></div>`
 					: '';
 				const filter = node.kind === 'archive' ? 'data-note-archived' : `data-note-folder-filter="${html(node.key)}"`;
 				const drop = node.kind === 'archive' ? 'archive' : node.key;
 				const draggable = folder ? ` draggable="true" data-note-folder-id="${html(node.key)}"` : '';
-				return `<div class="note-tree-node ${folder ? 'note-folder-card' : 'note-tree-special'} ${node.kind === 'archive' ? 'archive-tree-item' : ''} ${node.active ? 'active' : ''} ${node.expanded ? 'expanded' : ''}" data-note-folder-drop="${html(drop)}"${draggable}><button type="button" class="collection-tree-row" ${filter}>${icon}<span>${html(node.name)}</span></button>${actions}${node.expanded && children ? `<div class="notes-tree-children">${children}</div>` : ''}</div>`;
+				return `<div class="note-tree-node ${folder ? 'note-folder-card' : 'note-tree-special'} ${node.kind === 'archive' ? 'archive-tree-item' : ''} ${node.active ? 'active' : ''} ${node.expanded ? 'expanded' : ''}" data-note-folder-drop="${html(drop)}" style="--tree-depth:${depth}"${draggable}><button type="button" class="collection-tree-row" ${filter}>${icon}<span>${html(node.name)}</span></button>${actions}${node.expanded && children ? `<div class="notes-tree-children">${children}</div>` : ''}</div>`;
 			},
 		);
 	const pinnedRootMarkup = pinnedRootNotes.length
@@ -2314,18 +2465,16 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 	const folderMarkup = renderFolderish(folderTree);
 	const archiveMarkup = renderFolderish(archiveTree);
 	return `<aside class="notes-folders" aria-label="${locale === 'zh' ? '便签目录' : 'Note folders'}">
-		<div class="notes-folders-head"><strong>${locale === 'zh' ? '便签目录' : 'Folders'}</strong><button class="row-action" data-new-note-folder title="${locale === 'zh' ? '新建目录' : 'New folder'}" aria-label="${locale === 'zh' ? '新建目录' : 'New folder'}"><i data-lucide="folder-plus"></i></button></div>
+		<div class="notes-folders-head"><strong>${locale === 'zh' ? '便签目录' : 'Note folders'}</strong><div class="notes-folder-tools"><button class="row-action" data-new-note title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button><button class="row-action" data-new-note-folder title="${locale === 'zh' ? '新建目录' : 'New folder'}" aria-label="${locale === 'zh' ? '新建目录' : 'New folder'}"><i data-lucide="folder-plus"></i></button>${noteSortMenuMarkup()}</div></div>
 		<div class="notes-tree" data-notes-tree>
 			${pinnedRootMarkup}${folderMarkup}${unpinnedRootMarkup}${archiveMarkup}
 		</div>
-		<button class="button primary floating-primary-action" id="new-note" title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i><span>${t('newNote')}</span></button>
 		<div class="notes-load-status" aria-live="polite">${notesLoadingMore ? loadingMarkup(true) : ''}</div>
 	</aside>`;
 }
 
 function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 	const toggleFolder = (value: string) => {
-		notesView = 'active';
 		if (value === 'all' || value === 'root') {
 			// Root is always visible; only clear the create-target marker.
 			selectedNoteFolderId = value === 'root' ? null : undefined;
@@ -2396,11 +2545,11 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 			if (
 				!folder ||
 				!(await confirmAction(
-					locale === 'zh' ? '删除便签目录？' : 'Delete note folder?',
+					locale === 'zh' ? '解散便签目录？' : 'Dissolve note folder?',
 					locale === 'zh'
 						? '目录中的便签和子目录会移到上一级，不会被删除。'
 						: 'Notes and subfolders will move up one level and will not be deleted.',
-					t('delete'),
+					locale === 'zh' ? '解散' : 'Dissolve',
 				))
 			)
 				return;
@@ -2568,17 +2717,18 @@ function paintBookmarkView(): void {
 		)
 		.join('');
 	const folderTree = bookmarkFolderTreeMarkup(root, selectedFolderKey);
-	content.innerHTML = `<div class="notes-layout bookmark-layout">
-		<div class="notes-inner-toolbar">${notesTabsMarkup()}<div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择收藏目录' : 'Choose collection folder'}">${folderOptions}</select></div><span class="toolbar-spacer"></span><span class="note-count">${cards.length}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}" aria-label="${locale === 'zh' ? '拉取书签' : 'Pull bookmarks'}"><i data-lucide="refresh-cw"></i></button></div>
-		<aside class="notes-folders bookmark-folders"><div class="notes-folders-head bookmark-folders-head"><strong>${locale === 'zh' ? '收藏目录' : 'Folders'}</strong></div><div class="notes-tree bookmark-folder-tree"><div class="bookmark-tree-node note-tree-node note-tree-special expanded"><button class="bookmark-folder collection-tree-row bookmark-folder-root ${folder === root && root.folders.length === 0 ? 'active' : ''}" data-bookmark-folder="" data-bookmark-has-children="${root.folders.length > 0}" style="--tree-depth:0"><i class="tree-caret-icon" data-lucide="chevron-down" aria-hidden="true"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderTree || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</div></div></aside>
-		<div class="bookmarks-main">${bookmarkPathMarkup(bookmarkFolderPath)}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无链接收藏' : 'No saved links'}</span></div>`}</div></div>
+	content.innerHTML = `<div class="links-layout">
+		<div class="notes-inner-toolbar"><div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择链接目录' : 'Choose link folder'}">${folderOptions}</select></div><span class="toolbar-spacer"></span><span class="note-count">${cards.length}</span><button class="button icon-button" id="links-refresh" title="${locale === 'zh' ? '拉取链接' : 'Refresh links'}" aria-label="${locale === 'zh' ? '拉取链接' : 'Refresh links'}"><i data-lucide="refresh-cw"></i></button></div>
+		<div class="bookmarks-main">${bookmarkPathMarkup(bookmarkFolderPath)}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无保存链接' : 'No saved links'}</span></div>`}</div></div>
 	</div>`;
+	const context = sidebarContext();
+	if (context)
+		context.innerHTML = `<div class="sidebar-context-head"><strong>${locale === 'zh' ? '链接目录' : 'Link folders'}</strong></div><div class="notes-tree bookmark-folder-tree"><div class="bookmark-tree-node note-tree-node note-tree-special expanded"><button class="bookmark-folder collection-tree-row bookmark-folder-root ${folder === root && root.folders.length === 0 ? 'active' : ''}" data-bookmark-folder="" data-bookmark-has-children="${root.folders.length > 0}" style="--tree-depth:0"><i class="tree-caret-icon" data-lucide="chevron-down" aria-hidden="true"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span><small>${root.links.length}</small></button>${folderTree || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</div></div>`;
 	refreshIcons();
 	bindBookmarkPreviews(content);
-	bindNotesNavigation(content);
 	const path = content.querySelector<HTMLElement>('.bookmark-path');
 	if (path) path.scrollLeft = path.scrollWidth;
-	content.querySelectorAll<HTMLElement>('[data-bookmark-folder]').forEach((button) =>
+	context?.querySelectorAll<HTMLElement>('[data-bookmark-folder]').forEach((button) =>
 		button.addEventListener('click', () => {
 			const key = button.dataset.bookmarkFolder ?? '';
 			if (key && button.dataset.bookmarkHasChildren === 'true') {
@@ -2602,32 +2752,13 @@ function paintBookmarkView(): void {
 		bookmarkFolderPath = key ? key.split('\u001f') : [];
 		paintBookmarkView();
 	});
-	content.querySelector('#notes-refresh')?.addEventListener('click', async () => {
+	content.querySelector('#links-refresh')?.addEventListener('click', async () => {
 		await pullBookmarks(true);
-		if (bookmarkHub) paintBookmarkView();
-		else {
-			notesView = 'active';
-			paintNotes({ items: [], page: 1, pageSize: 20, total: 0, hasMore: false });
-			await renderNotes();
-		}
+		paintBookmarkView();
 	});
 }
 
 function bindNotesNavigation(content: HTMLElement): void {
-	content.querySelectorAll<HTMLElement>('[data-note-view]').forEach((node) =>
-		node.addEventListener('click', () => {
-			notesView = node.dataset.noteView as NotesView;
-			if (notesView === 'active') selectedNoteFolderId = undefined;
-			notesData = null;
-			if (notesView === 'bookmarks') {
-				paintBookmarkView();
-				void pullBookmarks();
-			} else {
-				paintNotes({ items: [], page: 1, pageSize: 20, total: 0, hasMore: false });
-				void renderNotes();
-			}
-		}),
-	);
 	content.querySelectorAll<HTMLElement>('[data-note-archived]').forEach((node) =>
 		node.addEventListener('click', () => {
 			archiveExpanded = !archiveExpanded;
@@ -2711,53 +2842,75 @@ function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?: Note):
 			if (note) updateFromCard(note.id, { archived: !note.archived });
 		}),
 	);
+	content.querySelectorAll<HTMLElement>('[data-note-card-delete]').forEach((button) =>
+		button.addEventListener('click', (event) => {
+			event.stopPropagation();
+			const note = noteFor(button.dataset.noteCardDelete);
+			if (note) void deleteNote(note);
+		}),
+	);
+	content.querySelectorAll<HTMLElement>('[data-note-sort-value]').forEach((button) =>
+		button.addEventListener('click', (event) => {
+			event.stopPropagation();
+			const value = button.dataset.noteSortValue as NoteSort;
+			if (!noteSortValues.includes(value)) return;
+			noteSort = value;
+			localStorage.setItem('r2_note_sort', value);
+			sortNotes(data.items);
+			if (archivedNotesData) sortNotes(archivedNotesData.items);
+			closeActionMenus();
+			paintNotes(notesData ?? data, currentSelectedNoteId());
+		}),
+	);
 	bindNotesFolders(content, data);
-	content.querySelector('#new-note')?.addEventListener('click', () => {
-		const now = new Date().toISOString();
-		const folderId = typeof selectedNoteFolderId === 'string' ? selectedNoteFolderId : null;
-		if (folderId) noteExpandedFolders.add(folderId);
-		const note: Note = {
-			id: crypto.randomUUID(),
-			title: locale === 'zh' ? '无标题便签' : 'Untitled note',
-			content: '',
-			pinned: false,
-			archived: false,
-			createdAt: now,
-			updatedAt: now,
-			accessedAt: now,
-			folderId,
-		};
-		if (!notesData) {
-			notesData = { items: [note], page: 1, pageSize: 20, total: 1, hasMore: false };
-		} else {
-			notesData.items.unshift(note);
-			notesData.total += 1;
-			sortNotes(notesData.items);
-		}
-		if (folderId) {
-			const folder = noteFolders.find((item) => item.id === folderId);
-			if (folder) folder.noteCount += 1;
-		}
-		invalidateNoteCaches();
-		cacheNotes(notesData, false);
-		paintNotes(notesData, note.id, true);
-		void trackNoteNetworkOp(
-			api.createNote(note.title, note.content, folderId, note.id).catch((error) => {
-				// Roll back the optimistic note if the server rejects creation.
-				if (notesData) {
-					notesData.items = notesData.items.filter((item) => item.id !== note.id);
-					notesData.total = Math.max(0, notesData.total - 1);
-					if (folderId) {
-						const folder = noteFolders.find((item) => item.id === folderId);
-						if (folder) folder.noteCount = Math.max(0, folder.noteCount - 1);
+	content.querySelectorAll<HTMLElement>('[data-new-note]').forEach((button) =>
+		button.addEventListener('click', () => {
+			const now = new Date().toISOString();
+			const folderId = typeof selectedNoteFolderId === 'string' ? selectedNoteFolderId : null;
+			if (folderId) noteExpandedFolders.add(folderId);
+			const note: Note = {
+				id: crypto.randomUUID(),
+				title: locale === 'zh' ? '无标题便签' : 'Untitled note',
+				content: '',
+				pinned: false,
+				archived: false,
+				createdAt: now,
+				updatedAt: now,
+				accessedAt: now,
+				folderId,
+			};
+			if (!notesData) {
+				notesData = { items: [note], page: 1, pageSize: 20, total: 1, hasMore: false };
+			} else {
+				notesData.items.unshift(note);
+				notesData.total += 1;
+				sortNotes(notesData.items);
+			}
+			if (folderId) {
+				const folder = noteFolders.find((item) => item.id === folderId);
+				if (folder) folder.noteCount += 1;
+			}
+			invalidateNoteCaches();
+			cacheNotes(notesData, false);
+			paintNotes(notesData, note.id, true);
+			void trackNoteNetworkOp(
+				api.createNote(note.title, note.content, folderId, note.id).catch((error) => {
+					// Roll back the optimistic note if the server rejects creation.
+					if (notesData) {
+						notesData.items = notesData.items.filter((item) => item.id !== note.id);
+						notesData.total = Math.max(0, notesData.total - 1);
+						if (folderId) {
+							const folder = noteFolders.find((item) => item.id === folderId);
+							if (folder) folder.noteCount = Math.max(0, folder.noteCount - 1);
+						}
+						cacheNotes(notesData, false);
+						paintNotes(notesData, currentSelectedNoteId());
 					}
-					cacheNotes(notesData, false);
-					paintNotes(notesData, currentSelectedNoteId());
-				}
-				toast(errorMessage(error));
-			}),
-		);
-	});
+					toast(errorMessage(error));
+				}),
+			);
+		}),
+	);
 	const list = content.querySelector<HTMLElement>('[data-notes-tree]');
 	list?.addEventListener(
 		'scroll',
@@ -2771,33 +2924,32 @@ function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?: Note):
 }
 
 function replaceNotesSidebar(data: NotePage, selectedId?: string): void {
-	const content = document.querySelector<HTMLDivElement>('#page-content');
-	const current = content?.querySelector<HTMLElement>('.notes-folders:not(.bookmark-folders)');
-	if (!content || !current) return;
-	rememberNotesTreeScroll(current);
+	const currents = [...document.querySelectorAll<HTMLElement>('.notes-folders')];
+	if (!currents.length) return;
+	rememberNotesTreeScroll(currents[0]);
 	const scrollTop = notesTreeScrollTop;
-	const wrapper = document.createElement('div');
 	const selected =
 		data.items.find((note) => note.id === selectedId) ??
 		archivedNotesData?.items.find((note) => note.id === selectedId);
-	wrapper.innerHTML = notesFolderSidebarMarkup(data, selected).trim();
-	const next = wrapper.firstElementChild;
-	if (!(next instanceof HTMLElement)) return;
-	current.replaceWith(next);
+	for (const current of currents) {
+		const wrapper = document.createElement('div');
+		wrapper.innerHTML = notesFolderSidebarMarkup(data, selected).trim();
+		const next = wrapper.firstElementChild;
+		if (!(next instanceof HTMLElement)) continue;
+		current.replaceWith(next);
+		bindNotesNavigation(next);
+		bindNoteSidebar(next, data, selected);
+		const list = next.querySelector<HTMLElement>('[data-notes-tree]');
+		if (list) list.scrollTop = scrollTop;
+	}
 	refreshIcons();
-	bindNoteSidebar(content, data, selected);
-	const list = next.querySelector<HTMLElement>('[data-notes-tree]');
-	if (list) list.scrollTop = scrollTop;
 }
 
 function paintNotes(data: NotePage, selectedId?: string, openMobile = false): void {
 	const content = document.querySelector<HTMLDivElement>('#page-content');
 	if (!content) return;
-	rememberNotesTreeScroll(content);
-	if (notesView === 'bookmarks') {
-		paintBookmarkView();
-		return;
-	}
+	rememberNotesTreeScroll();
+	sortNotes(data.items);
 	const archivedSelected = archivedNotesData?.items.find((note) => note.id === selectedId);
 	const selected =
 		data.items.find((note) => note.id === selectedId) ??
@@ -2805,19 +2957,28 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 		data.items.find((note) => note.pinned) ??
 		data.items[0];
 	const selectedData = archivedSelected ? archivedNotesData! : data;
+	const folderSidebar = notesFolderSidebarMarkup(data, selected);
+	const context = sidebarContext();
+	if (context) context.innerHTML = folderSidebar;
 	content.innerHTML = `<div class="notes-layout">
-		<div class="notes-inner-toolbar">${notesTabsMarkup()}<span class="toolbar-spacer"></span><span class="note-count">${data.total}</span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}" aria-label="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}"><i data-lucide="refresh-cw"></i></button></div>
-		${notesFolderSidebarMarkup(data, selected)}
+		<div class="notes-inner-toolbar"><span class="note-count">${data.total} ${locale === 'zh' ? '个便签' : data.total === 1 ? 'note' : 'notes'}</span><span class="toolbar-spacer"></span><button class="button icon-button" id="notes-refresh" title="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}" aria-label="${locale === 'zh' ? '刷新便签' : 'Refresh notes'}"><i data-lucide="refresh-cw"></i></button></div>
+		<div class="notes-mobile-sidebar">${folderSidebar}</div>
 		${selected ? noteEditorMarkup(selected) : `<section class="note-editor note-editor-desktop"><div class="notes-empty large"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div></section>`}
 	</div>
 		${selected ? `<dialog class="note-dialog" id="note-dialog">${noteEditorMarkup(selected, true)}</dialog>` : ''}`;
 	refreshIcons();
-	bindNotesNavigation(content);
-	bindNoteSidebar(content, data, selected);
-	restoreNotesTreeScroll(content);
+	if (context) {
+		bindNotesNavigation(context);
+		bindNoteSidebar(context, data, selected);
+	}
+	const mobileSidebar = content.querySelector<HTMLElement>('.notes-mobile-sidebar');
+	if (mobileSidebar) {
+		bindNotesNavigation(mobileSidebar);
+		bindNoteSidebar(mobileSidebar, data, selected);
+	}
+	restoreNotesTreeScroll();
 	content.querySelector('#notes-refresh')?.addEventListener('click', async () => {
 		await flushAllNoteCommits();
-		await pullBookmarks(true);
 		await renderNotes(selected?.id, true);
 	});
 	if (!selected) return;
@@ -2876,20 +3037,8 @@ async function loadMoreNotes(selectedId?: string, scrollTop = 0): Promise<void> 
 }
 
 async function renderNotes(selectedId?: string, forceSync = false, openMobile = false): Promise<void> {
-	if (!document.querySelector('.notes-layout'))
-		shell('notes', bookmarkHub ? (locale === 'zh' ? '收藏空间' : 'Collection') : t('notes'));
-	const hadBookmarks = Boolean(bookmarkHub);
-	await pullBookmarks(false);
+	shell('notes', t('notes'));
 	await loadNoteFolders(forceSync);
-	if (!hadBookmarks && bookmarkHub) {
-		const label = locale === 'zh' ? '收藏空间' : 'Collection';
-		const nav = document.querySelector<HTMLElement>('[data-route="/notes"] span');
-		if (nav) nav.textContent = label;
-	}
-	if (notesView === 'bookmarks') {
-		paintBookmarkView();
-		return;
-	}
 	// Always load the full active note set so root/uncategorized notes never disappear
 	// when a folder is selected in the tree.
 	const treeFolderId = undefined as string | null | undefined;
@@ -2922,6 +3071,12 @@ async function renderNotes(selectedId?: string, forceSync = false, openMobile = 
 				`<div class="error-banner">${html(errorMessage(error))}</div>`;
 		else toast(errorMessage(error));
 	}
+}
+
+async function renderLinks(forceSync = false): Promise<void> {
+	shell('links', t('links'));
+	if (forceSync || !bookmarkHub) await pullBookmarks(true);
+	paintBookmarkView();
 }
 
 async function renderDevices(): Promise<void> {
@@ -3080,12 +3235,13 @@ async function render(): Promise<void> {
 	const page = pageFromPath();
 	if (
 		location.pathname === '/' ||
-		!['/files', '/calendar', '/notes', '/devices', '/settings'].includes(location.pathname)
+		!['/files', '/calendar', '/notes', '/links', '/devices', '/settings'].includes(location.pathname)
 	)
 		history.replaceState({}, '', `/${page}`);
 	if (page === 'files') await renderFiles();
 	else if (page === 'calendar') await renderCalendar();
 	else if (page === 'notes') await renderNotes();
+	else if (page === 'links') await renderLinks();
 	else if (page === 'devices') await renderDevices();
 	else renderSettings();
 }

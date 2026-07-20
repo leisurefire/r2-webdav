@@ -17,4 +17,59 @@
 	.sidebar-collapsed + .workspace {
 		height: calc(100dvh - 122px);
 	}
+
+	.sidebar-context {
+		display: none;
+	}
+
+	.sidebar .nav {
+		margin: 0;
+		padding: 6px 8px;
+		border-top: 1px solid var(--line);
+		border-bottom: 0;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+	}
+
+	.sidebar .nav-button,
+	.sidebar-collapsed .nav-button {
+		min-height: 50px;
+	}
+
+	.sidebar-collapsed .sidebar {
+		padding: 8px 12px;
+		border-bottom: 1px solid var(--line);
+		background: var(--sidebar-bg);
+	}
+
+	.sidebar-collapsed .sidebar-head .brand {
+		display: block;
+	}
+
+	.sidebar-collapsed .sidebar .nav {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+	}
+
+	.sidebar-collapsed .sidebar-footer {
+		display: block;
+	}
+
+	.notes-mobile-sidebar {
+		min-height: 0;
+		flex: 1;
+		display: flex;
+		overflow: hidden;
+	}
+
+	.notes-mobile-sidebar > .notes-folders {
+		width: 100%;
+		min-height: 0;
+		flex: 1;
+		padding: 8px;
+		background: var(--panel-bg);
+	}
+
+	.notes-layout > .note-editor {
+		display: none;
+	}
 }
