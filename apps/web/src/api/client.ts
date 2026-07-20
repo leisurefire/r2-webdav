@@ -29,6 +29,16 @@ export class ApiError extends Error {
 	}
 }
 
+export type AiModel = 'deepseek-v4-flash' | 'deepseek-v4-pro' | 'kimi-k3';
+
+export interface AiRequest {
+	model: AiModel;
+	action: 'generate' | 'summarize' | 'polish' | 'rewrite';
+	text: string;
+	instruction?: string;
+	context?: string;
+}
+
 function authHeaders(headers?: HeadersInit): Headers {
 	const result = new Headers(headers);
 	const token = localStorage.getItem(TOKEN_KEY);
@@ -238,7 +248,10 @@ export const api = {
 			body: JSON.stringify({ title, content, ...(folderId ? { folderId } : {}) }),
 		});
 	},
-	updateNote(id: string, changes: Partial<Pick<Note, 'title' | 'content' | 'pinned' | 'archived' | 'folderId'>>): Promise<Note> {
+	updateNote(
+		id: string,
+		changes: Partial<Pick<Note, 'title' | 'content' | 'pinned' | 'archived' | 'folderId'>>,
+	): Promise<Note> {
 		return notesRequest(`/${encodeURIComponent(id)}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
@@ -247,6 +260,59 @@ export const api = {
 	},
 	deleteNote(id: string): Promise<{ deleted: boolean }> {
 		return notesRequest(`/${encodeURIComponent(id)}`, { method: 'DELETE' });
+	},
+	async ai(request: AiRequest, onToken: (token: string) => void, signal?: AbortSignal): Promise<void> {
+		const response = await fetch(`${notesApiBase}/api/v1/ai`, {
+			method: 'POST',
+			headers: authHeaders({ 'Content-Type': 'application/json', Accept: 'text/event-stream' }),
+			credentials: 'include',
+			signal,
+			body: JSON.stringify(request),
+		});
+		if (!response.ok || !response.body) {
+			let message = response.statusText || 'AI request failed';
+			try {
+				const payload = (await response.json()) as ApiResponse<unknown>;
+				if (!payload.ok) message = payload.error.message;
+			} catch {
+				/* keep status text */
+			}
+			if (response.status === 401) localStorage.removeItem(TOKEN_KEY);
+			throw new ApiError(message, response.status);
+		}
+		const reader = response.body.getReader();
+		const decoder = new TextDecoder();
+		let buffer = '';
+		while (true) {
+			const chunk = await reader.read();
+			buffer += decoder.decode(chunk.value ?? new Uint8Array(), { stream: !chunk.done });
+			const events = buffer.split(/\n\n/);
+			buffer = events.pop() ?? '';
+			for (const event of events) {
+				const line = event.split('\n').find((item) => item.startsWith('data:'));
+				if (!line) continue;
+				const value = line.slice(5).trim();
+				if (value === '[DONE]') return;
+				try {
+					const payload = JSON.parse(value) as { choices?: Array<{ delta?: { content?: string } }> };
+					const token = payload.choices?.[0]?.delta?.content;
+					if (token) onToken(token);
+				} catch {
+					/* ignore keep-alive frames */
+				}
+			}
+			if (chunk.done) break;
+		}
+	},
+	async aiModels(): Promise<string[]> {
+		const response = await fetch(`${notesApiBase}/api/v1/ai?resource=models`, {
+			headers: authHeaders(),
+			credentials: 'include',
+		});
+		if (!response.ok) throw new ApiError('Unable to load AI models', response.status);
+		const payload = (await response.json()) as ApiResponse<{ models: string[] }>;
+		if (!payload.ok) throw new ApiError(payload.error.message, response.status);
+		return payload.data.models;
 	},
 };
 

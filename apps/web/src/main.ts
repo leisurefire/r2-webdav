@@ -58,6 +58,7 @@ import { renderMarkdown, renderMarkdownDocument } from './editor/markdownRendere
 import './styles.css';
 import './styles/bookmarks.css';
 import './styles/notes.css';
+import './styles/ai.css';
 import './styles/responsive.css';
 
 type Page = 'files' | 'calendar' | 'notes' | 'devices' | 'settings';
@@ -1810,6 +1811,9 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 					toast(locale === 'zh' ? '图片超过 256 KB，暂不允许粘贴' : 'Images over 256 KB cannot be pasted yet'),
 				onImageReadError: () => toast(locale === 'zh' ? '无法读取粘贴的图片' : 'Could not read the pasted image'),
 			});
+			void import('./editor/aiAssistant').then(({ bindMarkdownAiAssistant }) =>
+				bindMarkdownAiAssistant(view, source, locale, (error) => toast(errorMessage(error))),
+			);
 		})
 		.catch(() => {
 			const status = root.querySelector<HTMLElement>('[data-note-save-status]');

@@ -146,11 +146,17 @@ describe('splitTableRow', () => {
 	});
 });
 
-
 describe('collectWikiLinkRanges', () => {
 	it('finds wiki links and embeds while ignoring code spans', () => {
 		const line = '`[[code]]` [[Note]] [[Note|Alias]] ![[Embed]]';
-		expect(collectWikiLinkRanges(line).map((range) => [range.kind, line.slice(range.from, range.to), range.target, range.alias])).toEqual([
+		expect(
+			collectWikiLinkRanges(line).map((range) => [
+				range.kind,
+				line.slice(range.from, range.to),
+				range.target,
+				range.alias,
+			]),
+		).toEqual([
 			['wikilink', '[[Note]]', 'Note', undefined],
 			['wikilink', '[[Note|Alias]]', 'Note', 'Alias'],
 			['embed', '![[Embed]]', 'Embed', undefined],
@@ -174,7 +180,7 @@ describe('Obsidian list editing helpers', () => {
 			insert: '- hello\n-  world',
 			replaceFrom: 0,
 			replaceTo: 13,
-			cursor: 9,
+			cursor: 10,
 		});
 		expect(continueMarkdownStructuredLine('1. [ ] ', 7)).toEqual({
 			insert: '',
@@ -195,7 +201,7 @@ describe('Obsidian list editing helpers', () => {
 			insert: '> quote\n> ',
 			replaceFrom: 0,
 			replaceTo: 7,
-			cursor: 9,
+			cursor: 10,
 		});
 		expect(continueMarkdownStructuredLine('> - item', 8)).toEqual({
 			insert: '> - item\n> - ',
