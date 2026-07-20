@@ -1,6 +1,14 @@
-import { EditorState, StateField, Transaction } from '@codemirror/state';
+import { EditorSelection, EditorState, StateField, Transaction, type SelectionRange } from '@codemirror/state';
 import { defaultKeymap, deleteCharBackward, deleteCharForward, history, historyKeymap } from '@codemirror/commands';
-import { EditorView, Decoration, WidgetType, keymap, type DecorationSet } from '@codemirror/view';
+import {
+	EditorView,
+	Decoration,
+	WidgetType,
+	keymap,
+	type DecorationSet,
+	type MouseSelectionStyle,
+	type ViewUpdate,
+} from '@codemirror/view';
 import { markdown } from '@codemirror/lang-markdown';
 import { HighlightStyle, defaultHighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language';
 import { GFM } from '@lezer/markdown';
@@ -348,19 +356,26 @@ function hasInteractiveTarget(target: EventTarget | null): boolean {
 	return target instanceof Element && !!target.closest('a,button,input,textarea,select,summary');
 }
 
-function textOffsetAtPoint(node: HTMLElement, x: number, y: number): number | null {
+type DOMCaret = { offsetNode: Node; offset: number };
+
+function domCaretAtPoint(x: number, y: number): DOMCaret | null {
 	const caretDocument = document as Document & {
 		caretPositionFromPoint?: (clientX: number, clientY: number) => { offsetNode: Node; offset: number } | null;
 		caretRangeFromPoint?: (clientX: number, clientY: number) => Range | null;
 	};
 	const caret = caretDocument.caretPositionFromPoint?.(x, y);
-	const offsetNode = caret?.offsetNode ?? caretDocument.caretRangeFromPoint?.(x, y)?.startContainer;
-	const offset = caret?.offset ?? caretDocument.caretRangeFromPoint?.(x, y)?.startOffset;
-	if (!offsetNode || offset === undefined || (offsetNode !== node && !node.contains(offsetNode))) return null;
+	if (caret) return caret;
+	const range = caretDocument.caretRangeFromPoint?.(x, y);
+	return range ? { offsetNode: range.startContainer, offset: range.startOffset } : null;
+}
+
+function textOffsetAtPoint(node: HTMLElement, x: number, y: number): number | null {
+	const caret = domCaretAtPoint(x, y);
+	if (!caret || (caret.offsetNode !== node && !node.contains(caret.offsetNode))) return null;
 	try {
 		const prefix = document.createRange();
 		prefix.selectNodeContents(node);
-		prefix.setEnd(offsetNode, offset);
+		prefix.setEnd(caret.offsetNode, caret.offset);
 		return prefix.toString().length;
 	} catch {
 		return null;
@@ -396,26 +411,106 @@ function clampToSourceInterior(from: number, source: string, position: number): 
 
 function bindSourceNavigation(
 	node: HTMLElement,
-	view: EditorView,
 	from: number,
 	source: string,
 	mode: SourcePointerMode = 'text',
-	interactive = false,
 	interior = false,
 ): void {
 	node.classList.add('cm-live-source-target');
 	node.dataset.sourceFrom = String(from);
 	node.dataset.sourceTo = String(from + source.length);
-	node.addEventListener('mousedown', (event) => {
-		if (!(event instanceof MouseEvent) || event.button !== 0) return;
-		if (interactive && (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)) return;
-		if (!interactive && hasInteractiveTarget(event.target)) return;
-		const mappedPosition = sourcePositionAtPointer(node, from, source, event.clientX, event.clientY, mode);
-		const position = interior ? clampToSourceInterior(from, source, mappedPosition) : mappedPosition;
-		event.preventDefault();
-		event.stopPropagation();
-		selectSource(view, position);
-	});
+	node.dataset.sourceMode = mode;
+	if (interior) node.dataset.sourceInterior = 'true';
+}
+
+type PointerPosition = { pos: number; assoc: -1 | 1 };
+
+function pointerSourceTarget(event: MouseEvent): HTMLElement | null {
+	return event.target instanceof Element ? event.target.closest<HTMLElement>('.cm-live-source-target') : null;
+}
+
+function pointerPosition(view: EditorView, event: MouseEvent): PointerPosition {
+	const sourceTarget = pointerSourceTarget(event);
+	if (sourceTarget) {
+		const from = Number(sourceTarget.dataset.sourceFrom);
+		const to = Number(sourceTarget.dataset.sourceTo);
+		if (Number.isFinite(from) && Number.isFinite(to) && to >= from) {
+			const source = view.state.sliceDoc(from, to);
+			const mode: SourcePointerMode = sourceTarget.dataset.sourceMode === 'geometry' ? 'geometry' : 'text';
+			const mapped = sourcePositionAtPointer(
+				sourceTarget,
+				from,
+				source,
+				event.clientX,
+				event.clientY,
+				mode,
+			);
+			const pos = sourceTarget.dataset.sourceInterior === 'true' ? clampToSourceInterior(from, source, mapped) : mapped;
+			return { pos, assoc: pos <= from ? 1 : -1 };
+		}
+	}
+
+	const caret = domCaretAtPoint(event.clientX, event.clientY);
+	if (caret && view.contentDOM.contains(caret.offsetNode)) {
+		try {
+			const pos = view.posAtDOM(caret.offsetNode, caret.offset);
+			const coords = view.coordsAtPos(pos);
+			const assoc = !coords || event.clientX <= (coords.left + coords.right) / 2 ? 1 : -1;
+			return { pos, assoc };
+		} catch {
+			// Fall through when the browser caret lands in an unmappable decoration node.
+		}
+	}
+	return view.posAndSideAtCoords({ x: event.clientX, y: event.clientY }, false);
+}
+
+function pointerRange(state: EditorState, position: PointerPosition, clickType: number): SelectionRange {
+	if (clickType <= 1) return EditorSelection.cursor(position.pos, position.assoc);
+	if (clickType === 2) return state.wordAt(position.pos) ?? EditorSelection.cursor(position.pos, position.assoc);
+	const line = state.doc.lineAt(position.pos);
+	return EditorSelection.range(line.from, line.to < state.doc.length ? line.to + 1 : line.to);
+}
+
+function livePreviewMouseSelectionStyle(view: EditorView, startEvent: MouseEvent): MouseSelectionStyle | null {
+	if (startEvent.button !== 0) return null;
+	const target = startEvent.target instanceof Element ? startEvent.target : null;
+	if (target?.closest('button,input,textarea,select,summary')) return null;
+	if (target?.closest('a') && (startEvent.ctrlKey || startEvent.metaKey || startEvent.shiftKey || startEvent.altKey))
+		return null;
+
+	let start = pointerPosition(view, startEvent);
+	let startSelection = view.state.selection;
+	const clickType = Math.max(1, Math.min(startEvent.detail, 3));
+	return {
+		get(curEvent, extend, multiple) {
+			const current = pointerPosition(view, curEvent);
+			let range = pointerRange(view.state, current, clickType);
+			if (current.pos !== start.pos && !extend) {
+				const startRange = pointerRange(view.state, start, clickType);
+				const from = Math.min(startRange.from, range.from);
+				const to = Math.max(startRange.to, range.to);
+				range = current.pos < start.pos ? EditorSelection.range(to, from) : EditorSelection.range(from, to);
+			}
+			if (extend) return startSelection.replaceRange(startSelection.main.extend(range.from, range.to));
+			if (multiple) return startSelection.addRange(range);
+			return EditorSelection.create([range]);
+		},
+		update(update: ViewUpdate) {
+			if (!update.docChanged) return;
+			start = { ...start, pos: update.changes.mapPos(start.pos) };
+			startSelection = startSelection.map(update.changes);
+		},
+	};
+}
+
+abstract class SourceWidget extends WidgetType {
+	ignoreEvent(event: Event): boolean {
+		if (!(event instanceof MouseEvent) || event.type !== 'mousedown' || event.button !== 0) return true;
+		const target = event.target instanceof Element ? event.target : null;
+		if (target?.closest('button,input,textarea,select,summary')) return true;
+		if (target?.closest('a') && (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)) return true;
+		return false;
+	}
 }
 
 class CheckboxWidget extends WidgetType {
@@ -438,7 +533,7 @@ class CheckboxWidget extends WidgetType {
 	}
 }
 
-class InlineMathWidget extends WidgetType {
+class InlineMathWidget extends SourceWidget {
 	constructor(
 		private readonly expression: string,
 		private readonly from: number,
@@ -454,12 +549,12 @@ class InlineMathWidget extends WidgetType {
 		} catch {
 			node.textContent = `$${this.expression}$`;
 		}
-		bindSourceNavigation(node, view, this.from + 1, this.expression, 'geometry');
+		bindSourceNavigation(node, this.from + 1, this.expression, 'geometry');
 		return node;
 	}
 }
 
-class InlineMarkdownWidget extends WidgetType {
+class InlineMarkdownWidget extends SourceWidget {
 	constructor(
 		private readonly source: string,
 		private readonly from: number,
@@ -472,12 +567,12 @@ class InlineMarkdownWidget extends WidgetType {
 		const node = document.createElement('span');
 		node.className = `cm-live-inline-block cm-live-inline-${this.kind}`;
 		node.innerHTML = renderMarkdownInline(this.source);
-		bindSourceNavigation(node, view, this.from, this.source);
+		bindSourceNavigation(node, this.from, this.source);
 		return node;
 	}
 }
 
-class LinkWidget extends WidgetType {
+class LinkWidget extends SourceWidget {
 	constructor(
 		private readonly source: string,
 		private readonly from: number,
@@ -495,7 +590,7 @@ class LinkWidget extends WidgetType {
 		if (!anchor) {
 			container.className = 'cm-live-link-disabled';
 			container.replaceChildren(document.createTextNode(container.textContent || this.source));
-			bindSourceNavigation(container, view, this.from, this.source, 'text');
+			bindSourceNavigation(container, this.from, this.source, 'text');
 			return container;
 		}
 		anchor.classList.add('cm-live-link');
@@ -505,11 +600,9 @@ class LinkWidget extends WidgetType {
 		const contentTo = content?.to ?? this.source.length;
 		bindSourceNavigation(
 			anchor,
-			view,
 			this.from + contentFrom,
 			this.source.slice(contentFrom, contentTo),
 			'text',
-			true,
 		);
 		anchor.addEventListener('click', (event) => {
 			const href = anchor.getAttribute('href') ?? '';
@@ -524,7 +617,7 @@ class LinkWidget extends WidgetType {
 	}
 }
 
-class HorizontalRuleWidget extends WidgetType {
+class HorizontalRuleWidget extends SourceWidget {
 	constructor(
 		private readonly from: number,
 		private readonly to: number,
@@ -534,12 +627,12 @@ class HorizontalRuleWidget extends WidgetType {
 	toDOM(view: EditorView): HTMLElement {
 		const rule = document.createElement('hr');
 		rule.className = 'cm-live-hr';
-		bindSourceNavigation(rule, view, this.from, view.state.sliceDoc(this.from, this.to), 'geometry');
+		bindSourceNavigation(rule, this.from, view.state.sliceDoc(this.from, this.to), 'geometry');
 		return rule;
 	}
 }
 
-class ImageWidget extends WidgetType {
+class ImageWidget extends SourceWidget {
 	constructor(
 		private readonly source: string,
 		private readonly from: number,
@@ -554,18 +647,18 @@ class ImageWidget extends WidgetType {
 		if (!image) {
 			const fallback = document.createElement('span');
 			fallback.textContent = this.source;
-			bindSourceNavigation(fallback, view, this.from, this.source, 'geometry');
+			bindSourceNavigation(fallback, this.from, this.source, 'geometry');
 			return fallback;
 		}
 		image.className = 'cm-live-image';
 		image.classList.add('cm-live-inline-block');
 		image.loading = 'lazy';
-		bindSourceNavigation(image, view, this.from, this.source, 'geometry', false, true);
+		bindSourceNavigation(image, this.from, this.source, 'geometry', true);
 		return image;
 	}
 }
 
-class ListMarkerWidget extends WidgetType {
+class ListMarkerWidget extends SourceWidget {
 	constructor(
 		private readonly marker: string,
 		private readonly from: number,
@@ -577,12 +670,12 @@ class ListMarkerWidget extends WidgetType {
 		const node = document.createElement('span');
 		node.className = 'cm-live-list-marker';
 		node.textContent = /^\d/.test(this.marker) ? this.marker : '•';
-		bindSourceNavigation(node, view, this.from, this.marker, 'geometry');
+		bindSourceNavigation(node, this.from, this.marker, 'geometry');
 		return node;
 	}
 }
 
-class BlockWidget extends WidgetType {
+class BlockWidget extends SourceWidget {
 	constructor(
 		private readonly block: StructuralBlock,
 		private readonly source: string,
@@ -604,11 +697,10 @@ class BlockWidget extends WidgetType {
 			const pre = document.createElement('pre');
 			pre.append(code);
 			wrapper.append(chrome, pre);
-			bindSourceNavigation(chrome, view, this.block.from, lines[0], 'geometry');
+			bindSourceNavigation(chrome, this.block.from, lines[0], 'geometry');
 			const codeFrom = lines[0].length + 1;
 			bindSourceNavigation(
 				code,
-				view,
 				this.block.from + codeFrom,
 				this.source.slice(codeFrom, this.source.lastIndexOf('\n')),
 			);
@@ -629,14 +721,12 @@ class BlockWidget extends WidgetType {
 			if (renderedFormula)
 				bindSourceNavigation(
 					renderedFormula,
-					view,
 					this.block.from + contentFrom,
 					this.source.slice(contentFrom, contentTo),
 					'geometry',
 				);
 			bindSourceNavigation(
 				wrapper,
-				view,
 				this.block.from + contentFrom,
 				this.source.slice(contentFrom, contentTo),
 				'geometry',
@@ -654,7 +744,7 @@ class BlockWidget extends WidgetType {
 			(wrapper as HTMLDetailsElement).open = true;
 			if (summaryMatch) {
 				const relativeFrom = summaryMatch.index + summaryMatch[0].indexOf(summaryMatch[1]);
-				bindSourceNavigation(summaryNode, view, this.block.from + relativeFrom, summary);
+				bindSourceNavigation(summaryNode, this.block.from + relativeFrom, summary);
 			}
 		} else if (this.block.kind === 'frontmatter') {
 			const frontmatter = parseFrontmatterBlock(this.source);
@@ -674,7 +764,7 @@ class BlockWidget extends WidgetType {
 				wrapper.append(properties);
 			}
 		} else wrapper.innerHTML = renderMarkdown(this.source);
-		if (this.block.kind !== 'math') bindSourceNavigation(wrapper, view, this.block.from, this.source);
+		if (this.block.kind !== 'math') bindSourceNavigation(wrapper, this.block.from, this.source);
 		return wrapper;
 	}
 	private tableDOM(view: EditorView): HTMLElement {
@@ -682,7 +772,7 @@ class BlockWidget extends WidgetType {
 		if (!parsed) {
 			const fallback = document.createElement('pre');
 			fallback.textContent = this.source;
-			bindSourceNavigation(fallback, view, this.block.from, this.source);
+			bindSourceNavigation(fallback, this.block.from, this.source);
 			return fallback;
 		}
 		const table = document.createElement('table');
@@ -1201,6 +1291,7 @@ export function createMarkdownLivePreview(
 			markdownLanguageSupport,
 			syntaxHighlighting(markdownLivePreviewHighlightStyle),
 			livePreviewField,
+			EditorView.mouseSelectionStyle.of(livePreviewMouseSelectionStyle),
 			history(),
 			editingKeymap,
 			clipboardHandlers,
