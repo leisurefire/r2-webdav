@@ -389,6 +389,11 @@ function sourcePositionAtPointer(
 	return Math.max(from, Math.min(from + source.length, position));
 }
 
+function clampToSourceInterior(from: number, source: string, position: number): number {
+	if (source.length < 2) return from;
+	return Math.max(from + 1, Math.min(from + source.length - 1, position));
+}
+
 function bindSourceNavigation(
 	node: HTMLElement,
 	view: EditorView,
@@ -396,6 +401,7 @@ function bindSourceNavigation(
 	source: string,
 	mode: SourcePointerMode = 'text',
 	interactive = false,
+	interior = false,
 ): void {
 	node.classList.add('cm-live-source-target');
 	node.dataset.sourceFrom = String(from);
@@ -404,7 +410,8 @@ function bindSourceNavigation(
 		if (!(event instanceof MouseEvent) || event.button !== 0) return;
 		if (interactive && (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)) return;
 		if (!interactive && hasInteractiveTarget(event.target)) return;
-		const position = sourcePositionAtPointer(node, from, source, event.clientX, event.clientY, mode);
+		const mappedPosition = sourcePositionAtPointer(node, from, source, event.clientX, event.clientY, mode);
+		const position = interior ? clampToSourceInterior(from, source, mappedPosition) : mappedPosition;
 		event.preventDefault();
 		event.stopPropagation();
 		selectSource(view, position);
@@ -553,7 +560,7 @@ class ImageWidget extends WidgetType {
 		image.className = 'cm-live-image';
 		image.classList.add('cm-live-inline-block');
 		image.loading = 'lazy';
-		bindSourceNavigation(image, view, this.from, this.source, 'geometry');
+		bindSourceNavigation(image, view, this.from, this.source, 'geometry', false, true);
 		return image;
 	}
 }
@@ -842,6 +849,12 @@ function selectionTouchesRange(state: EditorState, from: number, to: number): bo
 	);
 }
 
+function selectionTouchesInlineRange(state: EditorState, from: number, to: number): boolean {
+	return state.selection.ranges.some((selection) =>
+		selection.empty ? selection.from > from && selection.from < to : selection.from < to && selection.to > from,
+	);
+}
+
 function containingRange(ranges: Array<{ from: number; to: number }>, from: number, to: number) {
 	return ranges
 		.filter((range) => range.from <= from && range.to >= to)
@@ -926,7 +939,7 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 			}
 		}
 		for (const inline of inlineBlocks) {
-			if (selectionTouchesRange(state, inline.from, inline.to)) continue;
+			if (selectionTouchesInlineRange(state, inline.from, inline.to)) continue;
 			const source = text.slice(inline.from, inline.to);
 			if (inline.kind === 'comment') add(inline.from, inline.to, Decoration.replace({}));
 			else if (inline.kind === 'math') {

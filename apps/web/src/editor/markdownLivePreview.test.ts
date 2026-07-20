@@ -138,6 +138,24 @@ describe('live preview block decorations', () => {
 		expect(replacements.map(({ from, to }) => source.slice(from, to))).toEqual(['**first**', '**second**']);
 	});
 
+	it('treats inline format boundaries as adjacent plain-text positions', () => {
+		const source = 'before**bold**after';
+		const formattedFrom = source.indexOf('**');
+		const formattedTo = source.lastIndexOf('**') + 2;
+		for (const anchor of [formattedFrom, formattedTo]) {
+			const state = EditorState.create({
+				doc: source,
+				selection: { anchor },
+				extensions: [markdownLanguageSupport, livePreviewField],
+			});
+			const replacements = widgetReplacements(state).filter(({ name }) => name === 'InlineMarkdownWidget');
+			expect(
+				replacements.map(({ from, to }) => source.slice(from, to)),
+				`anchor ${anchor}`,
+			).toEqual(['**bold**']);
+		}
+	});
+
 	it('uses one outer replacement for nested inline formatting', () => {
 		const source = 'before **outer *inner* text** after';
 		const replacements = widgetReplacements(createState(source)).filter(
