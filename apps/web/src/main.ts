@@ -1481,6 +1481,35 @@ const NOTE_AUTOSAVE_IDLE_DELAY = 2_500;
 const NOTE_AUTOSAVE_INTERVAL = 8_000;
 const NOTE_AUTOSAVE_RETRY_DELAY = 10_000;
 const noteCommitStates = new Map<string, NoteCommitState>();
+/** In-flight create/delete/folder ops that are not yet confirmed by the server. */
+let pendingNoteNetworkOps = 0;
+let notesTreeScrollTop = 0;
+
+function trackNoteNetworkOp<T>(work: Promise<T>): Promise<T> {
+	pendingNoteNetworkOps += 1;
+	return work.finally(() => {
+		pendingNoteNetworkOps = Math.max(0, pendingNoteNetworkOps - 1);
+	});
+}
+
+function hasUnsyncedNoteChanges(): boolean {
+	if (pendingNoteNetworkOps > 0) return true;
+	for (const state of noteCommitStates.values()) {
+		if (state.pending || state.inflight || state.active || state.status === 'pending' || state.status === 'syncing' || state.status === 'failed')
+			return true;
+	}
+	return false;
+}
+
+function rememberNotesTreeScroll(root: ParentNode | null | undefined = document): void {
+	const list = root?.querySelector?.<HTMLElement>('[data-notes-tree]:not(.bookmark-folder-tree)');
+	if (list) notesTreeScrollTop = list.scrollTop;
+}
+
+function restoreNotesTreeScroll(root: ParentNode | null | undefined = document): void {
+	const list = root?.querySelector?.<HTMLElement>('[data-notes-tree]:not(.bookmark-folder-tree)');
+	if (list) list.scrollTop = notesTreeScrollTop;
+}
 
 function noteSaveCopy(state: NoteSaveState): string {
 	if (locale === 'zh') {
@@ -1902,22 +1931,40 @@ function bindNoteEditor(root: HTMLElement, data: NotePage, selected: Note, mobil
 		?.addEventListener('click', () => updateStructure({ archived: !selected.archived }));
 	root.querySelector('[data-note-delete]')?.addEventListener('click', async () => {
 		if (!(await confirmAction(`${t('delete')}?`, selected.title, t('delete')))) return;
-		let commitState: NoteCommitState | undefined;
-		try {
-			await flushNoteCommit(selected.id);
-			commitState = noteCommitStates.get(selected.id);
-			if (commitState) {
-				window.clearTimeout(commitState.idleTimer);
-				window.clearTimeout(commitState.intervalTimer);
-			}
-			await api.deleteNote(selected.id);
-			discardNoteCommit(selected.id);
-			invalidateNoteCaches();
-			await renderNotes(undefined, true);
-		} catch (error) {
-			if (commitState?.pending) scheduleNoteCommit(commitState);
-			toast(errorMessage(error));
+		const deleted = { ...selected };
+		const source = selected.archived ? archivedNotesData : notesData;
+		const snapshot = source ? { ...source, items: [...source.items] } : null;
+		discardNoteCommit(selected.id);
+		if (source) {
+			source.items = source.items.filter((item) => item.id !== selected.id);
+			source.total = Math.max(0, source.total - 1);
 		}
+		if (!selected.archived && selected.folderId) {
+			const folder = noteFolders.find((item) => item.id === selected.folderId);
+			if (folder) folder.noteCount = Math.max(0, folder.noteCount - 1);
+		}
+		invalidateNoteCaches();
+		if (notesData) cacheNotes(notesData, false);
+		if (archivedNotesData) cacheNotes(archivedNotesData, true, undefined);
+		if (mobileNoteDialogOpen) history.back();
+		if (notesData) paintNotes(notesData, currentSelectedNoteId() === selected.id ? undefined : currentSelectedNoteId());
+		void trackNoteNetworkOp(
+			api.deleteNote(deleted.id).catch((error) => {
+				// Restore the note if the server delete fails.
+				if (snapshot && source) {
+					source.items = snapshot.items;
+					source.total = snapshot.total;
+					if (!deleted.archived && deleted.folderId) {
+						const folder = noteFolders.find((item) => item.id === deleted.folderId);
+						if (folder) folder.noteCount += 1;
+					}
+					if (notesData) cacheNotes(notesData, false);
+					if (archivedNotesData) cacheNotes(archivedNotesData, true, undefined);
+					paintNotes(notesData ?? source, deleted.id);
+				}
+				toast(errorMessage(error));
+			}),
+		);
 	});
 	root.querySelector('[data-note-close]')?.addEventListener('click', () => {
 		if (mobileNoteDialogOpen) history.back();
@@ -1974,16 +2021,19 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 			note,
 		}));
 	const rootNotes = notesFor(null);
-	const tree: NoteTreeNode[] = [
-		...noteFolders.map((folder) => ({
-			kind: 'folder' as const,
-			key: folder.id,
-			name: folder.name,
-			count: folder.noteCount,
-			expanded: selectedNoteFolderId === undefined || selectedNoteFolderId === folder.id,
-			active: selectedNoteFolderId === folder.id && notesFor(folder.id).length === 0,
-			children: noteNodes(notesFor(folder.id)),
-		})),
+	// Pinned root notes stay above folders; unpinned root notes stay below folders.
+	const pinnedRootNotes = rootNotes.filter((note) => note.pinned);
+	const unpinnedRootNotes = rootNotes.filter((note) => !note.pinned);
+	const folderTree: NoteTreeNode[] = noteFolders.map((folder) => ({
+		kind: 'folder' as const,
+		key: folder.id,
+		name: folder.name,
+		count: folder.noteCount,
+		expanded: selectedNoteFolderId === undefined || selectedNoteFolderId === folder.id,
+		active: selectedNoteFolderId === folder.id && notesFor(folder.id).length === 0,
+		children: noteNodes(notesFor(folder.id)),
+	}));
+	const archiveTree: NoteTreeNode[] = [
 		{
 			kind: 'archive',
 			key: 'archive',
@@ -1994,27 +2044,32 @@ function notesFolderSidebarMarkup(data: NotePage, selected?: Note): string {
 			children: archiveExpanded ? noteNodes(archivedNotesData?.items ?? []) : [],
 		},
 	];
-	const treeMarkup = renderTreeNodes(
-		tree,
-		(node) => node.children,
-		(node, depth, children) => {
-			if (node.kind === 'note') return node.note ? noteCardMarkup(node.note, selected) : '';
-			const folder = node.kind === 'folder';
-			const icon = caret(node.expanded);
-			const actions = folder
-				? `<div class="note-folder-actions"><button class="row-action" data-rename-note-folder="${html(node.key)}" title="${locale === 'zh' ? '重命名' : 'Rename'}" aria-label="${locale === 'zh' ? '重命名' : 'Rename'}"><i data-lucide="pencil"></i></button><button class="row-action danger" data-delete-note-folder="${html(node.key)}" title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button></div>`
-				: '';
-			const filter = node.kind === 'archive' ? 'data-note-archived' : `data-note-folder-filter="${html(node.key)}"`;
-			const drop = node.kind === 'archive' ? 'archive' : node.key;
-			return `<div class="note-tree-node ${folder ? 'note-folder-card' : 'note-tree-special'} ${node.kind === 'archive' ? 'archive-tree-item' : ''} ${node.active ? 'active' : ''} ${node.expanded ? 'expanded' : ''}" data-note-folder-drop="${html(drop)}" style="--tree-depth:${depth}"><button type="button" class="collection-tree-row" ${filter}>${icon}<span>${html(node.name)}</span><small>${node.count || ''}</small></button>${actions}${node.expanded && children ? `<div class="notes-tree-children">${children}</div>` : ''}</div>`;
-		},
-	);
-	// Always keep uncategorized (root) notes visible, even while a folder is open.
-	const rootMarkup = `<div class="notes-tree-children notes-tree-root" data-note-folder-drop="root">${rootNotes.map((note) => noteCardMarkup(note, selected)).join('')}</div>`;
+	const renderFolderish = (nodes: NoteTreeNode[]) =>
+		renderTreeNodes(
+			nodes,
+			(node) => node.children,
+			(node, depth, children) => {
+				if (node.kind === 'note') return node.note ? noteCardMarkup(node.note, selected) : '';
+				const folder = node.kind === 'folder';
+				const icon = caret(node.expanded);
+				const actions = folder
+					? `<div class="note-folder-actions"><button class="row-action" data-rename-note-folder="${html(node.key)}" title="${locale === 'zh' ? '重命名' : 'Rename'}" aria-label="${locale === 'zh' ? '重命名' : 'Rename'}"><i data-lucide="pencil"></i></button><button class="row-action danger" data-delete-note-folder="${html(node.key)}" title="${t('delete')}" aria-label="${t('delete')}"><i data-lucide="trash-2"></i></button></div>`
+					: '';
+				const filter = node.kind === 'archive' ? 'data-note-archived' : `data-note-folder-filter="${html(node.key)}"`;
+				const drop = node.kind === 'archive' ? 'archive' : node.key;
+				return `<div class="note-tree-node ${folder ? 'note-folder-card' : 'note-tree-special'} ${node.kind === 'archive' ? 'archive-tree-item' : ''} ${node.active ? 'active' : ''} ${node.expanded ? 'expanded' : ''}" data-note-folder-drop="${html(drop)}" style="--tree-depth:${depth}"><button type="button" class="collection-tree-row" ${filter}>${icon}<span>${html(node.name)}</span><small>${node.count || ''}</small></button>${actions}${node.expanded && children ? `<div class="notes-tree-children">${children}</div>` : ''}</div>`;
+			},
+		);
+	const pinnedRootMarkup = pinnedRootNotes.length
+		? `<div class="notes-tree-children notes-tree-root notes-tree-root-pinned" data-note-folder-drop="root">${pinnedRootNotes.map((note) => noteCardMarkup(note, selected)).join('')}</div>`
+		: '';
+	const unpinnedRootMarkup = `<div class="notes-tree-children notes-tree-root notes-tree-root-unpinned" data-note-folder-drop="root">${unpinnedRootNotes.map((note) => noteCardMarkup(note, selected)).join('')}</div>`;
+	const folderMarkup = renderFolderish(folderTree);
+	const archiveMarkup = renderFolderish(archiveTree);
 	return `<aside class="notes-folders" aria-label="${locale === 'zh' ? '便签目录' : 'Note folders'}">
 		<div class="notes-folders-head"><strong>${locale === 'zh' ? '便签目录' : 'Folders'}</strong><button class="row-action" data-new-note-folder title="${locale === 'zh' ? '新建目录' : 'New folder'}" aria-label="${locale === 'zh' ? '新建目录' : 'New folder'}"><i data-lucide="folder-plus"></i></button></div>
 		<div class="notes-tree" data-notes-tree>
-			${rootMarkup}${treeMarkup}
+			${pinnedRootMarkup}${folderMarkup}${unpinnedRootMarkup}${archiveMarkup}
 		</div>
 		<button class="button primary floating-primary-action" id="new-note" title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i><span>${t('newNote')}</span></button>
 		<div class="notes-load-status" aria-live="polite">${notesLoadingMore ? loadingMarkup(true) : ''}</div>
@@ -2101,10 +2156,19 @@ function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 		const source = data.items.some((item) => item.id === noteId) ? data : archivedNotesData;
 		const note = source?.items.find((item) => item.id === noteId);
 		if (!note) return;
+		// Reordering inside the same folder is not supported; only cross-folder / archive moves apply.
+		if (destination === 'archive') {
+			if (note.archived) return;
+		} else if (destination === 'root') {
+			if (!note.archived && (note.folderId ?? null) === null) return;
+		} else if (!note.archived && note.folderId === destination) {
+			return;
+		}
 		const changes: NoteChanges =
 			destination === 'archive'
 				? { archived: true }
 				: { archived: false, folderId: destination === 'root' ? null : destination };
+		// optimisticallyUpdateNote bumps updatedAt so the note sorts by edit time in the target folder.
 		const leftCurrentView = optimisticallyUpdateNote(source ?? data, note, changes);
 		const selectedId = currentSelectedNoteId();
 		if (leftCurrentView && selectedId === note.id && notesData) paintNotes(notesData);
@@ -2275,24 +2339,56 @@ function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?: Note):
 		}),
 	);
 	bindNotesFolders(content, data);
-	content.querySelector('#new-note')?.addEventListener('click', async () => {
-		try {
-			const note = await api.createNote(
-				locale === 'zh' ? '无标题便签' : 'Untitled note',
-				'',
-				typeof selectedNoteFolderId === 'string' ? selectedNoteFolderId : null,
-			);
-			notesData = null;
-			invalidateNoteCaches();
-			await renderNotes(note.id, true, true);
-		} catch (error) {
-			toast(errorMessage(error));
+	content.querySelector('#new-note')?.addEventListener('click', () => {
+		const now = new Date().toISOString();
+		const folderId = typeof selectedNoteFolderId === 'string' ? selectedNoteFolderId : null;
+		const note: Note = {
+			id: crypto.randomUUID(),
+			title: locale === 'zh' ? '无标题便签' : 'Untitled note',
+			content: '',
+			pinned: false,
+			archived: false,
+			createdAt: now,
+			updatedAt: now,
+			accessedAt: now,
+			folderId,
+		};
+		if (!notesData) {
+			notesData = { items: [note], page: 1, pageSize: 20, total: 1, hasMore: false };
+		} else {
+			notesData.items.unshift(note);
+			notesData.total += 1;
+			sortNotes(notesData.items);
 		}
+		if (folderId) {
+			const folder = noteFolders.find((item) => item.id === folderId);
+			if (folder) folder.noteCount += 1;
+		}
+		invalidateNoteCaches();
+		cacheNotes(notesData, false);
+		paintNotes(notesData, note.id, true);
+		void trackNoteNetworkOp(
+			api.createNote(note.title, note.content, folderId, note.id).catch((error) => {
+				// Roll back the optimistic note if the server rejects creation.
+				if (notesData) {
+					notesData.items = notesData.items.filter((item) => item.id !== note.id);
+					notesData.total = Math.max(0, notesData.total - 1);
+					if (folderId) {
+						const folder = noteFolders.find((item) => item.id === folderId);
+						if (folder) folder.noteCount = Math.max(0, folder.noteCount - 1);
+					}
+					cacheNotes(notesData, false);
+					paintNotes(notesData, currentSelectedNoteId());
+				}
+				toast(errorMessage(error));
+			}),
+		);
 	});
 	const list = content.querySelector<HTMLElement>('[data-notes-tree]');
 	list?.addEventListener(
 		'scroll',
 		(event) => {
+			notesTreeScrollTop = list.scrollTop;
 			if (!event.isTrusted || list.scrollHeight - list.scrollTop - list.clientHeight > 120) return;
 			void loadMoreNotes(selected?.id, list.scrollTop);
 		},
@@ -2304,7 +2400,8 @@ function replaceNotesSidebar(data: NotePage, selectedId?: string): void {
 	const content = document.querySelector<HTMLDivElement>('#page-content');
 	const current = content?.querySelector<HTMLElement>('.notes-folders:not(.bookmark-folders)');
 	if (!content || !current) return;
-	const scrollTop = current.querySelector<HTMLElement>('[data-notes-tree]')?.scrollTop ?? 0;
+	rememberNotesTreeScroll(current);
+	const scrollTop = notesTreeScrollTop;
 	const wrapper = document.createElement('div');
 	const selected =
 		data.items.find((note) => note.id === selectedId) ??
@@ -2322,6 +2419,7 @@ function replaceNotesSidebar(data: NotePage, selectedId?: string): void {
 function paintNotes(data: NotePage, selectedId?: string, openMobile = false): void {
 	const content = document.querySelector<HTMLDivElement>('#page-content');
 	if (!content) return;
+	rememberNotesTreeScroll(content);
 	if (notesView === 'bookmarks') {
 		paintBookmarkView();
 		return;
@@ -2342,6 +2440,7 @@ function paintNotes(data: NotePage, selectedId?: string, openMobile = false): vo
 	refreshIcons();
 	bindNotesNavigation(content);
 	bindNoteSidebar(content, data, selected);
+	restoreNotesTreeScroll(content);
 	content.querySelector('#notes-refresh')?.addEventListener('click', async () => {
 		await flushAllNoteCommits();
 		await pullBookmarks(true);
@@ -2638,4 +2737,11 @@ document.addEventListener('visibilitychange', () => {
 	if (document.visibilityState === 'hidden') void flushAllNoteCommits();
 });
 window.addEventListener('pagehide', () => void flushAllNoteCommits());
+window.addEventListener('beforeunload', (event) => {
+	if (!hasUnsyncedNoteChanges()) return;
+	// Nudge the browser to confirm leaving while creates/edits/deletes are still syncing.
+	void flushAllNoteCommits();
+	event.preventDefault();
+	event.returnValue = '';
+});
 void render();

@@ -271,11 +271,21 @@ export const api = {
 			throw error;
 		}
 	},
-	createNote(title: string, content = '', folderId?: string | null): Promise<Note> {
+	createNote(
+		title: string,
+		content = '',
+		folderId?: string | null,
+		id?: string,
+	): Promise<Note> {
 		return notesRequest('', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ title, content, ...(folderId ? { folderId } : {}) }),
+			body: JSON.stringify({
+				title,
+				content,
+				...(folderId ? { folderId } : {}),
+				...(id ? { id } : {}),
+			}),
 		});
 	},
 	updateNote(

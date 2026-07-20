@@ -140,7 +140,7 @@ async function listNotes(request: Request, env: Env, owner: string): Promise<Res
 }
 
 async function createNote(request: Request, env: Env, owner: string): Promise<Response> {
-	const input = await readJson<{ title?: string; content?: string; folderId?: string }>(request);
+	const input = await readJson<{ id?: string; title?: string; content?: string; folderId?: string }>(request);
 	if (!input) return error('BAD_REQUEST', 'Invalid note body', 400);
 	const title = input.title?.trim() || 'Untitled note';
 	if (title.length > 200) return error('BAD_REQUEST', 'Note title is too long', 400);
@@ -148,7 +148,9 @@ async function createNote(request: Request, env: Env, owner: string): Promise<Re
 	if (folderId && (!/^[0-9a-f-]{36}$/i.test(folderId) || !(await folderExists(env, owner, folderId)))) {
 		return error('BAD_REQUEST', 'Folder not found', 400);
 	}
-	const id = crypto.randomUUID();
+	// Prefer a client-generated UUID so the UI can open the note before the network returns.
+	const id =
+		input.id && /^[0-9a-f-]{36}$/i.test(input.id) ? input.id.toLowerCase() : crypto.randomUUID();
 	const now = new Date().toISOString();
 	await env.NOTES_DB.prepare(
 		`INSERT INTO r2_webdav_notes
