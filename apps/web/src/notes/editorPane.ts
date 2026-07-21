@@ -490,7 +490,8 @@ export function bindNoteEditor(
 			});
 			let syncAiEmptyPrompt: (() => void) | undefined;
 			void import('../editor/aiAssistant').then(({ bindMarkdownAiAssistant }) => {
-				syncAiEmptyPrompt = bindMarkdownAiAssistant(view, source, locale, {
+				if (!source.isConnected) return;
+				const ai = bindMarkdownAiAssistant(view, source, locale, {
 					onError: (error) => toast(errorMessage(error)),
 					noteId: selected.id,
 					noteTitle: () => title.value.trim() || (locale === 'zh' ? '无标题便签' : 'Untitled note'),
@@ -501,6 +502,8 @@ export function bindNoteEditor(
 						reorderVisibleNoteCards(data);
 					},
 				});
+				// onChange must call syncEmptyPrompt only — never destroy (that closed the review UI after DIFF).
+				syncAiEmptyPrompt = ai.syncEmptyPrompt;
 			});
 		})
 		.catch((error) => {

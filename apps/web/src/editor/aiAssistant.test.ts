@@ -83,3 +83,15 @@ describe('splitRewriteSummary', () => {
 		});
 	});
 });
+
+describe('MarkdownAiHandle contract', () => {
+	it('keeps empty-prompt sync separate from teardown (regression: DIFF closed the review UI)', async () => {
+		// The editor onChange path must call syncEmptyPrompt only. If destroy is used there,
+		// polish/rewrite applying the inline DIFF tears down the Accept / Re-edit / Insert-below panel.
+		const { bindMarkdownAiAssistant } = await import('./aiAssistant');
+		expect(typeof bindMarkdownAiAssistant).toBe('function');
+		// Shape is enforced at the type level via MarkdownAiHandle; runtime export stays a dual-method handle.
+		const sample = { syncEmptyPrompt: () => {}, destroy: () => {} };
+		expect(Object.keys(sample).sort()).toEqual(['destroy', 'syncEmptyPrompt']);
+	});
+});

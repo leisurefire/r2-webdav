@@ -90,6 +90,14 @@ export interface MarkdownAiOptions {
 	noteId?: string;
 }
 
+/** Controller returned by {@link bindMarkdownAiAssistant}. */
+export interface MarkdownAiHandle {
+	/** Refresh the empty-document prompt after doc changes that skip DOM `input` events. */
+	syncEmptyPrompt: () => void;
+	/** Tear down listeners, floating UI, and any in-flight AI panel/review. */
+	destroy: () => void;
+}
+
 const FORMAT_BUTTONS: Array<{ id: string; marker: string; icon: string; zh: string; en: string }> = [
 	{ id: 'bold', marker: '**', icon: 'bold', zh: '粗体', en: 'Bold' },
 	{ id: 'italic', marker: '*', icon: 'italic', zh: '斜体', en: 'Italic' },
@@ -443,7 +451,7 @@ export function bindMarkdownAiAssistant(
 	host: HTMLElement,
 	locale: Locale,
 	options: MarkdownAiOptions,
-): () => void {
+): MarkdownAiHandle {
 	const zh = locale === 'zh';
 	const t = (zhText: string, enText: string): string => (zh ? zhText : enText);
 	const onError = options.onError;
@@ -452,6 +460,9 @@ export function bindMarkdownAiAssistant(
 	let trackedSelection: (AiRange & { text: string }) | null = null;
 
 	let syncEmptyPrompt = () => {};
+	/** Close the open AI action panel (discards pending review). Null when none is open. */
+	let closeActivePanel: (() => void) | null = null;
+	let destroyed = false;
 	const removePanel = () => {
 		panel?.remove();
 		panel = null;
@@ -470,7 +481,9 @@ export function bindMarkdownAiAssistant(
 		panelOptions: { autoStart?: boolean; hideInstruction?: boolean } = {},
 	) => {
 		removeToolbar();
-		removePanel();
+		// Close any existing panel through its close path so pending DIFF reviews are discarded.
+		if (closeActivePanel) closeActivePanel();
+		else removePanel();
 		// Freeze the exact selected slice once; never re-read a broader range later.
 		const clampedFrom = Math.max(0, Math.min(range.from, view.state.doc.length));
 		const clampedTo = Math.max(clampedFrom, Math.min(range.to, view.state.doc.length));
@@ -564,7 +577,6 @@ export function bindMarkdownAiAssistant(
 		let result = '';
 		let streamText = '';
 		let controller: AbortController | null = null;
-		let accepted = false;
 		let review: { undoFrom: number; undoTo: number; original: string; generated: string } | null = null;
 
 		let hideInstruction = Boolean(panelOptions.hideInstruction);
@@ -585,6 +597,8 @@ export function bindMarkdownAiAssistant(
 				mainButton.innerHTML = `<i data-lucide="check"></i><span>${action === 'generate' || action === 'summarize' ? t('在下方插入', 'Insert below') : t('接受', 'Accept')}</span>`;
 			}
 			paintIcons(actionsNode);
+			// Stage changes alter panel height (result + actions); re-anchor above/below the caret.
+			placePanel();
 		};
 
 		/** Discard an in-progress review preview and restore the original selection text. */
@@ -607,8 +621,10 @@ export function bindMarkdownAiAssistant(
 			discardReview();
 			clearSelectionHold(view);
 			removePanel();
+			if (closeActivePanel === close) closeActivePanel = null;
 			view.focus();
 		};
+		closeActivePanel = close;
 
 		const showResult = (value: string) => {
 			try {
@@ -658,6 +674,8 @@ export function bindMarkdownAiAssistant(
 					},
 					controller.signal,
 				);
+				// Panel may have been closed (abort) or the editor remounted while the stream finished.
+				if (destroyed || !panel?.isConnected || controller.signal.aborted) return;
 				let note = '';
 				result = normalizeAiMarkdown(streamText);
 				if (action === 'rewrite') {
@@ -696,6 +714,7 @@ export function bindMarkdownAiAssistant(
 				}
 				setStage('done');
 			} catch (error) {
+				if (destroyed || !panel?.isConnected) return;
 				if (controller.signal.aborted) return;
 				resultNode.innerHTML = `<div class="ai-error">${t('生成失败，请重试', 'Generation failed. Please retry.')}</div>`;
 				setStage('done');
@@ -738,7 +757,12 @@ export function bindMarkdownAiAssistant(
 		mainButton.addEventListener('click', () => {
 			if (stage === 'busy') {
 				controller?.abort();
+				// Auto-start polish/summarize hide the instruction row; reveal it after stop.
+				hideInstruction = false;
+				result = '';
+				streamText = '';
 				setStage('input');
+				input.focus();
 				return;
 			}
 			if (stage !== 'done') return;
@@ -1088,12 +1112,40 @@ export function bindMarkdownAiAssistant(
 		);
 	});
 	const unbindChat = bindNoteContextChat(view, host, locale, options);
-	return () => {
-		syncEmptyPrompt();
+	const destroy = () => {
+		if (destroyed) return;
+		destroyed = true;
+		// Prefer the panel's own close path so a pending polish/rewrite review is discarded.
+		if (closeActivePanel) closeActivePanel();
+		else {
+			clearAiReview(view);
+			clearSelectionHold(view);
+			removePanel();
+		}
 		mobileBindings.abort();
 		unbindChat();
 		selectionPoll.removeEventListener('selectionchange', onSelectionChange);
+		view.dom.removeEventListener('mouseup', scheduleToolbar);
+		view.dom.removeEventListener('touchend', scheduleToolbar);
+		view.dom.removeEventListener('keyup', scheduleToolbar);
+		view.dom.removeEventListener('input', syncEmptyPrompt);
 		removeToolbar();
-		removePanel();
+		emptyPrompt.remove();
+		document.querySelector('.ai-polish-menu')?.remove();
+		window.removeEventListener('scroll', removeToolbar, true);
+		disconnectObserver.disconnect();
+	};
+	// When the note editor host is torn down (sidebar repaint / note switch), drop floating AI UI.
+	const disconnectObserver = new MutationObserver(() => {
+		if (!host.isConnected) destroy();
+	});
+	disconnectObserver.observe(document.body, { childList: true, subtree: true });
+
+	return {
+		// Callers must use this for empty-prompt refresh — never the destroy path.
+		syncEmptyPrompt: () => {
+			if (!destroyed) syncEmptyPrompt();
+		},
+		destroy,
 	};
 }
