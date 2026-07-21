@@ -29,6 +29,8 @@ import {
 	notesLoadingMore,
 	noteSort,
 	noteSortValues,
+	noteExpandedFolders,
+	setSelectedNoteFolderId,
 	currentNotesRequest,
 	nextNotesRequest,
 	noteScopesLoaded,
@@ -39,6 +41,12 @@ import {
 	setNotesLoadingMore,
 	validatedNotePages,
 } from './store';
+
+function noteIdFromPath(): string | undefined {
+	if (!location.pathname.startsWith('/notes/')) return undefined;
+	const value = decodeURIComponent(location.pathname.slice('/notes/'.length).split('/')[0] ?? '').trim();
+	return value || undefined;
+}
 
 let notesTreeScrollTop = 0;
 export function setNotesTreeScrollTop(next: number): void {
@@ -243,8 +251,29 @@ export async function loadMoreNotes(selectedId?: string, scrollTop = 0): Promise
 }
 
 export async function renderNotes(selectedId?: string, forceSync = false, openMobile = false): Promise<void> {
+	selectedId ??= noteIdFromPath();
 	shell('notes', t('notes'));
 	await loadNoteFolders(forceSync);
+	if (selectedId) {
+		try {
+			const direct = await api.getNote(selectedId);
+			if (direct.folderId) {
+				for (const folder of noteFolderPath(noteFolders, direct.folderId)) noteExpandedFolders.add(folder.id);
+				setSelectedNoteFolderId(direct.folderId);
+			}
+			if (direct.archived) setArchiveExpanded(true);
+			if (!noteContentLoaded.has(direct.id)) noteContentLoaded.add(direct.id);
+			if (direct.archived) {
+				if (!archivedNotesData) setArchivedNotesData(emptyNotePage());
+				mergeNotesIntoPage(archivedNotesData!, [direct], true);
+			} else {
+				if (!notesData) setNotesData(emptyNotePage());
+				mergeNotesIntoPage(notesData!, [direct], true);
+			}
+		} catch {
+			// Fall back to the normal notes index when the path id is stale.
+		}
+	}
 	// Tree indexes load by intent: root always, expanded folders on demand.
 	const treeFolderId = null as string | null;
 	const cached = forceSync ? null : cachedNotes(false);

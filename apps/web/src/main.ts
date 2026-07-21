@@ -35,7 +35,7 @@ async function render(): Promise<void> {
 	const page = pageFromPath();
 	if (
 		location.pathname === '/' ||
-		!['/files', '/calendar', '/notes', '/links', '/devices', '/settings'].includes(location.pathname)
+		(!['/files', '/calendar', '/notes', '/links', '/devices', '/settings'].includes(location.pathname) && !/^\/notes\/[^/]+$/.test(location.pathname))
 	)
 		history.replaceState({}, '', `/${page}`);
 	if (page === 'files') await renderFiles();

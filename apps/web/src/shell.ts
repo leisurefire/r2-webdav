@@ -166,7 +166,7 @@ export function loadingMarkup(compact = false): string {
 }
 
 export function pageFromPath(): Page {
-	const page = location.pathname.slice(1) as Page;
+	const page = location.pathname.replace(/^\//, '').split('/')[0] as Page;
 	return ['files', 'calendar', 'notes', 'links', 'devices', 'settings'].includes(page) ? page : 'files';
 }
 

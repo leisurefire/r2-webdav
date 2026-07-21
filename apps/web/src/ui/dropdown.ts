@@ -9,6 +9,7 @@ export interface DropdownAction {
 
 export interface CustomSelectOptions {
 	className?: string;
+	getOptionIcon?: (option: HTMLOptionElement) => IconNode | undefined;
 	getActions?: (option: HTMLOptionElement) => DropdownAction[];
 	onAction?: (action: DropdownAction, option: HTMLOptionElement) => void | Promise<void>;
 }
@@ -133,6 +134,8 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 			check.classList.add('custom-select-check');
 			const label = document.createElement('span');
 			label.textContent = option.label;
+			const optionIcon = options.getOptionIcon?.(option);
+			if (optionIcon) choice.append(createElement(optionIcon));
 			choice.append(check, label);
 			choice.addEventListener('click', (event) => {
 				event.preventDefault();

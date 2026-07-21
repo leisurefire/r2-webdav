@@ -622,7 +622,11 @@
 	background: var(--panel-bg);
 	box-shadow: 0 18px 56px rgba(15, 23, 42, 0.18);
 	overflow: hidden;
+	transition: transform 180ms ease, opacity 180ms ease;
+	transform-origin: right center;
 }
+
+.note-ai-chat-panel.is-closing { opacity: 0; transform: translateX(18px); }
 
 .note-ai-chat-footer {
 	display: flex;
@@ -689,23 +693,7 @@
 .ai-provider-icon.moonshot { color: #7c3aed; }
 .ai-provider-icon.generic { color: var(--muted); }
 
-.note-ai-mode-menu {
-	position: absolute;
-	right: auto;
-	left: 10px;
-	bottom: 48px;
-	display: grid;
-	gap: 2px;
-	min-width: 120px;
-	padding: 5px;
-	border: 1px solid var(--line);
-	border-radius: 7px;
-	background: var(--panel-bg);
-	box-shadow: 0 8px 24px rgba(15,23,42,.16);
-}
-
-.note-ai-mode-menu button { display: flex; align-items: center; gap: 7px; padding: 7px 8px; border: 0; border-radius: 5px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
-.note-ai-mode-menu button:hover { background: var(--hover-bg); }
+.note-ai-mode-select .custom-select-trigger { min-height: 28px; border-radius: 6px; font-size: 11px; }
 
 .note-ai-chat-head {
 	min-height: 58px;

@@ -12,6 +12,7 @@ import {
 	MessageCirclePlus,
 	Moon,
 	PanelRightClose,
+	Settings,
 	Settings2,
 	ChevronUp,
 	Pencil,
@@ -50,6 +51,7 @@ const AI_ICONS: Record<string, IconNode> = {
 	'message-circle': MessageCircle,
 	'message-circle-plus': MessageCirclePlus,
 	moon: Moon,
+	settings: Settings,
 	'panel-right-close': PanelRightClose,
 	'settings-2': Settings2,
 	'chevron-up': ChevronUp,
@@ -205,9 +207,12 @@ function bindNoteContextChat(
 	const close = () => {
 		controller?.abort();
 		controller = null;
-		panel?.remove();
+		if (panel) {
+			panel.classList.add('is-closing');
+			const closing = panel;
+			window.setTimeout(() => { closing.remove(); root?.classList.remove('note-ai-sidebar-open'); }, 180);
+		} else root?.classList.remove('note-ai-sidebar-open');
 		panel = null;
-		root?.classList.remove('note-ai-sidebar-open');
 		activeSelectionKey = '';
 		trigger.classList.remove('active');
 		trigger.setAttribute('aria-expanded', 'false');
@@ -259,9 +264,9 @@ function bindNoteContextChat(
 		<div class="note-ai-chat-composer">
 			<div class="note-ai-context-chip"><i data-lucide="${hasSelection ? 'text-select' : 'file-text'}"></i><span>${contextLabel}</span></div>
 			<div class="note-ai-chat-input-row"><textarea rows="1" data-chat-input placeholder="${t('询问这段内容…', 'Ask about this content…')}" aria-label="${t('向 AI 提问', 'Ask AI')}"></textarea></div>
-			<div class="note-ai-chat-footer"><button type="button" class="row-action" data-chat-settings title="${t('编辑或询问', 'Edit or ask')}" aria-label="${t('编辑或询问', 'Edit or ask')}" aria-expanded="false"><i data-lucide="chevron-up"></i></button><select class="note-ai-mode" data-chat-mode aria-label="${t('AI 模式', 'AI mode')}"><option value="edit">${t('编辑', 'Edit')}</option><option value="ask">${t('询问', 'Ask')}</option></select><span class="toolbar-spacer"></span><button type="button" class="note-ai-model-picker" data-chat-model aria-label="${t('选择模型', 'Choose model')}">${aiModelForAction('chat')} <i data-lucide="chevron-up"></i></button><button type="button" class="ai-send" data-chat-send title="${t('提交', 'Submit')}" aria-label="${t('提交', 'Submit')}"><i data-lucide="arrow-up"></i></button></div>
+			<div class="note-ai-chat-footer"><button type="button" class="row-action" data-chat-settings title="${t('编辑或询问', 'Edit or ask')}" aria-label="${t('编辑或询问', 'Edit or ask')}"><i data-lucide="settings"></i></button><select class="note-ai-mode" data-chat-mode aria-label="${t('AI 模式', 'AI mode')}"><option value="edit">${t('编辑', 'Edit')}</option><option value="ask">${t('询问', 'Ask')}</option></select><span class="toolbar-spacer"></span><button type="button" class="note-ai-model-picker" data-chat-model aria-label="${t('选择模型', 'Choose model')}">${aiModelForAction('chat')} <i data-lucide="chevron-up"></i></button><button type="button" class="ai-send" data-chat-send title="${t('提交', 'Submit')}" aria-label="${t('提交', 'Submit')}"><i data-lucide="arrow-up"></i></button></div>
 		</div>`;
-		compose.append(panel);
+		root.append(panel);
 		root.classList.add('note-ai-sidebar-open');
 		paintIcons(panel);
 		trigger.classList.add('active');
@@ -272,17 +277,11 @@ function bindNoteContextChat(
 		const modeSelect = panel.querySelector<HTMLSelectElement>('[data-chat-mode]')!;
 		const modelButton = panel.querySelector<HTMLButtonElement>('[data-chat-model]')!;
 		const settingsButton = panel.querySelector<HTMLButtonElement>('[data-chat-settings]')!;
-		settingsButton.addEventListener('click', () => {
-			const expanded = settingsButton.getAttribute('aria-expanded') === 'true';
-			panel?.querySelector('[data-chat-mode-menu]')?.remove();
-			if (expanded) { settingsButton.setAttribute('aria-expanded', 'false'); return; }
-			const menu = document.createElement('div');
-			menu.className = 'note-ai-mode-menu';
-			menu.dataset.chatModeMenu = 'true';
-			menu.innerHTML = `<button type="button" data-mode="edit"><i data-lucide="pencil"></i>${t('编辑', 'Edit')}</button><button type="button" data-mode="ask"><i data-lucide="message-circle"></i>${t('询问', 'Ask')}</button>`;
-			menu.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((item) => item.addEventListener('click', () => { modeSelect.value = item.dataset.mode || 'ask'; menu.remove(); settingsButton.setAttribute('aria-expanded', 'false'); }));
-			panel?.append(menu); paintIcons(menu); settingsButton.setAttribute('aria-expanded', 'true');
+		const modeDropdown = enhanceSelect(modeSelect, {
+			className: 'note-ai-mode-select',
+			getOptionIcon: (option) => option.value === 'edit' ? Pencil : MessageCircle,
 		});
+		settingsButton.addEventListener('click', () => modeDropdown.open());
 		modelButton.addEventListener('click', () => {
 			const existing = panel?.querySelector<HTMLElement>('[data-chat-model-menu]');
 			if (existing) { existing.remove(); return; }

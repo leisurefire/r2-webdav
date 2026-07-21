@@ -468,6 +468,7 @@ export function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?:
 				data.items.find((item) => item.id === noteId) ?? archivedNotesData?.items.find((item) => item.id === noteId);
 			// Only a note click switches the open document; also reveal its folder.
 			if (note) {
+				history.pushState({}, '', `/notes/${encodeURIComponent(note.id)}`);
 				if (note.folderId && knownNoteFolderIds().has(note.folderId)) {
 					for (const folder of noteFolderPath(noteFolders, note.folderId)) noteExpandedFolders.add(folder.id);
 					setSelectedNoteFolderId(note.folderId);

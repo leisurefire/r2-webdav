@@ -276,6 +276,7 @@ export function bindNotePath(root: HTMLElement, _note: Note): void {
 	root.querySelectorAll<HTMLElement>('[data-note-path-folder]').forEach((button) =>
 		button.addEventListener('click', (event) => {
 			event.preventDefault();
+			history.pushState({}, '', '/notes');
 			const value = button.dataset.notePathFolder ?? 'root';
 			// Keep the open note; path clicks only navigate the tree.
 			revealNoteFolderInTree(value === 'root' ? null : value);

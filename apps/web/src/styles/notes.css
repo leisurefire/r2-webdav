@@ -383,8 +383,7 @@
 
 .note-editor.note-ai-sidebar-open .note-compose {
 	position: relative;
-	grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
-	column-gap: 14px;
+	grid-template-columns: minmax(0, 1fr);
 }
 
 .note-editor-desktop {
@@ -407,19 +406,19 @@
 }
 
 .note-editor.note-ai-sidebar-open .note-ai-chat-panel {
-	grid-column: 2;
-	grid-row: 1;
-	position: relative;
-	top: auto;
-	right: auto;
-	bottom: auto;
-	width: auto;
-	height: 100%;
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	width: min(360px, 32vw);
+	height: auto;
 	min-height: 0;
 	max-height: none;
 	border-radius: 8px;
 	box-shadow: none;
 }
+
+.note-editor.note-ai-sidebar-open .note-document { margin-right: min(360px, 32vw); }
 
 .note-editor.note-ai-sidebar-open .note-ai-chat-trigger {
 	display: none;
