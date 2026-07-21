@@ -48,7 +48,14 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 	menu.setAttribute('role', 'listbox');
 	menu.setAttribute('aria-label', select.getAttribute('aria-label') ?? '');
 	menu.setAttribute('popover', 'manual');
-	document.body.append(menu);
+	// Prefer mounting inside a modal dialog so the menu stays interactive.
+	// Outside a modal, body content is inert and pointer/hover/scroll all fail.
+	const resolveHost = () => select.closest('dialog') ?? document.body;
+	const ensureMounted = () => {
+		const host = resolveHost();
+		if (menu.parentElement !== host) host.append(menu);
+	};
+	ensureMounted();
 	const supportsPopover = typeof menu.showPopover === 'function';
 	if (!supportsPopover) menu.hidden = true;
 
@@ -74,8 +81,17 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 	const close = () => {
 		if (!open) return;
 		open = false;
-		if (supportsPopover) menu.hidePopover();
-		else menu.hidden = true;
+		menu.classList.remove('is-open');
+		menu.dataset.open = 'false';
+		if (supportsPopover) {
+			try {
+				menu.hidePopover();
+			} catch {
+				/* already closed */
+			}
+		} else {
+			menu.hidden = true;
+		}
 		button.setAttribute('aria-expanded', 'false');
 		root.classList.remove('open');
 	};
@@ -118,7 +134,11 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 			const label = document.createElement('span');
 			label.textContent = option.label;
 			choice.append(check, label);
-			choice.addEventListener('click', () => choose(option.value));
+			choice.addEventListener('click', (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				choose(option.value);
+			});
 			row.append(choice);
 			for (const action of options.getActions?.(option) ?? []) {
 				const actionButton = document.createElement('button');
@@ -128,6 +148,7 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 				actionButton.setAttribute('aria-label', action.label);
 				actionButton.append(createElement(action.icon));
 				actionButton.addEventListener('click', (event) => {
+					event.preventDefault();
 					event.stopPropagation();
 					close();
 					void options.onAction?.(action, option);
@@ -139,16 +160,30 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 	};
 	const show = () => {
 		if (open || select.disabled) return;
+		ensureMounted();
 		refresh();
 		open = true;
-		if (supportsPopover) menu.showPopover();
-		else menu.hidden = false;
+		menu.classList.add('is-open');
+		menu.dataset.open = 'true';
+		if (supportsPopover) {
+			try {
+				menu.showPopover();
+			} catch {
+				/* fall back to in-dialog rendering */
+				menu.hidden = false;
+			}
+		} else {
+			menu.hidden = false;
+		}
 		button.setAttribute('aria-expanded', 'true');
 		root.classList.add('open');
 		place();
 		requestAnimationFrame(() => {
-			const selected = menu.querySelector<HTMLButtonElement>('.custom-select-option[aria-selected="true"]');
-			(selected ?? menu.querySelector<HTMLButtonElement>('.custom-select-option:not(:disabled)'))?.focus();
+			// Focus may be ignored while a modal dialog traps focus; that's fine for pointer use.
+			const selected =
+				menu.querySelector<HTMLButtonElement>('.custom-select-option[aria-selected="true"]') ??
+				menu.querySelector<HTMLButtonElement>('.custom-select-option:not(:disabled)');
+			selected?.focus({ preventScroll: true });
 		});
 	};
 
@@ -181,13 +216,35 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 			match?.focus();
 		}
 	});
+	// Keep wheel scrolling on the option list instead of the settings panel behind it.
+	menu.addEventListener(
+		'wheel',
+		(event) => {
+			if (!open) return;
+			const canScroll = menu.scrollHeight > menu.clientHeight + 1;
+			if (!canScroll) return;
+			event.stopPropagation();
+			const atTop = menu.scrollTop <= 0;
+			const atBottom = menu.scrollTop + menu.clientHeight >= menu.scrollHeight - 1;
+			if ((event.deltaY < 0 && atTop) || (event.deltaY > 0 && atBottom)) {
+				event.preventDefault();
+			}
+		},
+		{ passive: false },
+	);
 	select.addEventListener('change', refresh);
 	select.addEventListener('focus', () => button.focus());
 	const onDocumentPointer = (event: Event) => {
 		const target = event.target as Node | null;
 		if (target && !root.contains(target) && !menu.contains(target)) close();
 	};
-	const onViewportChange = () => (open ? place() : undefined);
+	const onViewportChange = (event?: Event) => {
+		if (!open) return;
+		// Repositioning on the menu's own scroll prevents scrolling the option list.
+		const target = event?.target;
+		if (target instanceof Node && (target === menu || menu.contains(target))) return;
+		place();
+	};
 	document.addEventListener('pointerdown', onDocumentPointer, true);
 	window.addEventListener('resize', onViewportChange);
 	window.addEventListener('scroll', onViewportChange, true);
@@ -215,3 +272,5 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 	refresh();
 	return handle;
 }
+
+

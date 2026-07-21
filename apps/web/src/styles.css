@@ -2543,12 +2543,21 @@ dialog::backdrop {
 	z-index: 120;
 	margin: 0;
 	max-height: min(320px, calc(100dvh - 16px));
+	overflow-x: hidden;
 	overflow-y: auto;
+	overscroll-behavior: contain;
+	pointer-events: auto;
 }
 
 .custom-select-menu[hidden],
-.custom-select-menu:not(:popover-open) {
+.custom-select-menu:not(.is-open):not(:popover-open) {
 	display: none;
+}
+
+.custom-select-menu.is-open,
+.custom-select-menu:popover-open {
+	display: block;
+	pointer-events: auto;
 }
 
 .custom-select-row {
@@ -3451,13 +3460,15 @@ body:has(.app-shell) {
 	max-width: none;
 	max-height: none;
 	border-radius: 8px;
-	overflow: hidden;
+	overflow: visible;
 }
 
 .settings-modal-shell {
 	height: 100%;
 	display: flex;
 	flex-direction: column;
+	overflow: hidden;
+	border-radius: inherit;
 	background: var(--panel-bg);
 }
 
@@ -4035,3 +4046,4 @@ body:has(.app-shell) {
 		flex-wrap: wrap;
 	}
 }
+
