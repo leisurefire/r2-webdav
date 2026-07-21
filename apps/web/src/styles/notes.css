@@ -28,7 +28,7 @@
 	flex: 1;
 	gap: 10px;
 	background: transparent;
-	overflow: visible;
+	overflow: auto;
 }
 
 .notes-layout > .note-editor {
@@ -387,6 +387,25 @@
 	column-gap: 14px;
 }
 
+.note-editor-desktop {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	overflow: visible;
+}
+
+.note-editor-desktop > form {
+	min-height: 0;
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+}
+
+.note-editor-desktop .note-compose {
+	flex: 1;
+	min-height: 0;
+}
+
 .note-editor.note-ai-sidebar-open .note-ai-chat-panel {
 	grid-column: 2;
 	grid-row: 1;
@@ -396,9 +415,14 @@
 	bottom: auto;
 	width: auto;
 	height: 100%;
+	min-height: 0;
 	max-height: none;
 	border-radius: 8px;
 	box-shadow: none;
+}
+
+.note-editor.note-ai-sidebar-open .note-ai-chat-trigger {
+	display: none;
 }
 
 .note-document {

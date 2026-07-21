@@ -2,6 +2,7 @@ import { Transaction } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import {
 	ArrowUp,
+	Bot,
 	Bold,
 	Check,
 	Code,
@@ -9,6 +10,7 @@ import {
 	Italic,
 	MessageCircle,
 	MessageCirclePlus,
+	Moon,
 	PanelRightClose,
 	Settings2,
 	ChevronUp,
@@ -26,7 +28,7 @@ import {
 	createElement,
 	type IconNode,
 } from 'lucide';
-import { aiModelForAction, api, type AiAction, type NoteChatSession } from '../api/client';
+import { aiModelForAction, api, availableAiModels, type AiAction, type NoteChatSession } from '../api/client';
 import { clearAiReview, showAiReview, toggleMarkdownWrap } from './markdownLivePreview';
 import { clearSelectionHold, holdSelectionHighlight, markNewContent, showEditorHighlight } from './editorHighlights';
 import { buildAiReviewPreview } from './textDiff';
@@ -39,6 +41,7 @@ type Locale = 'en' | 'zh';
 
 const AI_ICONS: Record<string, IconNode> = {
 	'arrow-up': ArrowUp,
+	bot: Bot,
 	bold: Bold,
 	check: Check,
 	code: Code,
@@ -46,6 +49,7 @@ const AI_ICONS: Record<string, IconNode> = {
 	italic: Italic,
 	'message-circle': MessageCircle,
 	'message-circle-plus': MessageCirclePlus,
+	moon: Moon,
 	'panel-right-close': PanelRightClose,
 	'settings-2': Settings2,
 	'chevron-up': ChevronUp,
@@ -68,6 +72,16 @@ function paintIcons(root: ParentNode): void {
 		if (!node) return;
 		element.replaceWith(createElement(node));
 	});
+}
+
+function providerClass(model: string): string {
+	const value = model.toLowerCase();
+	if (value.includes('deepseek')) return 'deepseek';
+	if (value.includes('kimi') || value.includes('moonshot')) return 'moonshot';
+	if (value.includes('gpt') || value.includes('openai')) return 'openai';
+	if (value.includes('claude') || value.includes('anthropic')) return 'anthropic';
+	if (value.includes('gemini') || value.includes('google')) return 'google';
+	return 'generic';
 }
 
 export function normalizeAiMarkdown(value: string): string {
@@ -244,8 +258,8 @@ function bindNoteContextChat(
 		<div class="note-ai-chat-messages" data-chat-messages><div class="note-ai-chat-welcome">${t('我会仅参考当前提交的便签内容回答，并标注引用来源。', 'I will answer only from the submitted note context and cite the source passages.')}</div></div>
 		<div class="note-ai-chat-composer">
 			<div class="note-ai-context-chip"><i data-lucide="${hasSelection ? 'text-select' : 'file-text'}"></i><span>${contextLabel}</span></div>
-			<div class="note-ai-chat-input-row"><textarea rows="1" data-chat-input placeholder="${t('询问这段内容…', 'Ask about this content…')}" aria-label="${t('向 AI 提问', 'Ask AI')}"></textarea><button type="button" class="ai-send" data-chat-send title="${t('提交', 'Submit')}" aria-label="${t('提交', 'Submit')}"><i data-lucide="arrow-up"></i></button></div>
-			<div class="note-ai-chat-footer"><button type="button" class="row-action" data-chat-settings title="${t('设置模式', 'Mode settings')}" aria-label="${t('设置模式', 'Mode settings')}"><i data-lucide="settings-2"></i></button><select class="note-ai-mode" data-chat-mode aria-label="${t('AI 模式', 'AI mode')}"><option value="edit">${t('编辑', 'Edit')}</option><option value="ask">${t('询问', 'Ask')}</option></select><span class="toolbar-spacer"></span><button type="button" class="note-ai-model-picker" data-chat-model aria-label="${t('选择模型', 'Choose model')}">${aiModelForAction('chat')} <i data-lucide="chevron-up"></i></button></div>
+			<div class="note-ai-chat-input-row"><textarea rows="1" data-chat-input placeholder="${t('询问这段内容…', 'Ask about this content…')}" aria-label="${t('向 AI 提问', 'Ask AI')}"></textarea></div>
+			<div class="note-ai-chat-footer"><button type="button" class="row-action" data-chat-settings title="${t('编辑或询问', 'Edit or ask')}" aria-label="${t('编辑或询问', 'Edit or ask')}" aria-expanded="false"><i data-lucide="chevron-up"></i></button><select class="note-ai-mode" data-chat-mode aria-label="${t('AI 模式', 'AI mode')}"><option value="edit">${t('编辑', 'Edit')}</option><option value="ask">${t('询问', 'Ask')}</option></select><span class="toolbar-spacer"></span><button type="button" class="note-ai-model-picker" data-chat-model aria-label="${t('选择模型', 'Choose model')}">${aiModelForAction('chat')} <i data-lucide="chevron-up"></i></button><button type="button" class="ai-send" data-chat-send title="${t('提交', 'Submit')}" aria-label="${t('提交', 'Submit')}"><i data-lucide="arrow-up"></i></button></div>
 		</div>`;
 		compose.append(panel);
 		root.classList.add('note-ai-sidebar-open');
@@ -258,16 +272,27 @@ function bindNoteContextChat(
 		const modeSelect = panel.querySelector<HTMLSelectElement>('[data-chat-mode]')!;
 		const modelButton = panel.querySelector<HTMLButtonElement>('[data-chat-model]')!;
 		const settingsButton = panel.querySelector<HTMLButtonElement>('[data-chat-settings]')!;
-		settingsButton.addEventListener('click', () => modeSelect.focus());
+		settingsButton.addEventListener('click', () => {
+			const expanded = settingsButton.getAttribute('aria-expanded') === 'true';
+			panel?.querySelector('[data-chat-mode-menu]')?.remove();
+			if (expanded) { settingsButton.setAttribute('aria-expanded', 'false'); return; }
+			const menu = document.createElement('div');
+			menu.className = 'note-ai-mode-menu';
+			menu.dataset.chatModeMenu = 'true';
+			menu.innerHTML = `<button type="button" data-mode="edit"><i data-lucide="pencil"></i>${t('编辑', 'Edit')}</button><button type="button" data-mode="ask"><i data-lucide="message-circle"></i>${t('询问', 'Ask')}</button>`;
+			menu.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((item) => item.addEventListener('click', () => { modeSelect.value = item.dataset.mode || 'ask'; menu.remove(); settingsButton.setAttribute('aria-expanded', 'false'); }));
+			panel?.append(menu); paintIcons(menu); settingsButton.setAttribute('aria-expanded', 'true');
+		});
 		modelButton.addEventListener('click', () => {
 			const existing = panel?.querySelector<HTMLElement>('[data-chat-model-menu]');
 			if (existing) { existing.remove(); return; }
 			const menu = document.createElement('div');
 			menu.className = 'note-ai-model-menu';
 			menu.dataset.chatModelMenu = 'true';
-			menu.innerHTML = `<button type="button" data-model="gpt-4o"><span class="ai-provider-icon openai">◉</span>GPT-4o</button><button type="button" data-model="claude-3-5-sonnet"><span class="ai-provider-icon anthropic">A</span>Claude 3.5 Sonnet</button><button type="button" data-model="gemini-1.5-pro"><span class="ai-provider-icon google">G</span>Gemini 1.5 Pro</button>`;
+			const models = availableAiModels();
+			menu.innerHTML = models.map((model) => { const provider = providerClass(model); const icon = provider === 'moonshot' ? 'moon' : 'bot'; return `<button type="button" data-model="${model.replaceAll('"', '&quot;')}"><span class="ai-provider-icon ${provider}" aria-hidden="true"><i data-lucide="${icon}"></i></span><span>${model}</span></button>`; }).join('');
 			menu.querySelectorAll<HTMLButtonElement>('[data-model]').forEach((item) => item.addEventListener('click', () => { selectedModel = item.dataset.model || selectedModel; modelButton.firstChild!.textContent = `${selectedModel} `; menu.remove(); }));
-			panel?.append(menu);
+			panel?.append(menu); paintIcons(menu);
 		});
 		send.disabled = true;
 		const historySelect = panel.querySelector<HTMLSelectElement>('[data-chat-history]')!;

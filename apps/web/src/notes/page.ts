@@ -4,7 +4,7 @@ import { confirmAction, errorMessage, html, loadingMarkup, pageFromPath, refresh
 import { locale, t } from '../i18n';
 import { cacheNotes, cachedNotes, invalidateNoteCaches, noteCacheKey } from './cache';
 import { discardNoteCommit, flushAllNoteCommits, flushNoteCommit, noteCommitStates, trackNoteNetworkOp } from './commits';
-import { bindNoteEditor, noteEditorMarkup, noteToolbarMarkup, paintNoteSaveStatus } from './editorPane';
+import { bindNoteEditor, noteEditorMarkup, paintNoteSaveStatus } from './editorPane';
 import { noteFolderPath } from './folderTree';
 import { bindNoteSidebar, bindNotesFolders, bindNotesNavigation, notesFolderSidebarMarkup } from './sidebar';
 import {
@@ -170,7 +170,6 @@ export function paintNotes(data: NotePage, selectedId?: string, openMobile = fal
 	const context = sidebarContext();
 	if (context) context.innerHTML = folderSidebar;
 	content.innerHTML = `<div class="notes-layout">
-		${selected ? noteToolbarMarkup(selected) : `<div class="notes-inner-toolbar"><span class="muted">${t('noNotes')}</span></div>`}
 		<div class="notes-mobile-sidebar">${folderSidebar}</div>
 		${selected ? noteEditorMarkup(selected) : `<section class="note-editor note-editor-desktop"><div class="notes-empty large"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div></section>`}
 	</div>

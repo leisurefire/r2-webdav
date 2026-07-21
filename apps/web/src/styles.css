@@ -3254,7 +3254,7 @@ body:has(.app-shell) {
 .content:has(.notes-layout) {
 	display: flex;
 	flex-direction: column;
-	overflow: hidden;
+	overflow: auto;
 }
 
 .calendar {

@@ -171,6 +171,7 @@ export function noteToolbarMarkup(selected: Note): string {
 export function noteEditorMarkup(selected: Note, mobile = false): string {
 	const preferences = noteViewPreferences(selected.id);
 	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'} ${preferences.fullWidth ? 'note-width-full' : ''} ${preferences.font === 'serif' ? 'note-font-serif' : ''}" data-note-editor-id="${html(selected.id)}">
+		${!mobile ? noteToolbarMarkup(selected) : ''}
 		<form data-note-form>
 			${mobile ? `<div class="note-editor-head"><button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>${notePathMarkup(selected)}${noteActionControlsMarkup(selected)}</div>` : ''}
 			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-heading"><input data-note-title value="${html(selected.title)}" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}"></div><div class="note-source" data-note-source aria-label="${t('markdown')}"></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
