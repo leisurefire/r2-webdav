@@ -60,7 +60,9 @@ describe('read-only AI answer citations', () => {
 	it('deduplicates source ranges and keeps stable reference numbers', () => {
 		const result = parseAiCitations('First [[cite:3-5]], again [[cite:3-5]], then [[cite:9]].');
 
-		expect(result.markdown).toBe('First  [1], again  [1], then  [2].');
+		expect(result.markdown).toBe(
+			'First  [1](#note-ai-cite-1), again  [1](#note-ai-cite-1), then  [2](#note-ai-cite-2).',
+		);
 		expect(result.citations).toEqual([
 			{ startLine: 3, endLine: 5, index: 1 },
 			{ startLine: 9, endLine: 9, index: 2 },

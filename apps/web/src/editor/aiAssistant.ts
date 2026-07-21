@@ -163,7 +163,7 @@ export function parseAiCitations(value: string): { markdown: string; citations: 
 			keys.set(key, index);
 			citations.push({ startLine, endLine, index });
 		}
-		return ` [${index}]`;
+		return ` [${index}](#note-ai-cite-${index})`;
 	});
 	return { markdown, citations };
 }
@@ -252,11 +252,13 @@ function bindNoteContextChat(
 		const historySelect = panel.querySelector<HTMLSelectElement>('[data-chat-history]')!;
 		let conversation = session.messages;
 		let historyDropdown: CustomSelectHandle;
+		const newChatValue = '__new__';
+		const isNewSession = () => !sessions.some((item) => item.id === session.id);
 		const paintHistory = () => {
-			const visible = [session, ...sessions.filter((item) => item.id !== session.id)];
 			historySelect.replaceChildren(
-				...visible.map(
-					(item) => new Option(item.title || t('新对话', 'New chat'), item.id, false, item.id === session.id),
+				new Option(t('新对话', 'New chat'), newChatValue, false, isNewSession()),
+				...sessions.map(
+					(item) => new Option(item.title || t('未命名对话', 'Untitled chat'), item.id, false, item.id === session.id),
 				),
 			);
 			historyDropdown?.refresh();
@@ -269,20 +271,19 @@ function bindNoteContextChat(
 				.trim();
 		};
 		const jumpToCitation = (citation: AiCitation) => {
-			const line = view.state.doc.line(Math.min(view.state.doc.lines, citation.startLine));
+			const firstLine = view.state.doc.line(Math.min(view.state.doc.lines, citation.startLine));
+			const lastLine = view.state.doc.line(Math.min(view.state.doc.lines, citation.endLine));
 			view.dispatch({
-				selection: { anchor: line.from },
-				effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+				effects: EditorView.scrollIntoView(firstLine.from, { y: 'center' }),
 			});
-			view.focus();
+			markNewContent(view, firstLine.from, lastLine.to);
 		};
-		const renderAnswer = (node: HTMLElement, answer: string) => {
-			const parsed = parseAiCitations(answer);
-			node.innerHTML = `<article class="ai-markdown-preview">${renderMarkdown(parsed.markdown)}</article>`;
-			if (!parsed.citations.length) return;
-			const sources = document.createElement('div');
-			sources.className = 'note-ai-citations';
-			for (const citation of parsed.citations) {
+		const openCitations = (citations: AiCitation[]) => {
+			const dialog = document.createElement('dialog');
+			dialog.className = 'note-ai-citations-dialog';
+			dialog.innerHTML = `<div class="note-ai-citations-shell"><header><div><h2>${t('引用内容', 'Sources')}</h2><p>${t(`${citations.length} 处原文`, `${citations.length} source${citations.length === 1 ? '' : 's'}`)}</p></div><button type="button" class="row-action" data-citations-close title="${t('关闭', 'Close')}" aria-label="${t('关闭', 'Close')}"><i data-lucide="x"></i></button></header><div class="note-ai-citations"></div></div>`;
+			const sources = dialog.querySelector<HTMLElement>('.note-ai-citations')!;
+			for (const citation of citations) {
 				const excerpt = citationExcerpt(citation);
 				if (!excerpt) continue;
 				const button = document.createElement('button');
@@ -293,8 +294,35 @@ function bindNoteContextChat(
 				button.addEventListener('click', () => jumpToCitation(citation));
 				sources.append(button);
 			}
-			node.append(sources);
-			paintIcons(sources);
+			document.body.append(dialog);
+			paintIcons(dialog);
+			dialog.querySelector('[data-citations-close]')?.addEventListener('click', () => dialog.close());
+			dialog.addEventListener('close', () => dialog.remove());
+			dialog.showModal();
+		};
+		const renderAnswer = (node: HTMLElement, answer: string) => {
+			const parsed = parseAiCitations(answer);
+			node.innerHTML = `<article class="ai-markdown-preview">${renderMarkdown(parsed.markdown)}</article>`;
+			if (!parsed.citations.length) return;
+			node.querySelectorAll<HTMLAnchorElement>('a[href^="#note-ai-cite-"]').forEach((link) => {
+				const index = Number(link.getAttribute('href')?.split('-').at(-1));
+				const citation = parsed.citations.find((item) => item.index === index);
+				if (!citation) return;
+				link.classList.add('note-ai-citation-ref');
+				link.title = t('跳转到引用原文', 'Jump to source');
+				link.addEventListener('click', (event) => {
+					event.preventDefault();
+					event.stopPropagation();
+					jumpToCitation(citation);
+				});
+			});
+			const trigger = document.createElement('button');
+			trigger.type = 'button';
+			trigger.className = 'note-ai-citations-trigger';
+			trigger.innerHTML = `<i data-lucide="quote"></i><span>${t('查看引用', 'View sources')} · ${parsed.citations.length}</span>`;
+			trigger.addEventListener('click', () => openCitations(parsed.citations));
+			node.append(trigger);
+			paintIcons(trigger);
 		};
 		const renderConversation = () => {
 			messagesNode.innerHTML = '';
@@ -381,12 +409,15 @@ function bindNoteContextChat(
 		};
 		historyDropdown = enhanceSelect(historySelect, {
 			className: 'note-ai-history-select',
-			getActions: () => [
-				{ id: 'rename', label: t('重命名', 'Rename'), icon: Pencil },
-				{ id: 'delete', label: t('删除', 'Delete'), icon: Trash2, danger: true },
-			],
+			getActions: (option) =>
+				option.value === newChatValue
+					? []
+					: [
+							{ id: 'rename', label: t('重命名', 'Rename'), icon: Pencil },
+							{ id: 'delete', label: t('删除', 'Delete'), icon: Trash2, danger: true },
+						],
 			onAction: async (action, option) => {
-				const target = [session, ...sessions].find((item) => item.id === option.value);
+				const target = sessions.find((item) => item.id === option.value);
 				if (!target) return;
 				if (action.id === 'rename') {
 					const title = await openTextInputDialog(
@@ -430,7 +461,11 @@ function bindNoteContextChat(
 		paintHistory();
 		renderConversation();
 		historySelect.addEventListener('change', () => {
-			const next = [session, ...sessions].find((item) => item.id === historySelect.value);
+			if (historySelect.value === newChatValue) {
+				createSession();
+				return;
+			}
+			const next = sessions.find((item) => item.id === historySelect.value);
 			if (!next) return;
 			session = next;
 			conversation = session.messages;

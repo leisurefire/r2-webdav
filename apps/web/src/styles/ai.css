@@ -693,7 +693,97 @@
 .note-ai-citations {
 	display: grid;
 	gap: 6px;
-	margin-top: 12px;
+}
+
+.note-ai-citations-trigger {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	margin-top: 8px;
+	padding: 4px 6px;
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: var(--muted);
+	font: inherit;
+	font-size: 11px;
+	cursor: pointer;
+}
+
+.note-ai-citations-trigger:hover {
+	background: var(--hover-bg);
+	color: var(--ink);
+}
+
+.note-ai-citations-trigger svg {
+	width: 12px;
+	height: 12px;
+}
+
+.note-ai-citation-ref {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 18px;
+	height: 18px;
+	padding: 0 4px;
+	border-radius: 4px;
+	background: color-mix(in srgb, var(--accent) 10%, transparent);
+	color: var(--accent);
+	font-size: 10px;
+	font-weight: 700;
+	text-decoration: none;
+	vertical-align: 0.08em;
+}
+
+.note-ai-citation-ref:hover {
+	background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.note-ai-citations-dialog {
+	width: min(620px, calc(100vw - 24px));
+	max-height: min(720px, calc(100dvh - 24px));
+	padding: 0;
+	overflow: hidden;
+}
+
+.note-ai-citations-shell {
+	max-height: min(720px, calc(100dvh - 24px));
+	display: flex;
+	flex-direction: column;
+	padding: 18px;
+}
+
+.note-ai-citations-shell > header {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	margin-bottom: 14px;
+}
+
+.note-ai-citations-shell h2,
+.note-ai-citations-shell p {
+	margin: 0;
+}
+
+.note-ai-citations-shell h2 {
+	font-size: 17px;
+}
+
+.note-ai-citations-shell p {
+	margin-top: 3px;
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.note-ai-citations-shell > header button {
+	margin-left: auto;
+}
+
+.note-ai-citations-dialog .note-ai-citations {
+	min-height: 0;
+	overflow-y: auto;
+	padding-right: 2px;
 }
 
 .note-ai-citation {
@@ -729,7 +819,7 @@
 }
 
 .note-ai-citation blockquote {
-	max-height: 5.4em;
+	max-height: 8.7em;
 	margin: 0;
 	overflow: hidden;
 	color: var(--muted);

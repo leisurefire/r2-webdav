@@ -2284,6 +2284,20 @@ dialog::backdrop {
 	color: var(--ink);
 }
 
+.context-tree-row.loading {
+	color: var(--ink);
+}
+
+.context-tree-row .file-tree-loader {
+	animation: file-tree-spin 800ms linear infinite;
+}
+
+@keyframes file-tree-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
 .context-tree-row span {
 	min-width: 0;
 	overflow: hidden;

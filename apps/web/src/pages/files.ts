@@ -1,6 +1,17 @@
 import type { FileEntry, FileListing } from '@r2-webdav/shared-types';
 import { api } from '../api/client';
-import { confirmAction, errorMessage, html, loadingMarkup, navigate, pageFromPath, refreshIcons, shell, sidebarContext, toast } from '../shell';
+import {
+	confirmAction,
+	errorMessage,
+	html,
+	loadingMarkup,
+	navigate,
+	pageFromPath,
+	refreshIcons,
+	shell,
+	sidebarContext,
+	toast,
+} from '../shell';
 import { locale, t } from '../i18n';
 import { openTextDialog } from '../ui/helpers';
 import { renderMarkdown } from '../editor/markdownRenderer';
@@ -9,6 +20,7 @@ export let currentPath = '';
 export let filePathHighlight: string | null = null;
 const fileCache = new Map<string, FileListing>();
 const validatedFilePaths = new Set<string>();
+let directoryLoadCleanup: (() => void) | null = null;
 
 export function formatBytes(size: number): string {
 	if (size < 1024) return `${size} B`;
@@ -38,7 +50,7 @@ export function breadcrumbMarkup(path: string): string {
 	];
 	parts.forEach((part, index) => {
 		built = built ? `${built}/${part}` : part;
-		crumbs.push('<span class="crumb-separator">/</span>');
+		if (index > 0) crumbs.push('<span class="crumb-separator">/</span>');
 		crumbs.push(
 			`<button class="crumb ${index === parts.length - 1 ? 'current' : ''} ${filePathHighlight === built ? 'path-highlight' : ''}" data-path="${html(built)}">${html(part)}</button>`,
 		);
@@ -80,6 +92,26 @@ export function fileSidebarMarkup(listing: FileListing): string {
 }
 
 export function openFileDirectory(path: string, highlight = false): void {
+	directoryLoadCleanup?.();
+	const row = [...document.querySelectorAll<HTMLElement>('[data-file-tree-path]')].find(
+		(item) => item.dataset.fileTreePath === path,
+	);
+	if (row) {
+		const icon = row.querySelector<HTMLElement>('svg, [data-lucide]');
+		const original = icon?.outerHTML ?? '';
+		if (icon) {
+			icon.outerHTML = '<i class="file-tree-loader" data-lucide="refresh-cw"></i>';
+			row.classList.add('loading');
+			refreshIcons();
+		}
+		directoryLoadCleanup = () => {
+			if (row.isConnected && original) {
+				row.querySelector('svg, [data-lucide]')?.remove();
+				row.insertAdjacentHTML('afterbegin', original);
+				row.classList.remove('loading');
+			}
+		};
+	} else directoryLoadCleanup = null;
 	currentPath = path;
 	filePathHighlight = highlight ? path : null;
 	void renderFiles();
@@ -272,6 +304,11 @@ export function paintFiles(listing: FileListing): void {
 	const context = sidebarContext();
 	if (context) context.innerHTML = fileSidebarMarkup(listing);
 	refreshIcons();
+	const highlightedPath = filePathHighlight;
+	if (highlightedPath !== null)
+		window.setTimeout(() => {
+			if (filePathHighlight === highlightedPath) filePathHighlight = null;
+		}, 950);
 	content
 		.querySelectorAll<HTMLElement>('[data-path]')
 		.forEach((item) => item.addEventListener('click', () => openFileDirectory(item.dataset.path!, true)));
@@ -380,12 +417,18 @@ export function paintFiles(listing: FileListing): void {
 }
 
 export async function renderFiles(forceSync = false): Promise<void> {
-	shell('files', t('files'));
+	const filesNavigationActive = Boolean(document.querySelector('.nav-button.active[data-route="/files"]'));
+	if (!filesNavigationActive || !document.querySelector('#page-content')) shell('files', t('files'));
 	const content = document.querySelector<HTMLDivElement>('#page-content')!;
 	const cached = cachedFiles(currentPath);
 	if (cached) paintFiles(cached);
-	if (!forceSync && validatedFilePaths.has(currentPath)) return;
+	if (!forceSync && validatedFilePaths.has(currentPath)) {
+		directoryLoadCleanup?.();
+		directoryLoadCleanup = null;
+		return;
+	}
 	const requestedPath = currentPath;
+	const stopDirectoryLoading = directoryLoadCleanup;
 	validatedFilePaths.add(requestedPath);
 	try {
 		const listing = await api.listFiles(requestedPath);
@@ -394,6 +437,10 @@ export async function renderFiles(forceSync = false): Promise<void> {
 	} catch (error) {
 		if (!cached) content.innerHTML = `<div class="error-banner">${html(errorMessage(error))}</div>`;
 		else toast(errorMessage(error));
+	} finally {
+		if (directoryLoadCleanup === stopDirectoryLoading) {
+			directoryLoadCleanup?.();
+			directoryLoadCleanup = null;
+		}
 	}
 }
-
