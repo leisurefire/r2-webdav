@@ -78,6 +78,7 @@ import {
 	noteFolderDescendantIds,
 	noteFolderPath,
 } from './notes/folderTree';
+import { mergeRemoteNote, reconcileNoteScope, type NoteSyncField, type ProtectedNoteFields } from './notes/sync';
 import './styles.css';
 import './styles/bookmarks.css';
 import './styles/notes.css';
@@ -1455,6 +1456,8 @@ const noteExpandedFolders = new Set<string>();
 const noteScopesLoaded = new Set<string>();
 /** Folder scopes currently fetching note indexes. */
 const noteScopesLoading = new Set<string>();
+/** Monotonic request ids prevent an older scope response from replacing a forced refresh. */
+const noteScopeRequests = new Map<string, number>();
 /** Note ids whose full body has been fetched (meta list omits content). */
 const noteContentLoaded = new Set<string>();
 const noteContentLoading = new Set<string>();
@@ -1642,6 +1645,11 @@ function invalidateNoteCaches(): void {
 	validatedNotePages.clear();
 }
 
+function persistNotePages(): void {
+	if (notesData) cacheNotes(notesData, false);
+	if (archivedNotesData) cacheNotes(archivedNotesData, true, undefined);
+}
+
 function resetNoteScopes(): void {
 	noteScopesLoaded.clear();
 	noteScopesLoading.clear();
@@ -1714,10 +1722,14 @@ async function ensureFolderNotesLoaded(folderId: string | null, force = false): 
 	const scope = noteScopeKey(folderId, false);
 	if (!force && noteScopesLoaded.has(scope)) return;
 	if (noteScopesLoading.has(scope)) return;
+	const request = (noteScopeRequests.get(scope) ?? 0) + 1;
+	noteScopeRequests.set(scope, request);
+	const syncSnapshot = captureNoteSyncSnapshot();
 	noteScopesLoading.add(scope);
 	if (notesData && pageFromPath() === 'notes') replaceNotesSidebar(notesData, currentSelectedNoteId());
 	try {
 		const { items, total } = await fetchNoteScopePages(folderId, false);
+		if (noteScopeRequests.get(scope) !== request) return;
 		if (!notesData) notesData = emptyNotePage();
 		const known = knownNoteFolderIds();
 		// Heal orphans first so they participate in the root scope instead of vanishing.
@@ -1727,15 +1739,15 @@ async function ensureFolderNotesLoaded(folderId: string | null, force = false): 
 				void api.updateNote(note.id, { folderId: null }).catch(() => undefined);
 			}
 		}
-		// Drop notes that no longer belong to this scope; keep survivors so loaded bodies stay.
-		const fetchedIds = new Set(items.map((item) => item.id));
-		notesData.items = notesData.items.filter((note) => {
-			const membership = note.folderId && known.has(note.folderId) ? note.folderId : null;
-			const inScope = folderId === null ? membership === null : membership === folderId;
-			if (!inScope) return true;
-			return fetchedIds.has(note.id);
-		});
-		mergeNotesIntoPage(notesData, items, false);
+		// Apply the remote snapshot plus every local mutation that happened while it was in flight.
+		notesData.items = reconcileNoteScope(
+			notesData.items,
+			items,
+			folderId,
+			protectedNoteFieldsSince(syncSnapshot),
+			noteContentLoaded,
+		);
+		sortNotes(notesData.items);
 		notesData.total = Math.max(total, notesData.items.length);
 		noteScopesLoaded.add(scope);
 		cacheNotes(notesData, false);
@@ -1743,8 +1755,10 @@ async function ensureFolderNotesLoaded(folderId: string | null, force = false): 
 	} catch (error) {
 		toast(errorMessage(error));
 	} finally {
-		noteScopesLoading.delete(scope);
-		if (pageFromPath() === 'notes' && notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
+		if (noteScopeRequests.get(scope) === request) {
+			noteScopesLoading.delete(scope);
+			if (pageFromPath() === 'notes' && notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
+		}
 	}
 }
 
@@ -1757,10 +1771,11 @@ async function hydrateExpandedNoteScopes(force = false): Promise<void> {
 
 async function ensureNoteContent(note: Note): Promise<Note> {
 	if (noteContentLoaded.has(note.id) || noteContentLoading.has(note.id)) return note;
+	const syncSnapshot = captureNoteSyncSnapshot();
 	noteContentLoading.add(note.id);
 	try {
 		const full = await api.getNote(note.id);
-		Object.assign(note, full);
+		mergeRemoteNote(note, full, protectedNoteFieldsSince(syncSnapshot).get(note.id));
 		noteContentLoaded.add(note.id);
 		if (!note.archived && notesData) cacheNotes(notesData, false);
 		if (note.archived && archivedNotesData) cacheNotes(archivedNotesData, true);
@@ -1955,6 +1970,47 @@ const NOTE_AUTOSAVE_IDLE_DELAY = 2_500;
 const NOTE_AUTOSAVE_INTERVAL = 8_000;
 const NOTE_AUTOSAVE_RETRY_DELAY = 10_000;
 const noteCommitStates = new Map<string, NoteCommitState>();
+let noteMutationEpoch = 0;
+const noteMutationFieldEpochs = new Map<string, Map<NoteSyncField, number>>();
+
+interface NoteSyncSnapshot {
+	epoch: number;
+	dirtyFields: Map<string, Set<NoteSyncField>>;
+}
+
+function noteChangeFields(changes: NoteChanges | null): NoteSyncField[] {
+	return changes ? (Object.keys(changes) as NoteSyncField[]) : [];
+}
+
+function recordNoteMutation(noteId: string, changes: NoteChanges): void {
+	const fields = noteMutationFieldEpochs.get(noteId) ?? new Map<NoteSyncField, number>();
+	for (const field of noteChangeFields(changes)) fields.set(field, ++noteMutationEpoch);
+	noteMutationFieldEpochs.set(noteId, fields);
+}
+
+function captureNoteSyncSnapshot(): NoteSyncSnapshot {
+	const dirtyFields = new Map<string, Set<NoteSyncField>>();
+	for (const [noteId, state] of noteCommitStates) {
+		const fields = new Set([...noteChangeFields(state.inflight), ...noteChangeFields(state.pending)]);
+		if (fields.size) dirtyFields.set(noteId, fields);
+	}
+	return { epoch: noteMutationEpoch, dirtyFields };
+}
+
+function protectedNoteFieldsSince(snapshot: NoteSyncSnapshot): ProtectedNoteFields {
+	const protectedFields = new Map<string, Set<NoteSyncField>>(
+		[...snapshot.dirtyFields].map(([noteId, fields]) => [noteId, new Set(fields)]),
+	);
+	for (const [noteId, epochs] of noteMutationFieldEpochs) {
+		for (const [field, epoch] of epochs) {
+			if (epoch <= snapshot.epoch) continue;
+			const fields = protectedFields.get(noteId) ?? new Set<NoteSyncField>();
+			fields.add(field);
+			protectedFields.set(noteId, fields);
+		}
+	}
+	return protectedFields;
+}
 /** In-flight create/delete/folder ops that are not yet confirmed by the server. */
 let pendingNoteNetworkOps = 0;
 let notesTreeScrollTop = 0;
@@ -2168,21 +2224,14 @@ async function savePendingNote(state: NoteCommitState): Promise<boolean> {
 			const current = state.data.items.find((note) => note.id === updated.id);
 			if (current && current !== state.note) Object.assign(current, state.note);
 			sortNotes(state.data.items);
-			invalidateNoteCaches();
-			if (notesData === state.data) cacheNotes(state.data, false);
-			else if (archivedNotesData === state.data) cacheNotes(state.data, true, undefined);
+			persistNotePages();
 			state.failureReported = false;
 			state.status = state.pending ? 'pending' : 'synced';
 			paintNoteSaveStatus(state.note.id, state.status);
 			syncNoteMetadata(state.note);
 			if (changes.pinned !== undefined) syncNotePinControls(state.note);
-			if (changes.folderId !== undefined || changes.archived !== undefined) {
-				await loadNoteFolders(true);
-				if (notesData === state.data && pageFromPath() === 'notes') {
-					replaceNotesSidebar(state.data, currentSelectedNoteId());
-				}
-				if (archiveExpanded) await loadArchivedNotes(true);
-			}
+			if ((changes.folderId !== undefined || changes.archived !== undefined) && pageFromPath() === 'notes')
+				replaceNotesSidebar(notesData ?? state.data, currentSelectedNoteId());
 			return true;
 		} catch (error) {
 			state.pending = { ...changes, ...(state.pending ?? {}) };
@@ -2203,6 +2252,7 @@ async function savePendingNote(state: NoteCommitState): Promise<boolean> {
 }
 
 function queueNoteCommit(data: NotePage, note: Note, changes: NoteChanges): void {
+	recordNoteMutation(note.id, changes);
 	let state = noteCommitStates.get(note.id);
 	if (!state) {
 		state = {
@@ -2277,6 +2327,7 @@ function optimisticallyUpdateNote(data: NotePage, note: Note, changes: NoteChang
 		}
 	}
 	sortNotes(data.items);
+	queueNoteCommit(data, note, changes);
 	if (previous.folderId !== note.folderId) {
 		// A single moved note must not mark an unloaded destination scope as complete.
 		const target = noteScopeKey(note.folderId ?? null, false);
@@ -2286,10 +2337,7 @@ function optimisticallyUpdateNote(data: NotePage, note: Note, changes: NoteChang
 			void ensureFolderNotesLoaded(note.folderId ?? null);
 		}
 	}
-	invalidateNoteCaches();
-	if (notesData === data) cacheNotes(data, false);
-	else if (archivedNotesData === data) cacheNotes(data, true, undefined);
-	queueNoteCommit(data, note, changes);
+	persistNotePages();
 	return leftCurrentView;
 }
 
