@@ -8,6 +8,10 @@ import {
 	FileText,
 	Italic,
 	MessageCircle,
+	MessageCirclePlus,
+	PanelRightClose,
+	Settings2,
+	ChevronUp,
 	Pencil,
 	Plus,
 	Quote,
@@ -41,6 +45,10 @@ const AI_ICONS: Record<string, IconNode> = {
 	'file-text': FileText,
 	italic: Italic,
 	'message-circle': MessageCircle,
+	'message-circle-plus': MessageCirclePlus,
+	'panel-right-close': PanelRightClose,
+	'settings-2': Settings2,
+	'chevron-up': ChevronUp,
 	plus: Plus,
 	quote: Quote,
 	'rotate-ccw': RotateCcw,
@@ -171,8 +179,9 @@ function bindNoteContextChat(
 	options: MarkdownAiOptions,
 ): () => void {
 	const root = host.closest<HTMLElement>('.note-editor');
+	const compose = root?.querySelector<HTMLElement>('[data-note-compose]');
 	const trigger = root?.querySelector<HTMLButtonElement>('[data-note-ai-chat]');
-	if (!root || !trigger) return () => {};
+	if (!root || !trigger || !compose) return () => {};
 	const noteId = options.noteId || root.dataset.noteEditorId || 'unknown';
 	const zh = locale === 'zh';
 	const t = (zhText: string, enText: string): string => (zh ? zhText : enText);
@@ -184,6 +193,7 @@ function bindNoteContextChat(
 		controller = null;
 		panel?.remove();
 		panel = null;
+		root?.classList.remove('note-ai-sidebar-open');
 		activeSelectionKey = '';
 		trigger.classList.remove('active');
 		trigger.setAttribute('aria-expanded', 'false');
@@ -211,6 +221,7 @@ function bindNoteContextChat(
 			: options.noteTitle?.() || t('当前便签', 'Current note');
 		const contextKey = `${selection.from}:${selection.to}:${documentText.length}:${contextText.slice(0, 80)}`;
 		let sessions: NoteChatSession[] = [];
+		let selectedModel = aiModelForAction('chat');
 		let session: NoteChatSession = {
 			id: crypto.randomUUID(),
 			title: t('新对话', 'New chat'),
@@ -225,23 +236,39 @@ function bindNoteContextChat(
 		panel.setAttribute('aria-label', t('AI 对话', 'AI conversation'));
 		panel.innerHTML = `<header class="note-ai-chat-head">
 			<span class="ai-mark"><i data-lucide="message-circle"></i></span>
-			<div class="note-ai-chat-title"><strong>${t('询问 AI', 'Ask AI')}</strong><span>${aiModelForAction('chat')}</span></div>
 			<select data-chat-history title="${t('历史对话', 'Chat history')}" aria-label="${t('历史对话', 'Chat history')}"></select>
-			<button type="button" class="row-action" data-chat-new title="${t('新建对话', 'New chat')}" aria-label="${t('新建对话', 'New chat')}"><i data-lucide="plus"></i></button>
-			<button type="button" class="row-action" data-chat-close title="${t('关闭', 'Close')}" aria-label="${t('关闭', 'Close')}"><i data-lucide="x"></i></button>
+			<span class="toolbar-spacer"></span>
+			<button type="button" class="row-action" data-chat-new title="${t('新建对话', 'New chat')}" aria-label="${t('新建对话', 'New chat')}"><i data-lucide="message-circle-plus"></i></button>
+			<button type="button" class="row-action" data-chat-close title="${t('收起 AI 侧栏', 'Collapse AI sidebar')}" aria-label="${t('收起 AI 侧栏', 'Collapse AI sidebar')}"><i data-lucide="panel-right-close"></i></button>
 		</header>
 		<div class="note-ai-chat-messages" data-chat-messages><div class="note-ai-chat-welcome">${t('我会仅参考当前提交的便签内容回答，并标注引用来源。', 'I will answer only from the submitted note context and cite the source passages.')}</div></div>
 		<div class="note-ai-chat-composer">
 			<div class="note-ai-context-chip"><i data-lucide="${hasSelection ? 'text-select' : 'file-text'}"></i><span>${contextLabel}</span></div>
-			<div class="note-ai-chat-input-row"><textarea rows="1" data-chat-input placeholder="${t('询问这段内容…', 'Ask about this content…')}" aria-label="${t('向 AI 提问', 'Ask AI')}"></textarea><button type="button" class="ai-send" data-chat-send title="${t('发送', 'Send')}" aria-label="${t('发送', 'Send')}"><i data-lucide="arrow-up"></i></button></div>
+			<div class="note-ai-chat-input-row"><textarea rows="1" data-chat-input placeholder="${t('询问这段内容…', 'Ask about this content…')}" aria-label="${t('向 AI 提问', 'Ask AI')}"></textarea><button type="button" class="ai-send" data-chat-send title="${t('提交', 'Submit')}" aria-label="${t('提交', 'Submit')}"><i data-lucide="arrow-up"></i></button></div>
+			<div class="note-ai-chat-footer"><button type="button" class="row-action" data-chat-settings title="${t('设置模式', 'Mode settings')}" aria-label="${t('设置模式', 'Mode settings')}"><i data-lucide="settings-2"></i></button><select class="note-ai-mode" data-chat-mode aria-label="${t('AI 模式', 'AI mode')}"><option value="edit">${t('编辑', 'Edit')}</option><option value="ask">${t('询问', 'Ask')}</option></select><span class="toolbar-spacer"></span><button type="button" class="note-ai-model-picker" data-chat-model aria-label="${t('选择模型', 'Choose model')}">${aiModelForAction('chat')} <i data-lucide="chevron-up"></i></button></div>
 		</div>`;
-		document.body.append(panel);
+		compose.append(panel);
+		root.classList.add('note-ai-sidebar-open');
 		paintIcons(panel);
 		trigger.classList.add('active');
 		trigger.setAttribute('aria-expanded', 'true');
 		const messagesNode = panel.querySelector<HTMLElement>('[data-chat-messages]')!;
 		const input = panel.querySelector<HTMLTextAreaElement>('[data-chat-input]')!;
 		const send = panel.querySelector<HTMLButtonElement>('[data-chat-send]')!;
+		const modeSelect = panel.querySelector<HTMLSelectElement>('[data-chat-mode]')!;
+		const modelButton = panel.querySelector<HTMLButtonElement>('[data-chat-model]')!;
+		const settingsButton = panel.querySelector<HTMLButtonElement>('[data-chat-settings]')!;
+		settingsButton.addEventListener('click', () => modeSelect.focus());
+		modelButton.addEventListener('click', () => {
+			const existing = panel?.querySelector<HTMLElement>('[data-chat-model-menu]');
+			if (existing) { existing.remove(); return; }
+			const menu = document.createElement('div');
+			menu.className = 'note-ai-model-menu';
+			menu.dataset.chatModelMenu = 'true';
+			menu.innerHTML = `<button type="button" data-model="gpt-4o"><span class="ai-provider-icon openai">◉</span>GPT-4o</button><button type="button" data-model="claude-3-5-sonnet"><span class="ai-provider-icon anthropic">A</span>Claude 3.5 Sonnet</button><button type="button" data-model="gemini-1.5-pro"><span class="ai-provider-icon google">G</span>Gemini 1.5 Pro</button>`;
+			menu.querySelectorAll<HTMLButtonElement>('[data-model]').forEach((item) => item.addEventListener('click', () => { selectedModel = item.dataset.model || selectedModel; modelButton.firstChild!.textContent = `${selectedModel} `; menu.remove(); }));
+			panel?.append(menu);
+		});
 		send.disabled = true;
 		const historySelect = panel.querySelector<HTMLSelectElement>('[data-chat-history]')!;
 		let conversation = session.messages;
@@ -372,7 +399,7 @@ function bindNoteContextChat(
 			try {
 				await api.ai(
 					{
-						model: aiModelForAction('chat'),
+						model: selectedModel,
 						action: 'chat',
 						text: question,
 						context: numberedContext,
@@ -597,8 +624,7 @@ export function bindMarkdownAiAssistant(
 				<button class="button primary" type="button" data-ai-main></button>
 			</footer>
 		</div>`;
-		// Mount on body with fixed positioning so note-compose overflow/CM stacking
-		// cannot swallow pointer or keyboard events inside the instruction box.
+		// Mount inside the compose grid so the sidebar takes real editor space.
 		document.body.append(panel);
 		paintIcons(panel);
 		const placePanel = () => {

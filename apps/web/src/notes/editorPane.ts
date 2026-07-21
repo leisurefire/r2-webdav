@@ -7,6 +7,7 @@ import { ensureFolderNotesLoaded, optimisticallyUpdateNote } from './scope';
 import type { NoteChanges } from './outbox';
 import { noteFolderPath } from './folderTree';
 import { currentSelectedNoteId, deleteNote, paintNotes, replaceNotesSidebar } from './page';
+import { showEditorHighlight } from '../editor/editorHighlights';
 import {
 	noteExpandedFolders,
 	noteFolders,
@@ -424,6 +425,14 @@ export function bindNoteEditor(
 							mark.addEventListener('click', (event) => {
 								event.stopPropagation();
 								scrollToMarkdownHeading(view, heading.id);
+								const headingFrom = markdownHeadingPosition(view, heading.id);
+								if (headingFrom !== null) {
+									const line = view.state.doc.lineAt(headingFrom);
+									showEditorHighlight(view, line.from, line.to, 'transient');
+								}
+								mark.classList.remove('section-pulse');
+								void mark.offsetWidth;
+								mark.classList.add('section-pulse');
 								// Mobile: first tap expands the panel; second tap (or any mark) jumps.
 								if (matchMedia('(hover: none)').matches) outline.classList.add('open');
 								refreshActive();
@@ -443,6 +452,14 @@ export function bindNoteEditor(
 							item.addEventListener('click', (event) => {
 								event.stopPropagation();
 								scrollToMarkdownHeading(view, heading.id);
+								const headingFrom = markdownHeadingPosition(view, heading.id);
+								if (headingFrom !== null) {
+									const line = view.state.doc.lineAt(headingFrom);
+									showEditorHighlight(view, line.from, line.to, 'transient');
+								}
+								item.classList.remove('section-pulse');
+								void item.offsetWidth;
+								item.classList.add('section-pulse');
 								outline.classList.remove('open');
 								refreshActive();
 							});
