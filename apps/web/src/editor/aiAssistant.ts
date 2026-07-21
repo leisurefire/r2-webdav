@@ -23,14 +23,8 @@ import {
 	type IconNode,
 } from 'lucide';
 import { aiModelForAction, api, type AiAction, type NoteChatSession } from '../api/client';
-import {
-	clearAiReview,
-	clearSelectionHold,
-	holdSelectionHighlight,
-	markNewContent,
-	showAiReview,
-	toggleMarkdownWrap,
-} from './markdownLivePreview';
+import { clearAiReview, showAiReview, toggleMarkdownWrap } from './markdownLivePreview';
+import { clearSelectionHold, holdSelectionHighlight, markNewContent, showEditorHighlight } from './editorHighlights';
 import { buildAiReviewPreview } from './textDiff';
 import { renderMarkdown } from './markdownRenderer';
 import { markdownMarkerCoverage } from './markdownFormatting';
@@ -276,7 +270,7 @@ function bindNoteContextChat(
 			view.dispatch({
 				effects: EditorView.scrollIntoView(firstLine.from, { y: 'center' }),
 			});
-			markNewContent(view, firstLine.from, lastLine.to);
+			showEditorHighlight(view, firstLine.from, lastLine.to, 'transient');
 		};
 		const openCitations = (citations: AiCitation[]) => {
 			const dialog = document.createElement('dialog');

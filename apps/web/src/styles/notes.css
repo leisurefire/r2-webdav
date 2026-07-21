@@ -1221,34 +1221,65 @@ details.markdown-callout > .markdown-callout-title::marker {
 	margin-left: auto;
 }
 
-/* Soft selection hold while AI panel has focus (survives native selection blur). */
-.cm-ai-selection-hold {
-	background: color-mix(in srgb, #3b82f6 18%, transparent);
+/* Shared editor highlight primitives. Only one can be active at a time. */
+.cm-editor-highlight {
+	--editor-highlight-color: color-mix(in srgb, #3b82f6 18%, transparent);
+	background: var(--editor-highlight-color);
 	border-radius: 2px;
 	box-decoration-break: clone;
 	-webkit-box-decoration-break: clone;
 }
 
-.cm-editor:not(.cm-focused) .cm-ai-selection-hold {
+.cm-editor-highlight-content {
+	color: #2563eb;
+}
+
+.cm-editor:not(.cm-focused) .cm-editor-highlight-content,
+.cm-editor:not(.cm-focused) .cm-editor-highlight-selection {
 	background: color-mix(in srgb, #9ca3af 20%, transparent);
 }
 
-@media (prefers-color-scheme: dark) {
-	.cm-ai-selection-hold {
-		background: color-mix(in srgb, #60a5fa 24%, transparent);
-	}
+.cm-editor-highlight-transient-0 {
+	animation: editor-highlight-fade-a 1600ms ease-out forwards;
+}
 
-	.cm-editor:not(.cm-focused) .cm-ai-selection-hold {
-		background: color-mix(in srgb, #6b7280 28%, transparent);
+.cm-editor-highlight-transient-1 {
+	animation: editor-highlight-fade-b 1600ms ease-out forwards;
+}
+
+@keyframes editor-highlight-fade-a {
+	0%,
+	55% {
+		background: var(--editor-highlight-color);
+	}
+	100% {
+		background: transparent;
 	}
 }
 
-/* Fresh paste / AI insert highlight, cleared on next edit or click. */
-.cm-live-new-content {
-	background: color-mix(in srgb, #3b82f6 16%, transparent);
-	border-radius: 2px;
-	box-decoration-break: clone;
-	-webkit-box-decoration-break: clone;
+@keyframes editor-highlight-fade-b {
+	0%,
+	55% {
+		background: var(--editor-highlight-color);
+	}
+	100% {
+		background: transparent;
+	}
+}
+
+@media (prefers-color-scheme: dark) {
+	.cm-editor-highlight {
+		--editor-highlight-color: color-mix(in srgb, #60a5fa 24%, transparent);
+	}
+
+	.cm-editor-highlight-content {
+		color: #93c5fd;
+	}
+
+	.cm-editor:not(.cm-focused) .cm-editor-highlight-content,
+	.cm-editor:not(.cm-focused) .cm-editor-highlight-selection {
+		background: color-mix(in srgb, #6b7280 28%, transparent);
+	}
 }
 
 /* AI review: character-level delete/insert marks inside a unified preview. */
@@ -1271,10 +1302,6 @@ details.markdown-callout > .markdown-callout-title::marker {
 }
 
 @media (prefers-color-scheme: dark) {
-	.cm-live-new-content {
-		background: color-mix(in srgb, #60a5fa 22%, transparent);
-	}
-
 	.cm-ai-review-inserted {
 		color: #93c5fd;
 		background: color-mix(in srgb, #3b82f6 24%, transparent);

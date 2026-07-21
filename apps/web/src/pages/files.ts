@@ -45,9 +45,11 @@ export function fileIcon(entry: FileEntry): string {
 export function breadcrumbMarkup(path: string): string {
 	const parts = path ? path.split('/') : [];
 	let built = '';
-	const crumbs = [
-		`<button class="crumb ${parts.length === 0 ? 'current' : ''} ${filePathHighlight === '' ? 'path-highlight' : ''}" data-path="">${locale === 'zh' ? '我的文件' : 'My files'}</button>`,
-	];
+	const crumbs = parts.length
+		? []
+		: [
+				`<button class="crumb current ${filePathHighlight === '' ? 'path-highlight' : ''}" data-path="">${locale === 'zh' ? '我的文件' : 'My files'}</button>`,
+			];
 	parts.forEach((part, index) => {
 		built = built ? `${built}/${part}` : part;
 		if (index > 0) crumbs.push('<span class="crumb-separator">/</span>');
@@ -97,10 +99,15 @@ export function openFileDirectory(path: string, highlight = false): void {
 		(item) => item.dataset.fileTreePath === path,
 	);
 	if (row) {
+		if (highlight) {
+			row.classList.remove('path-highlight');
+			void row.offsetWidth;
+			row.classList.add('path-highlight');
+		}
 		const icon = row.querySelector<HTMLElement>('svg, [data-lucide]');
 		const original = icon?.outerHTML ?? '';
 		if (icon) {
-			icon.outerHTML = '<i class="file-tree-loader" data-lucide="refresh-cw"></i>';
+			icon.outerHTML = '<i class="file-tree-loader" data-lucide="loader-circle"></i>';
 			row.classList.add('loading');
 			refreshIcons();
 		}

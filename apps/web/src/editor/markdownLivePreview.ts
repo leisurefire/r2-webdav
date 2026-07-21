@@ -38,6 +38,18 @@ import {
 import { normalizeClipboardText, prepareClipboardText, readClipboardText } from './markdownClipboard';
 import { markdownWrapEdit } from './markdownFormatting';
 import {
+	editorHighlightField,
+	editorHighlightPointerHandler,
+	persistentContentHighlightEffect,
+} from './editorHighlights';
+export {
+	clearSelectionHold,
+	holdSelectionHighlight,
+	markNewContent,
+	showEditorHighlight,
+	type EditorHighlightKind,
+} from './editorHighlights';
+import {
 	renderMarkdown,
 	renderMarkdownDocument,
 	renderMarkdownInline,
@@ -1408,13 +1420,6 @@ export function createMarkdownLivePreview(
 		...defaultKeymap,
 		...historyKeymap,
 	]);
-	const clearNewOnPointer = EditorView.domEventHandlers({
-		mousedown(_event, view) {
-			const marks = view.state.field(newContentField, false);
-			if (!marks || marks.size === 0) return;
-			view.dispatch({ effects: newContentEffect.of({ from: 0, to: 0 }) });
-		},
-	});
 	const clipboardHandlers = EditorView.domEventHandlers({
 		paste(event, view) {
 			if ((event.target as HTMLElement | null)?.closest('.cm-live-table textarea')) return false;
@@ -1440,7 +1445,7 @@ export function createMarkdownLivePreview(
 							selection: { anchor: range.from + markdown.length },
 							annotations: Transaction.userEvent.of('input.paste'),
 							scrollIntoView: true,
-							effects: newContentEffect.of({ from: range.from, to: range.from + markdown.length }),
+							effects: persistentContentHighlightEffect(range.from, range.from + markdown.length),
 						});
 						view.focus();
 					})
@@ -1465,7 +1470,7 @@ export function createMarkdownLivePreview(
 				selection: { anchor: selection.from + insert.length },
 				annotations: Transaction.userEvent.of('input.paste'),
 				scrollIntoView: true,
-				effects: newContentEffect.of({ from: selection.from, to: selection.from + insert.length }),
+				effects: persistentContentHighlightEffect(selection.from, selection.from + insert.length),
 			});
 			view.focus();
 			return true;
@@ -1477,10 +1482,9 @@ export function createMarkdownLivePreview(
 			markdownLanguageSupport,
 			syntaxHighlighting(markdownLivePreviewHighlightStyle),
 			livePreviewField,
-			newContentField,
+			editorHighlightField,
 			aiReviewField,
-			selectionHoldField,
-			clearNewOnPointer,
+			editorHighlightPointerHandler,
 			EditorView.mouseSelectionStyle.of(livePreviewMouseSelectionStyle),
 			history(),
 			editingKeymap,
@@ -1534,36 +1538,6 @@ export function createMarkdownLivePreview(
 }
 
 /**
- * Temporary highlight for freshly pasted or AI-inserted content.
- * The highlight clears on any further user edit or pointer interaction.
- */
-const newContentEffect = StateEffect.define<{ from: number; to: number }>();
-
-const newContentField = StateField.define<DecorationSet>({
-	create: () => Decoration.none,
-	update(deco, transaction) {
-		let next = deco.map(transaction.changes);
-		for (const effect of transaction.effects) {
-			if (effect.is(newContentEffect)) {
-				if (effect.value.to > effect.value.from)
-					next = next.update({
-						add: [Decoration.mark({ class: 'cm-live-new-content' }).range(effect.value.from, effect.value.to)],
-					});
-				else next = Decoration.none;
-			}
-		}
-		if (
-			transaction.docChanged &&
-			!transaction.isUserEvent('input.paste') &&
-			!transaction.effects.some((effect) => effect.is(newContentEffect))
-		)
-			next = Decoration.none;
-		return next;
-	},
-	provide: (field) => EditorView.decorations.from(field),
-});
-
-/**
  * AI review mode: character-level deleted/inserted marks inside a unified preview.
  * Segments are stored with absolute document positions and remapped across edits.
  */
@@ -1613,12 +1587,6 @@ const aiReviewField = StateField.define<{ segments: AiReviewSegment[] | null; de
 	provide: (field) => EditorView.decorations.from(field, (state) => state.decorations),
 });
 
-/** Highlight a freshly inserted range (paste or AI insert) until the next edit/click. */
-export function markNewContent(view: EditorView, from: number, to: number): void {
-	if (to <= from) return;
-	view.dispatch({ effects: newContentEffect.of({ from, to }) });
-}
-
 /** Show the AI review decoration for a character-level rewrite preview. */
 export function showAiReview(view: EditorView, segments: AiReviewSegment[]): void {
 	view.dispatch({ effects: aiReviewSetEffect.of(segments) });
@@ -1627,42 +1595,4 @@ export function showAiReview(view: EditorView, segments: AiReviewSegment[]): voi
 /** Clear the AI review decoration (accept, undo, or abort). */
 export function clearAiReview(view: EditorView): void {
 	view.dispatch({ effects: aiReviewSetEffect.of(null) });
-}
-
-/**
- * Persist a soft selection highlight while the AI panel steals focus.
- * Active (editor focused / panel open): light blue; inactive: light gray.
- */
-const selectionHoldEffect = StateEffect.define<{ from: number; to: number } | null>();
-
-const selectionHoldField = StateField.define<DecorationSet>({
-	create: () => Decoration.none,
-	update(deco, transaction) {
-		let next = deco.map(transaction.changes);
-		for (const effect of transaction.effects) {
-			if (effect.is(selectionHoldEffect)) {
-				if (!effect.value || effect.value.to <= effect.value.from) next = Decoration.none;
-				else
-					next = Decoration.set([
-						Decoration.mark({ class: 'cm-ai-selection-hold' }).range(effect.value.from, effect.value.to),
-					]);
-			}
-		}
-		return next;
-	},
-	provide: (field) => EditorView.decorations.from(field),
-});
-
-/** Show a durable selection highlight independent of native focus. */
-export function holdSelectionHighlight(view: EditorView, from: number, to: number): void {
-	if (to <= from) {
-		view.dispatch({ effects: selectionHoldEffect.of(null) });
-		return;
-	}
-	view.dispatch({ effects: selectionHoldEffect.of({ from, to }) });
-}
-
-/** Clear the durable selection highlight. */
-export function clearSelectionHold(view: EditorView): void {
-	view.dispatch({ effects: selectionHoldEffect.of(null) });
 }
