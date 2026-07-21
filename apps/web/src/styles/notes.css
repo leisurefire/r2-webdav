@@ -418,7 +418,8 @@
 	box-shadow: none;
 }
 
-.note-editor.note-ai-sidebar-open .note-document { margin-right: min(360px, 32vw); }
+.note-editor.note-ai-sidebar-open > .notes-inner-toolbar,
+.note-editor.note-ai-sidebar-open > form { margin-right: min(360px, 32vw); }
 
 .note-editor.note-ai-sidebar-open .note-ai-chat-trigger {
 	display: none;

@@ -684,16 +684,13 @@
 }
 
 .note-ai-model-menu button:hover { background: var(--hover-bg); }
-.ai-provider-icon { width: 18px; height: 18px; display: inline-grid; place-items: center; border-radius: 4px; position: relative; flex: none; }
-.ai-provider-icon svg { width: 14px; height: 14px; stroke-width: 2; }
-.ai-provider-icon.openai { color: #10a37f; }
-.ai-provider-icon.anthropic { color: #d97757; }
-.ai-provider-icon.google { color: #4285f4; }
-.ai-provider-icon.deepseek { color: #2563eb; }
-.ai-provider-icon.moonshot { color: #7c3aed; }
-.ai-provider-icon.generic { color: var(--muted); }
+.ai-provider-icon,
+[data-chat-model-logo] { width: 18px; height: 18px; display: inline-grid; place-items: center; flex: none; }
+.ai-provider-icon img,
+[data-chat-model-logo] img { display: block; width: 16px; height: 16px; object-fit: contain; }
 
-.note-ai-mode-select .custom-select-trigger { min-height: 28px; border-radius: 6px; font-size: 11px; }
+.note-ai-mode-select { width: 0; min-width: 0; }
+.note-ai-mode-select .custom-select-trigger[hidden] { display: none; }
 
 .note-ai-chat-head {
 	min-height: 58px;

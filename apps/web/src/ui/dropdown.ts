@@ -9,6 +9,8 @@ export interface DropdownAction {
 
 export interface CustomSelectOptions {
 	className?: string;
+	hideTrigger?: boolean;
+	getAnchor?: () => HTMLElement | null;
 	getOptionIcon?: (option: HTMLOptionElement) => IconNode | undefined;
 	getActions?: (option: HTMLOptionElement) => DropdownAction[];
 	onAction?: (action: DropdownAction, option: HTMLOptionElement) => void | Promise<void>;
@@ -62,6 +64,7 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 
 	select.before(root);
 	root.append(select, button);
+	if (options.hideTrigger) button.hidden = true;
 	select.classList.add('custom-select-native');
 	select.tabIndex = -1;
 	let open = false;
@@ -70,7 +73,8 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 
 	const selectedOption = () => select.selectedOptions[0] ?? select.options[0];
 	const place = () => {
-		const rect = button.getBoundingClientRect();
+		const anchor = options.getAnchor?.() ?? button;
+		const rect = anchor.getBoundingClientRect();
 		const width = Math.max(rect.width, 180);
 		menu.style.width = `${Math.min(width, window.innerWidth - 16)}px`;
 		menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))}px`;
