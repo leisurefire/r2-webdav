@@ -12,6 +12,7 @@ export interface CustomSelectOptions {
 	hideTrigger?: boolean;
 	getAnchor?: () => HTMLElement | null;
 	getOptionIcon?: (option: HTMLOptionElement) => IconNode | undefined;
+	getOptionVisual?: (option: HTMLOptionElement) => HTMLElement | undefined;
 	getActions?: (option: HTMLOptionElement) => DropdownAction[];
 	onAction?: (action: DropdownAction, option: HTMLOptionElement) => void | Promise<void>;
 }
@@ -119,7 +120,10 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 	};
 	const refresh = () => {
 		const current = selectedOption();
-		valueNode.textContent = current?.label ?? '';
+		const currentLabel = document.createElement('span');
+		currentLabel.textContent = current?.label ?? '';
+		const currentVisual = current ? options.getOptionVisual?.(current) : undefined;
+		valueNode.replaceChildren(...(currentVisual ? [currentVisual, currentLabel] : [currentLabel]));
 		button.disabled = select.disabled;
 		button.title = select.title;
 		button.setAttribute('aria-label', select.getAttribute('aria-label') ?? current?.label ?? '');
@@ -140,6 +144,8 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 			label.textContent = option.label;
 			const optionIcon = options.getOptionIcon?.(option);
 			if (optionIcon) choice.append(createElement(optionIcon));
+			const optionVisual = options.getOptionVisual?.(option);
+			if (optionVisual) choice.append(optionVisual);
 			choice.append(check, label);
 			choice.addEventListener('click', (event) => {
 				event.preventDefault();

@@ -636,7 +636,7 @@
 }
 
 .note-ai-mode,
-.note-ai-model-picker {
+.note-ai-model {
 	min-height: 28px;
 	border: 1px solid var(--line);
 	border-radius: 6px;
@@ -646,51 +646,32 @@
 	font-size: 11px;
 }
 
-.note-ai-model-picker {
-	display: inline-flex;
-	align-items: center;
-	gap: 4px;
-	padding: 0 7px;
-	cursor: pointer;
+.ai-provider-logo {
+	width: 16px;
+	height: 16px;
+	flex: none;
+	background: currentColor;
+	-webkit-mask: var(--ai-provider-logo) center / contain no-repeat;
+	mask: var(--ai-provider-logo) center / contain no-repeat;
 }
 
-.note-ai-model-picker svg { width: 12px; height: 12px; }
-
-.note-ai-model-menu {
-	position: absolute;
-	right: 10px;
-	bottom: 48px;
-	display: grid;
-	gap: 2px;
-	min-width: 190px;
-	padding: 5px;
-	border: 1px solid var(--line);
-	border-radius: 7px;
-	background: var(--panel-bg);
-	box-shadow: 0 8px 24px rgba(15,23,42,.16);
-}
-
-.note-ai-model-menu button {
-	display: flex;
-	align-items: center;
-	gap: 7px;
-	padding: 7px 8px;
-	border: 0;
-	border-radius: 5px;
-	background: transparent;
-	color: var(--ink);
-	text-align: left;
-	cursor: pointer;
-}
-
-.note-ai-model-menu button:hover { background: var(--hover-bg); }
-.ai-provider-icon,
-[data-chat-model-logo] { width: 18px; height: 18px; display: inline-grid; place-items: center; flex: none; }
-.ai-provider-icon img,
-[data-chat-model-logo] img { display: block; width: 16px; height: 16px; object-fit: contain; }
+.ai-provider-logo-openai,
+.ai-provider-logo-moonshot { color: #111111; }
+.ai-provider-logo-anthropic { color: #d97757; }
+.ai-provider-logo-google { color: #4285f4; }
+.ai-provider-logo-deepseek { color: #2563eb; }
 
 .note-ai-mode-select { width: 0; min-width: 0; }
 .note-ai-mode-select .custom-select-trigger[hidden] { display: none; }
+.note-ai-model-select { min-width: 0; max-width: 176px; }
+.note-ai-model-select .custom-select-trigger { min-height: 28px; padding: 0 7px; border-radius: 6px; font-size: 11px; }
+.note-ai-model-select .custom-select-value,
+.note-ai-model-select .custom-select-option { gap: 7px; }
+
+@media (prefers-color-scheme: dark) {
+	.ai-provider-logo-openai,
+	.ai-provider-logo-moonshot { color: #ffffff; }
+}
 
 .note-ai-chat-head {
 	min-height: 58px;
