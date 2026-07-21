@@ -8,6 +8,7 @@ import {
 	FileText,
 	Italic,
 	MessageCircle,
+	Plus,
 	Quote,
 	RotateCcw,
 	Sigma,
@@ -19,7 +20,7 @@ import {
 	createElement,
 	type IconNode,
 } from 'lucide';
-import { aiModelForAction, api, type AiAction } from '../api/client';
+import { aiModelForAction, api, type AiAction, type NoteChatSession } from '../api/client';
 import {
 	clearAiReview,
 	clearSelectionHold,
@@ -41,6 +42,7 @@ const AI_ICONS: Record<string, IconNode> = {
 	'file-text': FileText,
 	italic: Italic,
 	'message-circle': MessageCircle,
+	plus: Plus,
 	quote: Quote,
 	'rotate-ccw': RotateCcw,
 	sigma: Sigma,
@@ -85,6 +87,7 @@ export interface MarkdownAiOptions {
 	onError: (error: unknown) => void;
 	onTitleChange?: (title: string) => void;
 	noteTitle?: () => string;
+	noteId?: string;
 }
 
 const FORMAT_BUTTONS: Array<{ id: string; marker: string; icon: string; zh: string; en: string }> = [
@@ -152,6 +155,8 @@ export function parseAiCitations(value: string): { markdown: string; citations: 
 	return { markdown, citations };
 }
 
+let activeNoteChatClose: (() => void) | null = null;
+
 function bindNoteContextChat(
 	view: EditorView,
 	host: HTMLElement,
@@ -161,22 +166,29 @@ function bindNoteContextChat(
 	const root = host.closest<HTMLElement>('.note-editor');
 	const trigger = root?.querySelector<HTMLButtonElement>('[data-note-ai-chat]');
 	if (!root || !trigger) return () => {};
+	const noteId = options.noteId || root.dataset.noteEditorId || 'unknown';
 	const zh = locale === 'zh';
 	const t = (zhText: string, enText: string): string => (zh ? zhText : enText);
 	let panel: HTMLElement | null = null;
 	let controller: AbortController | null = null;
+	let activeSelectionKey = '';
 	const close = () => {
 		controller?.abort();
 		controller = null;
 		panel?.remove();
 		panel = null;
+		activeSelectionKey = '';
 		trigger.classList.remove('active');
 		trigger.setAttribute('aria-expanded', 'false');
+		if (activeNoteChatClose === close) activeNoteChatClose = null;
 	};
-	const open = () => {
+	const open = async () => {
 		if (panel) return close();
+		activeNoteChatClose?.();
+		activeNoteChatClose = close;
 		const documentText = view.state.doc.toString();
 		const selection = view.state.selection.main;
+		activeSelectionKey = `${selection.from}:${selection.to}`;
 		const hasSelection = !selection.empty;
 		const contextText = hasSelection ? view.state.sliceDoc(selection.from, selection.to) : documentText;
 		const startLine = hasSelection ? view.state.doc.lineAt(selection.from).number : 1;
@@ -190,12 +202,25 @@ function bindNoteContextChat(
 		const contextLabel = hasSelection
 			? t(`已选 ${endLine - startLine + 1} 行`, `${endLine - startLine + 1} selected lines`)
 			: options.noteTitle?.() || t('当前便签', 'Current note');
+		const contextKey = `${selection.from}:${selection.to}:${documentText.length}:${contextText.slice(0, 80)}`;
+		let sessions: NoteChatSession[] = [];
+		let session: NoteChatSession = {
+			id: crypto.randomUUID(),
+			title: t('新对话', 'New chat'),
+			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString(),
+			contextKey,
+			contextLabel,
+			messages: [],
+		};
 		panel = document.createElement('aside');
 		panel.className = 'note-ai-chat-panel';
 		panel.setAttribute('aria-label', t('AI 对话', 'AI conversation'));
 		panel.innerHTML = `<header class="note-ai-chat-head">
 			<span class="ai-mark"><i data-lucide="message-circle"></i></span>
-			<div><strong>${t('询问 AI', 'Ask AI')}</strong><span>${aiModelForAction('chat')}</span></div>
+			<div class="note-ai-chat-title"><strong>${t('询问 AI', 'Ask AI')}</strong><span>${aiModelForAction('chat')}</span></div>
+			<select class="note-ai-history-select" data-chat-history title="${t('历史对话', 'Chat history')}" aria-label="${t('历史对话', 'Chat history')}"></select>
+			<button type="button" class="row-action" data-chat-new title="${t('新建对话', 'New chat')}" aria-label="${t('新建对话', 'New chat')}"><i data-lucide="plus"></i></button>
 			<button type="button" class="row-action" data-chat-close title="${t('关闭', 'Close')}" aria-label="${t('关闭', 'Close')}"><i data-lucide="x"></i></button>
 		</header>
 		<div class="note-ai-chat-messages" data-chat-messages><div class="note-ai-chat-welcome">${t('我会仅参考当前提交的便签内容回答，并标注引用来源。', 'I will answer only from the submitted note context and cite the source passages.')}</div></div>
@@ -210,7 +235,17 @@ function bindNoteContextChat(
 		const messagesNode = panel.querySelector<HTMLElement>('[data-chat-messages]')!;
 		const input = panel.querySelector<HTMLTextAreaElement>('[data-chat-input]')!;
 		const send = panel.querySelector<HTMLButtonElement>('[data-chat-send]')!;
-		const conversation: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+		send.disabled = true;
+		const historySelect = panel.querySelector<HTMLSelectElement>('[data-chat-history]')!;
+		let conversation = session.messages;
+		const paintHistory = () => {
+			const visible = [session, ...sessions.filter((item) => item.id !== session.id)];
+			historySelect.replaceChildren(
+				...visible.map(
+					(item) => new Option(item.title || t('新对话', 'New chat'), item.id, false, item.id === session.id),
+				),
+			);
+		};
 		const citationExcerpt = (citation: AiCitation): string => {
 			const lines = documentText.split('\n');
 			return lines
@@ -246,12 +281,46 @@ function bindNoteContextChat(
 			node.append(sources);
 			paintIcons(sources);
 		};
+		const renderConversation = () => {
+			messagesNode.innerHTML = '';
+			if (!conversation.length) {
+				messagesNode.innerHTML = `<div class="note-ai-chat-welcome">${t('我会仅参考当前提交的便签内容回答，并标注引用来源。', 'I will answer only from the submitted note context and cite the source passages.')}</div>`;
+				return;
+			}
+			for (const message of conversation) {
+				const node = document.createElement('div');
+				node.className = `note-ai-chat-message ${message.role}`;
+				if (message.role === 'user') node.textContent = message.content;
+				else renderAnswer(node, message.content);
+				messagesNode.append(node);
+			}
+			messagesNode.scrollTop = messagesNode.scrollHeight;
+		};
+		const createSession = () => {
+			controller?.abort();
+			controller = null;
+			session = {
+				id: crypto.randomUUID(),
+				title: t('新对话', 'New chat'),
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString(),
+				contextKey,
+				contextLabel,
+				messages: [],
+			};
+			conversation = session.messages;
+			paintHistory();
+			renderConversation();
+			input.focus();
+		};
 		const submit = async () => {
 			const question = input.value.trim();
 			if (!question || controller) return;
 			input.value = '';
 			input.style.height = '';
 			conversation.push({ role: 'user', content: question });
+			if (conversation.length === 1) session.title = question.replace(/\s+/g, ' ').slice(0, 36);
+			paintHistory();
 			const userNode = document.createElement('div');
 			userNode.className = 'note-ai-chat-message user';
 			userNode.textContent = question;
@@ -264,11 +333,17 @@ function bindNoteContextChat(
 			controller = new AbortController();
 			let answer = '';
 			try {
-				const transcript = conversation
-					.map((item) => `${item.role === 'user' ? 'User' : 'Assistant'}: ${item.content}`)
-					.join('\n\n');
 				await api.ai(
-					{ model: aiModelForAction('chat'), action: 'chat', text: transcript, context: numberedContext },
+					{
+						model: aiModelForAction('chat'),
+						action: 'chat',
+						text: question,
+						context: numberedContext,
+						noteId,
+						conversationId: session.id,
+						contextKey,
+						contextLabel,
+					},
 					(token) => {
 						answer += token;
 						renderAnswer(answerNode, answer);
@@ -287,6 +362,16 @@ function bindNoteContextChat(
 				controller = null;
 			}
 		};
+		paintHistory();
+		renderConversation();
+		historySelect.addEventListener('change', () => {
+			const next = [session, ...sessions].find((item) => item.id === historySelect.value);
+			if (!next) return;
+			session = next;
+			conversation = session.messages;
+			renderConversation();
+		});
+		panel.querySelector('[data-chat-new]')?.addEventListener('click', createSession);
 		panel.querySelector('[data-chat-close]')?.addEventListener('click', close);
 		send.addEventListener('click', () => void submit());
 		input.addEventListener('input', () => {
@@ -300,10 +385,38 @@ function bindNoteContextChat(
 			}
 		});
 		window.setTimeout(() => input.focus(), 0);
+		try {
+			sessions = await api.noteAiChats(noteId);
+			if (!panel?.isConnected) return;
+			const matching = sessions.find((item) => item.contextKey === contextKey);
+			if (matching) {
+				session = matching;
+				conversation = session.messages;
+			}
+			paintHistory();
+			renderConversation();
+		} catch (error) {
+			if (panel?.isConnected) options.onError(error);
+		} finally {
+			if (panel?.isConnected) send.disabled = false;
+		}
 	};
-	trigger.addEventListener('click', open);
+	const handleOpen = () => void open();
+	trigger.addEventListener('click', handleOpen);
+	const onSelectionChange = () => {
+		if (!panel) return;
+		const current = view.state.selection.main;
+		if (`${current.from}:${current.to}` !== activeSelectionKey) close();
+	};
+	document.addEventListener('selectionchange', onSelectionChange);
+	const disconnectObserver = new MutationObserver(() => {
+		if (!root.isConnected) close();
+	});
+	disconnectObserver.observe(document.body, { childList: true, subtree: true });
 	return () => {
-		trigger.removeEventListener('click', open);
+		trigger.removeEventListener('click', handleOpen);
+		document.removeEventListener('selectionchange', onSelectionChange);
+		disconnectObserver.disconnect();
 		close();
 	};
 }

@@ -108,6 +108,11 @@ export async function ensureDatabase(env: Env): Promise<void> {
 		} catch {
 			// Existing deployments already have the column from the migration.
 		}
+		try {
+			await env.NOTES_DB.prepare("ALTER TABLE r2_webdav_notes ADD COLUMN ai_chats TEXT NOT NULL DEFAULT '[]'").run();
+		} catch {
+			// Existing deployments already have the column from the migration.
+		}
 		await env.NOTES_DB.prepare(
 			'CREATE INDEX IF NOT EXISTS r2_webdav_notes_folder ON r2_webdav_notes(user_id, folder_id, is_archived, updated_at DESC)',
 		).run();

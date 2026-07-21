@@ -70,6 +70,25 @@ export interface AiRequest {
 	text: string;
 	instruction?: string;
 	context?: string;
+	noteId?: string;
+	conversationId?: string;
+	contextKey?: string;
+	contextLabel?: string;
+}
+
+export interface NoteChatMessage {
+	role: 'user' | 'assistant';
+	content: string;
+}
+
+export interface NoteChatSession {
+	id: string;
+	title: string;
+	createdAt: string;
+	updatedAt: string;
+	contextKey: string;
+	contextLabel: string;
+	messages: NoteChatMessage[];
 }
 
 function authHeaders(headers?: HeadersInit): Headers {
@@ -404,6 +423,16 @@ export const api = {
 		const payload = (await response.json()) as ApiResponse<{ models: string[] }>;
 		if (!payload.ok) throw new ApiError(payload.error.message, response.status);
 		return payload.data.models;
+	},
+	async noteAiChats(noteId: string): Promise<NoteChatSession[]> {
+		const response = await fetch(`${notesApiBase}/api/v1/ai?resource=chats&noteId=${encodeURIComponent(noteId)}`, {
+			headers: authHeaders(),
+			credentials: 'include',
+		});
+		if (!response.ok) throw new ApiError('Unable to load AI chat history', response.status);
+		const payload = (await response.json()) as ApiResponse<{ chats: NoteChatSession[] }>;
+		if (!payload.ok) throw new ApiError(payload.error.message, response.status);
+		return payload.data.chats;
 	},
 };
 

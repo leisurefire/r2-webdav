@@ -492,6 +492,7 @@ export function bindNoteEditor(
 			void import('../editor/aiAssistant').then(({ bindMarkdownAiAssistant }) => {
 				syncAiEmptyPrompt = bindMarkdownAiAssistant(view, source, locale, {
 					onError: (error) => toast(errorMessage(error)),
+					noteId: selected.id,
 					noteTitle: () => title.value.trim() || (locale === 'zh' ? '无标题便签' : 'Untitled note'),
 					onTitleChange: (nextTitle) => {
 						optimisticallyUpdateNote(data, selected, { title: nextTitle });

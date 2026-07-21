@@ -392,6 +392,147 @@
 	}
 }
 
+/* Quiet, Notion-like motion and surfaces. */
+.ai-shimmer-border {
+	border-color: var(--line);
+	background: var(--panel-bg);
+	animation: none;
+}
+
+.ai-mark,
+.ai-menu-badge {
+	background: var(--ink);
+	color: var(--panel-bg);
+}
+
+.ai-send {
+	background: var(--ink);
+	color: var(--panel-bg);
+	transition:
+		transform 140ms ease,
+		background-color 140ms ease,
+		opacity 140ms ease;
+}
+
+.ai-send:hover:not(:disabled) {
+	filter: none;
+	transform: translateY(-1px);
+}
+
+.ai-send:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+
+.note-ai-chat-trigger {
+	border-color: var(--line);
+	background: var(--panel-bg);
+	color: var(--ink);
+	box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
+	transition:
+		transform 160ms ease,
+		box-shadow 160ms ease,
+		background-color 160ms ease;
+}
+
+.note-ai-chat-trigger:hover,
+.note-ai-chat-trigger.active {
+	background: var(--hover-bg);
+	transform: translateY(-1px);
+	box-shadow: 0 7px 20px rgba(15, 23, 42, 0.13);
+}
+
+.note-ai-chat-panel {
+	animation: note-ai-panel-in 180ms ease-out;
+}
+
+@keyframes note-ai-panel-in {
+	from {
+		opacity: 0;
+		transform: translateX(8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+.note-ai-chat-message {
+	animation: note-ai-message-in 150ms ease-out;
+}
+
+@keyframes note-ai-message-in {
+	from {
+		opacity: 0;
+		transform: translateY(3px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.note-ai-history-select {
+	min-width: 0;
+	max-width: 142px;
+	height: 30px;
+	padding: 0 24px 0 8px;
+	border: 1px solid transparent;
+	border-radius: 5px;
+	background-color: transparent;
+	color: var(--muted);
+	font: inherit;
+	font-size: 11px;
+	text-overflow: ellipsis;
+	cursor: pointer;
+	transition:
+		border-color 140ms ease,
+		background-color 140ms ease;
+}
+
+.note-ai-history-select:hover,
+.note-ai-history-select:focus {
+	border-color: var(--line);
+	background-color: var(--surface);
+	outline: 0;
+}
+
+.note-ai-chat-title {
+	flex: 1;
+}
+
+@media (max-width: 720px) {
+	.note-ai-chat-panel {
+		animation-name: note-ai-sheet-in;
+	}
+
+	@keyframes note-ai-sheet-in {
+		from {
+			opacity: 0;
+			transform: translateY(12px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.note-ai-chat-head {
+		gap: 6px;
+	}
+
+	.note-ai-history-select {
+		max-width: 104px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.note-ai-chat-panel,
+	.note-ai-chat-message {
+		animation: none;
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.ai-shimmer-border {
 		animation: none;

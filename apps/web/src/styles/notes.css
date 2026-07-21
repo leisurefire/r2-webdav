@@ -2053,3 +2053,34 @@ details.markdown-callout > .markdown-callout-title::marker {
 	font-size: 0.8rem;
 	opacity: 0.7;
 }
+
+/* Align the notes context tree with the other workspace sidebars. */
+.sidebar-context .notes-folders-head.sidebar-context-head {
+	min-height: 34px;
+	padding: 0 6px 8px;
+}
+
+.notes-folder-tools > .row-action,
+.notes-folder-tools > .action-menu > .row-action,
+.note-folder-actions > .row-action,
+.notes-tree .note-card-actions > .row-action {
+	border-radius: 50%;
+	background: transparent;
+	transition:
+		background-color 120ms ease,
+		opacity 120ms ease,
+		transform 120ms ease;
+}
+
+.notes-folder-tools > .row-action:hover,
+.notes-folder-tools > .action-menu > .row-action:hover,
+.note-folder-actions > .row-action:hover,
+.notes-tree .note-card-actions > .row-action:hover {
+	background: var(--hover-bg);
+	transform: scale(1.04);
+}
+
+.note-folder-actions,
+.notes-tree-children .note-card-actions {
+	background: transparent;
+}

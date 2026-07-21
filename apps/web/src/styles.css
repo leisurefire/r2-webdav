@@ -3457,6 +3457,44 @@ body:has(.app-shell) {
 	margin: 4px 0 8px;
 }
 
+.settings-custom-model {
+	margin-top: -2px;
+	animation: settings-field-in 140ms ease-out;
+}
+
+@keyframes settings-field-in {
+	from {
+		opacity: 0;
+		transform: translateY(-2px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.settings-dialog[open] {
+	animation: settings-dialog-in 170ms ease-out;
+}
+
+@keyframes settings-dialog-in {
+	from {
+		opacity: 0;
+		transform: translateY(5px) scale(0.995);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.settings-dialog[open],
+	.settings-custom-model {
+		animation: none;
+	}
+}
+
 .settings-device-card dl {
 	display: flex;
 	flex-wrap: wrap;

@@ -32,6 +32,19 @@ function label(zh: string, en: string): string {
 	return locale === 'zh' ? zh : en;
 }
 
+function aiModelField(action: (typeof aiActions)[number], models: string[]): string {
+	const current = aiModelForAction(action.id);
+	const known = models.includes(current);
+	const actionLabel = action.key ? t(action.key) : label(action.zh, action.en);
+	return `<div class="field settings-model-field"><label for="ai-model-${action.id}">${actionLabel}</label>
+		<select class="input" id="ai-model-${action.id}" data-ai-model-select="${action.id}">
+			${models.map((model) => `<option value="${html(model)}" ${model === current ? 'selected' : ''}>${html(model)}</option>`).join('')}
+			<option value="__custom__" ${known ? '' : 'selected'}>${label('自定义模型 ID…', 'Custom model ID…')}</option>
+		</select>
+		<input class="input settings-custom-model" data-ai-model-custom="${action.id}" value="${known ? '' : html(current)}" placeholder="${label('输入模型 ID', 'Enter model ID')}" autocomplete="off" spellcheck="false" ${known ? 'hidden' : ''}>
+	</div>`;
+}
+
 function deviceMarkup(device: DeviceSession): string {
 	return `<article class="settings-device-card">
 		<div class="device-icon"><i data-lucide="${device.type === 'mobile' ? 'smartphone' : 'laptop'}"></i></div>
@@ -58,8 +71,7 @@ export async function openSettingsModal(initialTab: SettingsTab = 'connection'):
 				</section>
 				<section data-settings-panel="language" hidden><h3>${t('settingsLanguage')}</h3><p class="settings-panel-hint">${t('settingsLanguageHint')}</p><div class="field"><label for="language-select">${t('settingsLanguage')}</label><select class="input" id="language-select"><option value="en" ${locale === 'en' ? 'selected' : ''}>${t('english')}</option><option value="zh" ${locale === 'zh' ? 'selected' : ''}>${t('chinese')}</option></select></div></section>
 				<section data-settings-panel="ai" hidden><h3>${t('settingsAi')}</h3><p class="settings-panel-hint">${label('可以从远端拉取模型，也可以直接输入任意模型 ID。', 'Pull models from the provider or enter any model ID manually.')}</p>
-					<datalist id="ai-model-options">${models.map((model) => `<option value="${html(model)}"></option>`).join('')}</datalist>
-					<div class="settings-ai-grid">${aiActions.map((action) => `<div class="field"><label for="ai-model-${action.id}">${action.key ? t(action.key) : label(action.zh, action.en)}</label><input class="input" id="ai-model-${action.id}" list="ai-model-options" value="${html(aiModelForAction(action.id))}" data-ai-model-action="${action.id}" autocomplete="off" spellcheck="false"></div>`).join('')}</div>
+					<div class="settings-ai-grid">${aiActions.map((action) => aiModelField(action, models)).join('')}</div>
 					<div class="settings-inline-action"><button type="button" class="button" id="ai-pull-models"><i data-lucide="refresh-cw"></i><span>${t('aiPullModels')}</span></button><span class="muted">${t('settingsAiHint')}</span></div>
 				</section>
 				<section data-settings-panel="devices" hidden><h3>${label('设备管理', 'Devices')}</h3><p class="settings-panel-hint">${t('devicesDesc')}</p><div class="settings-device-list" data-settings-devices>${loadingMarkup(true)}</div></section>
@@ -138,8 +150,18 @@ export async function openSettingsModal(initialTab: SettingsTab = 'connection'):
 		close();
 		void render().then(() => openSettingsModal('language'));
 	});
-	dialog.querySelectorAll<HTMLInputElement>('[data-ai-model-action]').forEach((input) => {
-		const save = () => saveAiModelForAction(input.dataset.aiModelAction as AiAction, input.value);
+	dialog.querySelectorAll<HTMLSelectElement>('[data-ai-model-select]').forEach((select) => {
+		select.addEventListener('change', () => {
+			const action = select.dataset.aiModelSelect as AiAction;
+			const custom = dialog.querySelector<HTMLInputElement>(`[data-ai-model-custom="${action}"]`);
+			const isCustom = select.value === '__custom__';
+			if (custom) custom.hidden = !isCustom;
+			if (isCustom) custom?.focus();
+			else saveAiModelForAction(action, select.value);
+		});
+	});
+	dialog.querySelectorAll<HTMLInputElement>('[data-ai-model-custom]').forEach((input) => {
+		const save = () => saveAiModelForAction(input.dataset.aiModelCustom as AiAction, input.value);
 		input.addEventListener('change', save);
 		input.addEventListener('blur', save);
 	});
@@ -152,8 +174,17 @@ export async function openSettingsModal(initialTab: SettingsTab = 'connection'):
 			const remoteModels = await api.aiModels();
 			if (!remoteModels.length) throw new Error(label('服务未返回可用模型', 'No models returned by the provider'));
 			saveAvailableAiModels(remoteModels);
-			const datalist = dialog.querySelector<HTMLDataListElement>('#ai-model-options');
-			datalist?.replaceChildren(...remoteModels.map((model) => new Option('', model)));
+			dialog.querySelectorAll<HTMLSelectElement>('[data-ai-model-select]').forEach((select) => {
+				const action = select.dataset.aiModelSelect as AiAction;
+				const current = aiModelForAction(action);
+				const custom = dialog.querySelector<HTMLInputElement>(`[data-ai-model-custom="${action}"]`);
+				const isCustom = !remoteModels.includes(current);
+				select.replaceChildren(
+					...remoteModels.map((model) => new Option(model, model, false, model === current)),
+					new Option(label('自定义模型 ID…', 'Custom model ID…'), '__custom__', false, isCustom),
+				);
+				if (custom) custom.hidden = !isCustom;
+			});
 			toast(t('aiPullModelsDone'));
 		} catch (error) {
 			toast(errorMessage(error));

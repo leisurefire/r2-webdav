@@ -5,6 +5,21 @@ interface Env {
 	API_KEY: string;
 }
 
+interface StoredChatMessage {
+	role: 'user' | 'assistant';
+	content: string;
+}
+
+interface StoredChat {
+	id: string;
+	title: string;
+	createdAt: string;
+	updatedAt: string;
+	contextKey: string;
+	contextLabel: string;
+	messages: StoredChatMessage[];
+}
+
 const UPSTREAM = 'https://newapi.127631.xyz/v1';
 const encoder = new TextEncoder();
 
@@ -23,22 +38,107 @@ function token(request: Request): string | null {
 	return cookie ? decodeURIComponent(cookie[1]) : null;
 }
 
-async function authenticated(request: Request, env: Env): Promise<boolean> {
+async function authenticatedUser(request: Request, env: Env): Promise<string | null> {
 	const value = token(request);
-	if (!value) return false;
+	if (!value) return null;
 	const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value)));
 	const hash = [...digest].map((part) => part.toString(16).padStart(2, '0')).join('');
-	const row = await env.NOTES_DB.prepare('SELECT expires_at FROM r2_webdav_sessions WHERE token_hash = ?')
+	const row = await env.NOTES_DB.prepare('SELECT user_id, expires_at FROM r2_webdav_sessions WHERE token_hash = ?')
 		.bind(hash)
-		.first<{ expires_at: string }>();
-	return Boolean(row && Date.parse(row.expires_at) > Date.now());
+		.first<{ user_id: string; expires_at: string }>();
+	return row && Date.parse(row.expires_at) > Date.now() ? row.user_id : null;
 }
 
-export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
+function parseChats(value: string | null): StoredChat[] {
 	try {
-		if (!(await authenticated(request, env))) return fail('Authentication required', 401);
+		const parsed = JSON.parse(value ?? '[]') as unknown;
+		return Array.isArray(parsed) ? (parsed as StoredChat[]) : [];
+	} catch {
+		return [];
+	}
+}
+
+async function readStreamedAnswer(body: ReadableStream<Uint8Array>): Promise<string> {
+	const reader = body.getReader();
+	const decoder = new TextDecoder();
+	let buffer = '';
+	let answer = '';
+	while (true) {
+		const chunk = await reader.read();
+		buffer += decoder.decode(chunk.value ?? new Uint8Array(), { stream: !chunk.done });
+		const events = buffer.split(/\n\n/);
+		buffer = events.pop() ?? '';
+		for (const event of events) {
+			const line = event.split('\n').find((item) => item.startsWith('data:'));
+			const value = line?.slice(5).trim();
+			if (!value || value === '[DONE]') continue;
+			try {
+				const payload = JSON.parse(value) as { choices?: Array<{ delta?: { content?: string } }> };
+				answer += payload.choices?.[0]?.delta?.content ?? '';
+			} catch {
+				// Ignore keep-alive frames from OpenAI-compatible gateways.
+			}
+		}
+		if (chunk.done) return answer.trim();
+	}
+}
+
+async function saveChatAnswer(
+	env: Env,
+	owner: string,
+	input: {
+		noteId: string;
+		conversationId: string;
+		text: string;
+		contextKey?: string;
+		contextLabel?: string;
+	},
+	answer: string,
+): Promise<void> {
+	if (!answer) return;
+	const row = await env.NOTES_DB.prepare('SELECT ai_chats FROM r2_webdav_notes WHERE id = ? AND user_id = ?')
+		.bind(input.noteId, owner)
+		.first<{ ai_chats: string | null }>();
+	if (!row) return;
+	const chats = parseChats(row.ai_chats);
+	const now = new Date().toISOString();
+	let chat = chats.find((item) => item.id === input.conversationId);
+	if (!chat) {
+		chat = {
+			id: input.conversationId,
+			title: input.text.replace(/\s+/g, ' ').slice(0, 36) || 'New chat',
+			createdAt: now,
+			updatedAt: now,
+			contextKey: input.contextKey ?? '',
+			contextLabel: input.contextLabel ?? '',
+			messages: [],
+		};
+		chats.unshift(chat);
+	}
+	chat.updatedAt = now;
+	chat.messages.push({ role: 'user', content: input.text }, { role: 'assistant', content: answer });
+	const next = [chat, ...chats.filter((item) => item.id !== chat!.id)].slice(0, 12);
+	await env.NOTES_DB.prepare('UPDATE r2_webdav_notes SET ai_chats = ? WHERE id = ? AND user_id = ?')
+		.bind(JSON.stringify(next), input.noteId, owner)
+		.run();
+}
+
+export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
+	try {
+		const owner = await authenticatedUser(request, env);
+		if (!owner) return fail('Authentication required', 401);
 		if (request.method === 'GET') {
-			if (new URL(request.url).searchParams.get('resource') !== 'models') return fail('Unknown AI resource', 404);
+			const url = new URL(request.url);
+			if (url.searchParams.get('resource') === 'chats') {
+				const noteId = url.searchParams.get('noteId') ?? '';
+				if (!/^[0-9a-f-]{36}$/i.test(noteId)) return fail('Invalid note ID', 400);
+				const row = await env.NOTES_DB.prepare('SELECT ai_chats FROM r2_webdav_notes WHERE id = ? AND user_id = ?')
+					.bind(noteId, owner)
+					.first<{ ai_chats: string | null }>();
+				if (!row) return fail('Note not found', 404);
+				return json({ ok: true, data: { chats: parseChats(row.ai_chats) } });
+			}
+			if (url.searchParams.get('resource') !== 'models') return fail('Unknown AI resource', 404);
 			const response = await fetch(`${UPSTREAM}/models`, { headers: { Authorization: `Bearer ${env.API_KEY}` } });
 			if (!response.ok) return fail('AI model service is unavailable', 502);
 			const payload = (await response.json()) as {
@@ -62,6 +162,10 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
 			text?: string;
 			instruction?: string;
 			context?: string;
+			noteId?: string;
+			conversationId?: string;
+			contextKey?: string;
+			contextLabel?: string;
 		};
 		if (!input.model?.trim() || input.model.length > 200 || !input.text?.trim() || input.text.length > 120_000)
 			return fail('Invalid AI request', 400);
@@ -70,6 +174,24 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
 				? 'Use the same language as the user text. Do not wrap the whole answer in code fences.'
 				: 'Use the same language as the user text. Return Markdown only, without code fences or commentary.';
 		const selectionAction = input.action === 'summarize' || input.action === 'polish' || input.action === 'rewrite';
+		let chatHistory = '';
+		if (input.action === 'chat') {
+			if (
+				!input.noteId ||
+				!input.conversationId ||
+				!/^[0-9a-f-]{36}$/i.test(input.noteId) ||
+				!/^[0-9a-f-]{36}$/i.test(input.conversationId)
+			)
+				return fail('Invalid chat request', 400);
+			const row = await env.NOTES_DB.prepare('SELECT ai_chats FROM r2_webdav_notes WHERE id = ? AND user_id = ?')
+				.bind(input.noteId, owner)
+				.first<{ ai_chats: string | null }>();
+			if (!row) return fail('Note not found', 404);
+			const messages = parseChats(row.ai_chats).find((item) => item.id === input.conversationId)?.messages ?? [];
+			chatHistory = messages
+				.map((item) => `${item.role === 'user' ? 'User' : 'Assistant'}: ${item.content}`)
+				.join('\n\n');
+		}
 		const task =
 			input.action === 'chat'
 				? [
@@ -87,19 +209,17 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
 							? [
 									'Edit ONLY the selected text below according to the instruction.',
 									'Do not rewrite or include content outside the selection.',
-									'First line: one short plain-language sentence (no Markdown heading) describing what you changed, e.g. "已按照你的要求添加了代码，请查看" / "Added the requested code snippet."',
+									'First line: one short plain-language sentence (no Markdown heading) describing what you changed.',
 									'Then a blank line.',
 									'Then the full rewritten Markdown for the selection only.',
-									'Do not put the summary after the body.',
 								].join(' ')
-							: 'Write a useful Markdown note from the request. Start with a single H1 heading (# Title) that captures the topic as the note title, then a blank line, then the body. Use document context only as background reference when provided.';
+							: 'Write a useful Markdown note from the request. Start with a single H1 heading (# Title), then a blank line, then the body.';
 		const prompt = [
 			task,
 			language,
 			input.instruction ? `Instruction: ${input.instruction}` : '',
-			!selectionAction && input.context
-				? `Document context (background only; do not rewrite the whole document unless asked):\n${input.context.slice(0, 20_000)}`
-				: '',
+			!selectionAction && input.context ? `Document context:\n${input.context.slice(0, 20_000)}` : '',
+			chatHistory ? `Earlier conversation:\n${chatHistory}` : '',
 			selectionAction ? `Selected text:\n${input.text}` : `Request:\n${input.text}`,
 		]
 			.filter(Boolean)
@@ -122,7 +242,30 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
 			}),
 		});
 		if (!upstream.ok || !upstream.body) return fail('AI generation failed', 502);
-		return new Response(upstream.body, {
+		let responseBody = upstream.body;
+		if (input.action === 'chat') {
+			const [clientBody, archiveBody] = upstream.body.tee();
+			responseBody = clientBody;
+			waitUntil(
+				readStreamedAnswer(archiveBody)
+					.then((answer) =>
+						saveChatAnswer(
+							env,
+							owner,
+							{
+								noteId: input.noteId!,
+								conversationId: input.conversationId!,
+								text: input.text!,
+								contextKey: input.contextKey,
+								contextLabel: input.contextLabel,
+							},
+							answer,
+						),
+					)
+					.catch((error) => console.error('AI chat history save failed', error)),
+			);
+		}
+		return new Response(responseBody, {
 			status: 200,
 			headers: {
 				'Content-Type': 'text/event-stream; charset=utf-8',
