@@ -85,7 +85,6 @@ const FORMAT_BUTTONS: Array<{ id: string; marker: string; icon: string; zh: stri
 	{ id: 'formula', marker: '$', icon: 'sigma', zh: '公式', en: 'Formula' },
 ];
 
-
 const SUMMARIZE_INSTRUCTION_ZH = '请用简洁的 Markdown 总结选中内容，保留关键信息；可用要点列表。只返回总结正文。';
 const SUMMARIZE_INSTRUCTION_EN =
 	'Summarize the selection concisely in Markdown. Keep key facts; use a short bullet list when helpful. Return only the summary body.';
@@ -230,16 +229,12 @@ export function bindMarkdownAiAssistant(
 			panel.style.width = `${shellWidth}px`;
 			panel.style.bottom = 'auto';
 			const maxHeight = Math.min(window.innerHeight * 0.56, 460);
-			const preferredLeft = cursorCoords
-				? cursorCoords.left
-				: hostRect.left + 12;
+			const preferredLeft = cursorCoords ? cursorCoords.left : hostRect.left + 12;
 			panel.style.left = `${Math.max(12, Math.min(preferredLeft, window.innerWidth - shellWidth - 12))}px`;
 			const isReviewAction = action === 'polish' || action === 'rewrite';
 			let top: number;
 			if (cursorCoords) {
-				top = isReviewAction
-					? Math.max(12, cursorCoords.top - panel.offsetHeight - 10)
-					: cursorCoords.bottom + 10;
+				top = isReviewAction ? Math.max(12, cursorCoords.top - panel.offsetHeight - 10) : cursorCoords.bottom + 10;
 				if (!isReviewAction && top + maxHeight > window.innerHeight - 12)
 					top = Math.max(12, cursorCoords.top - maxHeight - 10);
 			} else {
@@ -347,7 +342,11 @@ export function bindMarkdownAiAssistant(
 						model: aiModelForAction(action),
 						action,
 						text: request,
-						instruction: selectionAction ? instruction : instruction && instruction !== request ? instruction : undefined,
+						instruction: selectionAction
+							? instruction
+							: instruction && instruction !== request
+								? instruction
+								: undefined,
 						context: documentContext,
 					},
 					(token) => {
@@ -360,9 +359,7 @@ export function bindMarkdownAiAssistant(
 				result = normalizeAiMarkdown(streamText);
 				if (action === 'rewrite') {
 					const split = splitRewriteSummary(result);
-					note =
-						split.summary ||
-						t('已按照你的要求完成修改，请查看。', 'Edits applied as requested.');
+					note = split.summary || t('已按照你的要求完成修改，请查看。', 'Edits applied as requested.');
 					result = split.body || result;
 				}
 				if (!result) throw new Error(t('AI 没有返回内容', 'AI returned no content'));
@@ -486,13 +483,7 @@ export function bindMarkdownAiAssistant(
 				// Restore the original selection, then append the AI result under it.
 				clearAiReview(view);
 				const original = review.original;
-				const separator = !original
-					? ''
-					: original.endsWith('\n\n')
-						? ''
-						: original.endsWith('\n')
-							? '\n'
-							: '\n\n';
+				const separator = !original ? '' : original.endsWith('\n\n') ? '' : original.endsWith('\n') ? '\n' : '\n\n';
 				const combined = `${original}${separator}${generated}`;
 				const insertedFrom = review.undoFrom + original.length + separator.length;
 				view.dispatch({
@@ -508,11 +499,12 @@ export function bindMarkdownAiAssistant(
 			}
 			// Fallback for non-review actions that expose the same control.
 			const insertAt = range.to;
-			const prefix = insertAt > 0 && !view.state.sliceDoc(Math.max(0, insertAt - 2), insertAt).endsWith('\n\n')
-				? view.state.sliceDoc(Math.max(0, insertAt - 1), insertAt) === '\n'
-					? '\n'
-					: '\n\n'
-				: '';
+			const prefix =
+				insertAt > 0 && !view.state.sliceDoc(Math.max(0, insertAt - 2), insertAt).endsWith('\n\n')
+					? view.state.sliceDoc(Math.max(0, insertAt - 1), insertAt) === '\n'
+						? '\n'
+						: '\n\n'
+					: '';
 			const inserted = `${prefix}${generated}`;
 			view.dispatch({
 				changes: { from: insertAt, to: insertAt, insert: inserted },
@@ -646,9 +638,9 @@ export function bindMarkdownAiAssistant(
 					const expanded = button.getAttribute('aria-expanded') === 'true';
 					const menuHost = toolbar;
 					if (!menuHost) return;
-					menuHost.querySelectorAll<HTMLButtonElement>('[data-action="polish"]').forEach((item) =>
-						item.setAttribute('aria-expanded', 'false'),
-					);
+					menuHost
+						.querySelectorAll<HTMLButtonElement>('[data-action="polish"]')
+						.forEach((item) => item.setAttribute('aria-expanded', 'false'));
 					if (expanded) return;
 					button.setAttribute('aria-expanded', 'true');
 					const menu = document.createElement('div');
@@ -714,8 +706,7 @@ export function bindMarkdownAiAssistant(
 	view.dom.addEventListener('blur', () =>
 		window.setTimeout(() => {
 			if (panel) return removeToolbar();
-			if (!view.hasFocus && !toolbar?.matches(':hover') && !toolbar?.contains(document.activeElement))
-				removeToolbar();
+			if (!view.hasFocus && !toolbar?.matches(':hover') && !toolbar?.contains(document.activeElement)) removeToolbar();
 		}, 120),
 	);
 	window.addEventListener('scroll', removeToolbar, { capture: true, passive: true });

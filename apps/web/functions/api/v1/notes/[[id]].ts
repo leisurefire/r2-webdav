@@ -272,8 +272,14 @@ async function updateNote(request: Request, env: Env, owner: string, id: string)
 	}
 	if (!updates.length) return error('BAD_REQUEST', 'No note changes supplied', 400);
 	const now = new Date().toISOString();
-	updates.push('updated_at = ?', 'accessed_at = ?');
-	values.push(now, now, id, owner);
+	updates.push('updated_at = ?');
+	values.push(now);
+	// Only content edits count as an "access"; pin/archive/move must not pollute recency.
+	if (input.title !== undefined || input.content !== undefined) {
+		updates.push('accessed_at = ?');
+		values.push(now);
+	}
+	values.push(id, owner);
 	const changed = await env.NOTES_DB.prepare(
 		`UPDATE r2_webdav_notes SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`,
 	)

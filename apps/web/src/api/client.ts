@@ -133,7 +133,7 @@ async function requestFrom<T>(base: string, path: string, init: RequestInit = {}
 			const aborted = error instanceof DOMException && error.name === 'AbortError';
 			const network =
 				aborted ||
-				(error instanceof TypeError) ||
+				error instanceof TypeError ||
 				(error instanceof Error && /failed to fetch|networkerror|load failed/i.test(error.message));
 			if (!network || attempt === attempts - 1) {
 				if (error instanceof ApiError) throw error;
@@ -142,9 +142,7 @@ async function requestFrom<T>(base: string, path: string, init: RequestInit = {}
 			await new Promise((resolve) => window.setTimeout(resolve, 350 * (attempt + 1)));
 		}
 	}
-	throw lastError instanceof ApiError
-		? lastError
-		: new ApiError(networkErrorMessage(lastError), 0, 'NETWORK_ERROR');
+	throw lastError instanceof ApiError ? lastError : new ApiError(networkErrorMessage(lastError), 0, 'NETWORK_ERROR');
 }
 
 function request<T>(path: string, init: RequestInit = {}): Promise<T> {

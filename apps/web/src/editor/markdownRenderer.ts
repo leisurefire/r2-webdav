@@ -203,10 +203,7 @@ function compactListItems(root: ParentNode): void {
 	// Blank quote lines become empty paragraphs between blocks; drop pure spacers.
 	root.querySelectorAll('p').forEach((paragraph) => {
 		const text = paragraph.textContent?.replace(/\u00a0/g, ' ').trim() ?? '';
-		const onlyBreak =
-			paragraph.childElementCount === 1 &&
-			paragraph.children[0]?.tagName === 'BR' &&
-			text.length === 0;
+		const onlyBreak = paragraph.childElementCount === 1 && paragraph.children[0]?.tagName === 'BR' && text.length === 0;
 		if ((text.length === 0 && paragraph.childElementCount === 0) || onlyBreak) paragraph.remove();
 	});
 }

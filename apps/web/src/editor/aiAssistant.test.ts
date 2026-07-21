@@ -22,8 +22,18 @@ describe('character-level AI review preview', () => {
 		expect(ops.some((op) => op.type === 'delete')).toBe(true);
 		expect(ops.some((op) => op.type === 'insert')).toBe(true);
 		// Reconstruct both sides from ops.
-		expect(ops.filter((op) => op.type !== 'insert').map((op) => op.text).join('')).toBe('hello world');
-		expect(ops.filter((op) => op.type !== 'delete').map((op) => op.text).join('')).toBe('hello earth');
+		expect(
+			ops
+				.filter((op) => op.type !== 'insert')
+				.map((op) => op.text)
+				.join(''),
+		).toBe('hello world');
+		expect(
+			ops
+				.filter((op) => op.type !== 'delete')
+				.map((op) => op.text)
+				.join(''),
+		).toBe('hello earth');
 	});
 
 	it('builds an inline preview with deleted and inserted spans', () => {
@@ -45,7 +55,6 @@ describe('character-level AI review preview', () => {
 		expect(preview.segments).toEqual([]);
 	});
 });
-
 
 describe('splitRewriteSummary', () => {
 	it('takes the first paragraph as the status note', () => {

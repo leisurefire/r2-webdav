@@ -104,9 +104,7 @@ describe('live preview block decorations', () => {
 
 	it('renders complete inline format blocks instead of activating an entire line', () => {
 		const source = 'left **first** middle *second* then `code` and ~~strike~~';
-		const replacements = widgetReplacements(createState(source)).filter(
-			({ name }) => name === 'InlineMarkdownWidget',
-		);
+		const replacements = widgetReplacements(createState(source)).filter(({ name }) => name === 'InlineMarkdownWidget');
 		expect(replacements.map(({ from, to }) => source.slice(from, to))).toEqual([
 			'**first**',
 			'*second*',
@@ -158,9 +156,7 @@ describe('live preview block decorations', () => {
 
 	it('uses one outer replacement for nested inline formatting', () => {
 		const source = 'before **outer *inner* text** after';
-		const replacements = widgetReplacements(createState(source)).filter(
-			({ name }) => name === 'InlineMarkdownWidget',
-		);
+		const replacements = widgetReplacements(createState(source)).filter(({ name }) => name === 'InlineMarkdownWidget');
 		expect(replacements).toHaveLength(1);
 		expect(source.slice(replacements[0].from, replacements[0].to)).toBe('**outer *inner* text**');
 	});
