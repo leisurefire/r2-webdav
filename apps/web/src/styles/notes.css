@@ -1739,6 +1739,10 @@ details.markdown-callout > .markdown-callout-title::marker {
 	text-align: right;
 }
 
+.note-source .cm-note-lineNumber {
+	display: block;
+}
+
 .note-source .cm-activeLineGutter {
 	background: color-mix(in srgb, var(--accent) 8%, transparent);
 	color: var(--muted);
