@@ -1,6 +1,7 @@
 import {
 	Archive,
 	Bookmark,
+	Bold,
 	CalendarDays,
 	Check,
 	ChevronDown,
@@ -21,8 +22,10 @@ import {
 	FolderPlus,
 	Image,
 	Inbox,
+	Italic,
 	Languages,
 	Laptop,
+	ListCollapse,
 	LogOut,
 	Maximize2,
 	Music,
@@ -30,6 +33,7 @@ import {
 	PanelLeftClose,
 	PanelLeftOpen,
 	Pencil,
+	PencilLine,
 	Pin,
 	PinOff,
 	Plus,
@@ -43,6 +47,9 @@ import {
 	Trash2,
 	Upload,
 	User,
+	WandSparkles,
+	MessageCircle,
+	Code,
 	X,
 	createIcons,
 } from 'lucide';
@@ -71,6 +78,7 @@ export function refreshIcons(): void {
 		icons: {
 			Archive,
 			Bookmark,
+			Bold,
 			CalendarDays,
 			Check,
 			ChevronDown,
@@ -91,8 +99,10 @@ export function refreshIcons(): void {
 			FolderPlus,
 			Image,
 			Inbox,
+			Italic,
 			Languages,
 			Laptop,
+			ListCollapse,
 			LogOut,
 			Maximize2,
 			Music,
@@ -100,6 +110,7 @@ export function refreshIcons(): void {
 			PanelLeftClose,
 			PanelLeftOpen,
 			Pencil,
+			PencilLine,
 			Pin,
 			PinOff,
 			Plus,
@@ -113,6 +124,9 @@ export function refreshIcons(): void {
 			Trash2,
 			Upload,
 			User,
+			WandSparkles,
+			MessageCircle,
+			Code,
 			X,
 		},
 	});
@@ -174,8 +188,7 @@ export function shell(page: Page, _title: string, content = loadingMarkup()): vo
 			<section class="sidebar-context" id="sidebar-context" aria-live="polite"></section>
 			<div class="sidebar-footer"><div class="account-menu-wrap">
 				<div class="account-popover" id="account-popover" hidden>
-					<button data-route="/settings"><i data-lucide="settings"></i><span>${t('settings')}</span></button>
-					<button data-route="/devices"><i data-lucide="laptop"></i><span>${t('devices')}</span></button>
+					<button data-settings-open><i data-lucide="settings"></i><span>${t('settings')}</span></button>
 					<div class="account-menu-separator"></div>
 					<button class="account-logout" id="account-logout"><i data-lucide="log-out"></i><span>${t('logout')}</span></button>
 				</div>
@@ -189,6 +202,9 @@ export function shell(page: Page, _title: string, content = loadingMarkup()): vo
 	document
 		.querySelectorAll<HTMLElement>('[data-route]')
 		.forEach((item) => item.addEventListener('click', () => navigate(item.dataset.route!)));
+	document.querySelector('[data-settings-open]')?.addEventListener('click', () => {
+		document.dispatchEvent(new CustomEvent('truespace:open-settings'));
+	});
 	const accountPopover = document.querySelector<HTMLElement>('#account-popover');
 	const accountToggle = document.querySelector<HTMLButtonElement>('#user-menu-toggle');
 	const accountWrap = document.querySelector<HTMLElement>('.account-menu-wrap');
@@ -227,7 +243,6 @@ export function shell(page: Page, _title: string, content = loadingMarkup()): vo
 	});
 	refreshIcons();
 }
-
 
 export function sidebarContext(): HTMLElement | null {
 	return document.querySelector<HTMLElement>('#sidebar-context');

@@ -1,15 +1,19 @@
 import { Transaction } from '@codemirror/state';
-import type { EditorView } from '@codemirror/view';
+import { EditorView } from '@codemirror/view';
 import {
 	ArrowUp,
 	Bold,
 	Check,
 	Code,
+	FileText,
 	Italic,
+	MessageCircle,
+	Quote,
 	RotateCcw,
 	Sigma,
 	Sparkles,
 	Square,
+	TextSelect,
 	WandSparkles,
 	X,
 	createElement,
@@ -34,11 +38,15 @@ const AI_ICONS: Record<string, IconNode> = {
 	bold: Bold,
 	check: Check,
 	code: Code,
+	'file-text': FileText,
 	italic: Italic,
+	'message-circle': MessageCircle,
+	quote: Quote,
 	'rotate-ccw': RotateCcw,
 	sigma: Sigma,
 	sparkles: Sparkles,
 	square: Square,
+	'text-select': TextSelect,
 	'wand-sparkles': WandSparkles,
 	x: X,
 };
@@ -76,6 +84,7 @@ interface AiRange {
 export interface MarkdownAiOptions {
 	onError: (error: unknown) => void;
 	onTitleChange?: (title: string) => void;
+	noteTitle?: () => string;
 }
 
 const FORMAT_BUTTONS: Array<{ id: string; marker: string; icon: string; zh: string; en: string }> = [
@@ -117,6 +126,186 @@ export function splitRewriteSummary(value: string): { summary: string; body: str
 		return { summary: trimmed.slice(0, lineBreak).trim(), body: trimmed.slice(lineBreak + 1).trim() };
 	}
 	return { summary: '', body: trimmed };
+}
+
+export interface AiCitation {
+	startLine: number;
+	endLine: number;
+	index: number;
+}
+
+export function parseAiCitations(value: string): { markdown: string; citations: AiCitation[] } {
+	const citations: AiCitation[] = [];
+	const keys = new Map<string, number>();
+	const markdown = value.replace(/\[\[cite:(\d+)(?:-(\d+))?\]\]/gi, (_match, startRaw, endRaw) => {
+		const startLine = Math.max(1, Number(startRaw));
+		const endLine = Math.max(startLine, Number(endRaw ?? startRaw));
+		const key = `${startLine}-${endLine}`;
+		let index = keys.get(key);
+		if (!index) {
+			index = citations.length + 1;
+			keys.set(key, index);
+			citations.push({ startLine, endLine, index });
+		}
+		return ` [${index}]`;
+	});
+	return { markdown, citations };
+}
+
+function bindNoteContextChat(
+	view: EditorView,
+	host: HTMLElement,
+	locale: Locale,
+	options: MarkdownAiOptions,
+): () => void {
+	const root = host.closest<HTMLElement>('.note-editor');
+	const trigger = root?.querySelector<HTMLButtonElement>('[data-note-ai-chat]');
+	if (!root || !trigger) return () => {};
+	const zh = locale === 'zh';
+	const t = (zhText: string, enText: string): string => (zh ? zhText : enText);
+	let panel: HTMLElement | null = null;
+	let controller: AbortController | null = null;
+	const close = () => {
+		controller?.abort();
+		controller = null;
+		panel?.remove();
+		panel = null;
+		trigger.classList.remove('active');
+		trigger.setAttribute('aria-expanded', 'false');
+	};
+	const open = () => {
+		if (panel) return close();
+		const documentText = view.state.doc.toString();
+		const selection = view.state.selection.main;
+		const hasSelection = !selection.empty;
+		const contextText = hasSelection ? view.state.sliceDoc(selection.from, selection.to) : documentText;
+		const startLine = hasSelection ? view.state.doc.lineAt(selection.from).number : 1;
+		const endLine = hasSelection
+			? view.state.doc.lineAt(Math.max(selection.from, selection.to - 1)).number
+			: view.state.doc.lines;
+		const numberedContext = contextText
+			.split('\n')
+			.map((line, index) => `${startLine + index}: ${line}`)
+			.join('\n');
+		const contextLabel = hasSelection
+			? t(`已选 ${endLine - startLine + 1} 行`, `${endLine - startLine + 1} selected lines`)
+			: options.noteTitle?.() || t('当前便签', 'Current note');
+		panel = document.createElement('aside');
+		panel.className = 'note-ai-chat-panel';
+		panel.setAttribute('aria-label', t('AI 对话', 'AI conversation'));
+		panel.innerHTML = `<header class="note-ai-chat-head">
+			<span class="ai-mark"><i data-lucide="message-circle"></i></span>
+			<div><strong>${t('询问 AI', 'Ask AI')}</strong><span>${aiModelForAction('chat')}</span></div>
+			<button type="button" class="row-action" data-chat-close title="${t('关闭', 'Close')}" aria-label="${t('关闭', 'Close')}"><i data-lucide="x"></i></button>
+		</header>
+		<div class="note-ai-chat-messages" data-chat-messages><div class="note-ai-chat-welcome">${t('我会仅参考当前提交的便签内容回答，并标注引用来源。', 'I will answer only from the submitted note context and cite the source passages.')}</div></div>
+		<div class="note-ai-chat-composer">
+			<div class="note-ai-context-chip"><i data-lucide="${hasSelection ? 'text-select' : 'file-text'}"></i><span>${contextLabel}</span></div>
+			<div class="note-ai-chat-input-row"><textarea rows="1" data-chat-input placeholder="${t('询问这段内容…', 'Ask about this content…')}" aria-label="${t('向 AI 提问', 'Ask AI')}"></textarea><button type="button" class="ai-send" data-chat-send title="${t('发送', 'Send')}" aria-label="${t('发送', 'Send')}"><i data-lucide="arrow-up"></i></button></div>
+		</div>`;
+		document.body.append(panel);
+		paintIcons(panel);
+		trigger.classList.add('active');
+		trigger.setAttribute('aria-expanded', 'true');
+		const messagesNode = panel.querySelector<HTMLElement>('[data-chat-messages]')!;
+		const input = panel.querySelector<HTMLTextAreaElement>('[data-chat-input]')!;
+		const send = panel.querySelector<HTMLButtonElement>('[data-chat-send]')!;
+		const conversation: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+		const citationExcerpt = (citation: AiCitation): string => {
+			const lines = documentText.split('\n');
+			return lines
+				.slice(citation.startLine - 1, citation.endLine)
+				.join('\n')
+				.trim();
+		};
+		const jumpToCitation = (citation: AiCitation) => {
+			const line = view.state.doc.line(Math.min(view.state.doc.lines, citation.startLine));
+			view.dispatch({
+				selection: { anchor: line.from },
+				effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+			});
+			view.focus();
+		};
+		const renderAnswer = (node: HTMLElement, answer: string) => {
+			const parsed = parseAiCitations(answer);
+			node.innerHTML = `<article class="ai-markdown-preview">${renderMarkdown(parsed.markdown)}</article>`;
+			if (!parsed.citations.length) return;
+			const sources = document.createElement('div');
+			sources.className = 'note-ai-citations';
+			for (const citation of parsed.citations) {
+				const excerpt = citationExcerpt(citation);
+				if (!excerpt) continue;
+				const button = document.createElement('button');
+				button.type = 'button';
+				button.className = 'note-ai-citation';
+				button.innerHTML = `<span><i data-lucide="quote"></i>${t('引用', 'Source')} ${citation.index} · ${t('第', 'Lines ')}${citation.startLine}${citation.endLine === citation.startLine ? '' : `-${citation.endLine}`}${zh ? ' 行' : ''}</span><blockquote></blockquote>`;
+				button.querySelector('blockquote')!.textContent = excerpt;
+				button.addEventListener('click', () => jumpToCitation(citation));
+				sources.append(button);
+			}
+			node.append(sources);
+			paintIcons(sources);
+		};
+		const submit = async () => {
+			const question = input.value.trim();
+			if (!question || controller) return;
+			input.value = '';
+			input.style.height = '';
+			conversation.push({ role: 'user', content: question });
+			const userNode = document.createElement('div');
+			userNode.className = 'note-ai-chat-message user';
+			userNode.textContent = question;
+			const answerNode = document.createElement('div');
+			answerNode.className = 'note-ai-chat-message assistant';
+			answerNode.innerHTML = `<div class="ai-thinking"><i data-lucide="sparkles"></i><span>${t('正在查找原文…', 'Reading the note…')}</span></div>`;
+			messagesNode.append(userNode, answerNode);
+			paintIcons(answerNode);
+			messagesNode.scrollTop = messagesNode.scrollHeight;
+			controller = new AbortController();
+			let answer = '';
+			try {
+				const transcript = conversation
+					.map((item) => `${item.role === 'user' ? 'User' : 'Assistant'}: ${item.content}`)
+					.join('\n\n');
+				await api.ai(
+					{ model: aiModelForAction('chat'), action: 'chat', text: transcript, context: numberedContext },
+					(token) => {
+						answer += token;
+						renderAnswer(answerNode, answer);
+						messagesNode.scrollTop = messagesNode.scrollHeight;
+					},
+					controller.signal,
+				);
+				if (!answer.trim()) throw new Error(t('AI 没有返回内容', 'AI returned no content'));
+				conversation.push({ role: 'assistant', content: answer });
+				renderAnswer(answerNode, answer);
+			} catch (error) {
+				if (controller?.signal.aborted) return;
+				answerNode.innerHTML = `<div class="ai-error">${t('回答失败，请重试', 'Could not answer. Please retry.')}</div>`;
+				options.onError(error);
+			} finally {
+				controller = null;
+			}
+		};
+		panel.querySelector('[data-chat-close]')?.addEventListener('click', close);
+		send.addEventListener('click', () => void submit());
+		input.addEventListener('input', () => {
+			input.style.height = 'auto';
+			input.style.height = `${Math.min(120, input.scrollHeight)}px`;
+		});
+		input.addEventListener('keydown', (event) => {
+			if (event.key === 'Enter' && !event.shiftKey) {
+				event.preventDefault();
+				void submit();
+			}
+		});
+		window.setTimeout(() => input.focus(), 0);
+	};
+	trigger.addEventListener('click', open);
+	return () => {
+		trigger.removeEventListener('click', open);
+		close();
+	};
 }
 
 /** How much of [from, to) is wrapped by paired markers: none, partially, or fully. */
@@ -186,6 +375,7 @@ export function bindMarkdownAiAssistant(
 			summarize: t('AI 总结', 'Summarize'),
 			polish: t('AI 润色', 'Polish'),
 			rewrite: t('AI 修改', 'Edit with AI'),
+			chat: t('询问 AI', 'Ask AI'),
 		}[action];
 		panel.innerHTML = `<div class="ai-panel-shell ai-shimmer-border">
 			<header class="ai-panel-head">
@@ -739,8 +929,56 @@ export function bindMarkdownAiAssistant(
 		// Context for blank-line generate is the full note; the space itself is not inserted.
 		openPanel('generate', '', { from: head, to: head });
 	});
+	const mobileBindings = new AbortController();
+	const mobileTools = host
+		.closest<HTMLElement>('.note-editor')
+		?.querySelector<HTMLElement>('[data-mobile-editor-tools]');
+	mobileTools?.querySelectorAll<HTMLButtonElement>('[data-mobile-format]').forEach((button) => {
+		button.addEventListener(
+			'pointerdown',
+			(event) => {
+				event.preventDefault();
+				toggleMarkdownWrap(view, button.dataset.marker ?? '**');
+				view.focus();
+			},
+			{ signal: mobileBindings.signal },
+		);
+	});
+	mobileTools?.querySelectorAll<HTMLButtonElement>('[data-mobile-ai-action]').forEach((button) => {
+		button.addEventListener(
+			'pointerdown',
+			(event) => {
+				event.preventDefault();
+				const range = view.state.selection.main;
+				if (range.empty) {
+					onError(new Error(t('请先选择要处理的内容', 'Select text first')));
+					view.focus();
+					return;
+				}
+				const selected = { from: range.from, to: range.to, text: view.state.sliceDoc(range.from, range.to) };
+				const action = button.dataset.mobileAiAction as 'summarize' | 'polish' | 'rewrite';
+				if (action === 'summarize') {
+					openPanel(action, selected.text, selected, zh ? SUMMARIZE_INSTRUCTION_ZH : SUMMARIZE_INSTRUCTION_EN, {
+						autoStart: true,
+						hideInstruction: true,
+					});
+				} else if (action === 'polish') {
+					openPanel(action, selected.text, selected, POLISH_INSTRUCTIONS.formal[zh ? 'zh' : 'en'], {
+						autoStart: true,
+						hideInstruction: true,
+					});
+				} else {
+					openPanel(action, selected.text, selected);
+				}
+			},
+			{ signal: mobileBindings.signal },
+		);
+	});
+	const unbindChat = bindNoteContextChat(view, host, locale, options);
 	return () => {
 		syncEmptyPrompt();
+		mobileBindings.abort();
+		unbindChat();
 		selectionPoll.removeEventListener('selectionchange', onSelectionChange);
 		removeToolbar();
 		removePanel();

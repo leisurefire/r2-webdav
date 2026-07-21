@@ -427,3 +427,242 @@
 		color: #8a8a8a;
 	}
 }
+
+/* Read-only note Q&A */
+.note-ai-chat-trigger {
+	position: absolute;
+	z-index: 12;
+	right: 20px;
+	bottom: 18px;
+	width: 42px;
+	height: 42px;
+	display: grid;
+	place-items: center;
+	border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+	border-radius: 50%;
+	background: var(--panel-bg);
+	color: var(--accent);
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+	cursor: pointer;
+}
+
+.note-ai-chat-trigger:hover,
+.note-ai-chat-trigger.active {
+	background: color-mix(in srgb, var(--accent) 9%, var(--panel-bg));
+}
+
+.note-ai-chat-trigger > svg:first-child {
+	width: 20px;
+	height: 20px;
+}
+
+.note-ai-chat-trigger .note-ai-chat-spark {
+	position: absolute;
+	top: 6px;
+	right: 5px;
+	width: 10px;
+	height: 10px;
+	fill: var(--panel-bg);
+}
+
+.note-ai-chat-panel {
+	position: fixed;
+	z-index: 90;
+	top: 12px;
+	right: 12px;
+	bottom: 12px;
+	width: min(420px, calc(100vw - 24px));
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--panel-bg);
+	box-shadow: 0 18px 56px rgba(15, 23, 42, 0.18);
+	overflow: hidden;
+}
+
+.note-ai-chat-head {
+	min-height: 58px;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--line);
+}
+
+.note-ai-chat-head > div {
+	min-width: 0;
+	display: grid;
+	gap: 2px;
+}
+
+.note-ai-chat-head strong {
+	font-size: 14px;
+}
+
+.note-ai-chat-head > div > span {
+	color: var(--quiet);
+	font-size: 11px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.note-ai-chat-head > button {
+	margin-left: auto;
+}
+
+.note-ai-chat-messages {
+	min-height: 0;
+	flex: 1;
+	overflow-y: auto;
+	padding: 16px 14px;
+	scrollbar-width: thin;
+}
+
+.note-ai-chat-welcome {
+	margin: 0 8px 18px;
+	color: var(--muted);
+	font-size: 13px;
+	line-height: 1.5;
+	text-align: center;
+}
+
+.note-ai-chat-message {
+	margin-bottom: 14px;
+	font-size: 14px;
+	line-height: 1.65;
+}
+
+.note-ai-chat-message.user {
+	width: fit-content;
+	max-width: 88%;
+	margin-left: auto;
+	padding: 8px 11px;
+	border-radius: 8px 8px 2px 8px;
+	background: var(--surface);
+}
+
+.note-ai-chat-message.assistant {
+	padding-inline: 3px;
+}
+
+.note-ai-citations {
+	display: grid;
+	gap: 6px;
+	margin-top: 12px;
+}
+
+.note-ai-citation {
+	width: 100%;
+	display: grid;
+	gap: 5px;
+	padding: 9px 10px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--surface);
+	color: var(--ink);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.note-ai-citation:hover {
+	border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
+}
+
+.note-ai-citation > span {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	color: var(--accent);
+	font-size: 11px;
+	font-weight: 650;
+}
+
+.note-ai-citation svg {
+	width: 12px;
+	height: 12px;
+}
+
+.note-ai-citation blockquote {
+	max-height: 5.4em;
+	margin: 0;
+	overflow: hidden;
+	color: var(--muted);
+	font-size: 12px;
+	line-height: 1.45;
+	white-space: pre-wrap;
+}
+
+.note-ai-chat-composer {
+	margin: 0 10px 10px;
+	padding: 8px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--surface);
+}
+
+.note-ai-context-chip {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	margin-bottom: 4px;
+	color: var(--muted);
+	font-size: 11px;
+}
+
+.note-ai-context-chip svg {
+	width: 13px;
+	height: 13px;
+	color: var(--accent);
+}
+
+.note-ai-context-chip span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.note-ai-chat-input-row {
+	display: flex;
+	align-items: flex-end;
+	gap: 6px;
+}
+
+.note-ai-chat-input-row textarea {
+	min-width: 0;
+	min-height: 34px;
+	max-height: 120px;
+	flex: 1;
+	padding: 7px 4px 4px;
+	border: 0;
+	outline: 0;
+	resize: none;
+	background: transparent;
+	color: var(--ink);
+	font: inherit;
+	font-size: 14px;
+	line-height: 1.45;
+}
+
+@media (max-width: 720px) {
+	.note-ai-chat-trigger {
+		position: fixed;
+		right: 20px;
+		bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+	}
+
+	.note-ai-chat-panel {
+		top: auto;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		width: 100%;
+		height: 52dvh;
+		border-width: 1px 0 0;
+		border-radius: 8px 8px 0 0;
+		box-shadow: 0 -18px 48px rgba(15, 23, 42, 0.2);
+	}
+}

@@ -7,7 +7,15 @@ import { optimisticallyUpdateNote } from './scope';
 import type { NoteChanges } from './outbox';
 import { noteFolderPath } from './folderTree';
 import { currentSelectedNoteId, deleteNote, paintNotes, replaceNotesSidebar } from './page';
-import { noteExpandedFolders, noteFolders, notesData, mobileNoteDialogOpen, setFlushMobileNote, setMobileNoteId, setSelectedNoteFolderId } from './store';
+import {
+	noteExpandedFolders,
+	noteFolders,
+	notesData,
+	mobileNoteDialogOpen,
+	setFlushMobileNote,
+	setMobileNoteId,
+	setSelectedNoteFolderId,
+} from './store';
 import type { NoteSaveState } from './commits';
 
 export function notePathMarkup(note: Note): string {
@@ -149,7 +157,21 @@ export function noteEditorMarkup(selected: Note, mobile = false): string {
 		<form data-note-form>
 			${mobile ? `<div class="note-editor-head"><button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>${notePathMarkup(selected)}${noteActionControlsMarkup(selected)}</div>` : ''}
 			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-heading"><input data-note-title value="${html(selected.title)}" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}"></div><div class="note-source" data-note-source aria-label="${t('markdown')}"></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
+			${
+				mobile
+					? `<div class="note-mobile-edit-tools" data-mobile-editor-tools aria-label="${locale === 'zh' ? '编辑工具' : 'Editing tools'}">
+				<button type="button" data-mobile-format="bold" data-marker="**" title="${locale === 'zh' ? '粗体' : 'Bold'}"><i data-lucide="bold"></i></button>
+				<button type="button" data-mobile-format="italic" data-marker="*" title="${locale === 'zh' ? '斜体' : 'Italic'}"><i data-lucide="italic"></i></button>
+				<button type="button" data-mobile-format="code" data-marker="\u0060" title="${locale === 'zh' ? '行内代码' : 'Inline code'}"><i data-lucide="code"></i></button>
+				<span class="note-mobile-tool-divider"></span>
+				<button type="button" data-mobile-ai-action="summarize"><i data-lucide="list-collapse"></i><span>${locale === 'zh' ? '总结' : 'Summarize'}</span></button>
+				<button type="button" data-mobile-ai-action="polish"><i data-lucide="wand-sparkles"></i><span>${locale === 'zh' ? '润色' : 'Polish'}</span></button>
+				<button type="button" data-mobile-ai-action="rewrite"><i data-lucide="pencil-line"></i><span>${locale === 'zh' ? '修改' : 'Edit'}</span></button>
+			</div>`
+					: ''
+			}
 		</form>
+		<button type="button" class="note-ai-chat-trigger" data-note-ai-chat title="${locale === 'zh' ? '询问 AI' : 'Ask AI'}" aria-label="${locale === 'zh' ? '询问 AI' : 'Ask AI'}"><i data-lucide="message-circle"></i><i class="note-ai-chat-spark" data-lucide="sparkles"></i></button>
 	</section>`;
 }
 
@@ -470,6 +492,7 @@ export function bindNoteEditor(
 			void import('../editor/aiAssistant').then(({ bindMarkdownAiAssistant }) => {
 				syncAiEmptyPrompt = bindMarkdownAiAssistant(view, source, locale, {
 					onError: (error) => toast(errorMessage(error)),
+					noteTitle: () => title.value.trim() || (locale === 'zh' ? '无标题便签' : 'Untitled note'),
 					onTitleChange: (nextTitle) => {
 						optimisticallyUpdateNote(data, selected, { title: nextTitle });
 						title.value = nextTitle;

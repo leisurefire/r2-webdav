@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeAiMarkdown, splitAiTitle, splitRewriteSummary } from './aiAssistant';
+import { normalizeAiMarkdown, parseAiCitations, splitAiTitle, splitRewriteSummary } from './aiAssistant';
 import { buildAiReviewPreview, diffText } from './textDiff';
 import { buildAiReviewMarkDecorations } from './markdownLivePreview';
 
@@ -53,6 +53,25 @@ describe('character-level AI review preview', () => {
 		const preview = buildAiReviewPreview('same', 'same');
 		expect(preview.text).toBe('same');
 		expect(preview.segments).toEqual([]);
+	});
+});
+
+describe('read-only AI answer citations', () => {
+	it('deduplicates source ranges and keeps stable reference numbers', () => {
+		const result = parseAiCitations('First [[cite:3-5]], again [[cite:3-5]], then [[cite:9]].');
+
+		expect(result.markdown).toBe('First  [1], again  [1], then  [2].');
+		expect(result.citations).toEqual([
+			{ startLine: 3, endLine: 5, index: 1 },
+			{ startLine: 9, endLine: 9, index: 2 },
+		]);
+	});
+
+	it('normalizes reversed and zero line ranges', () => {
+		expect(parseAiCitations('Answer [[cite:0-0]] [[cite:8-2]]').citations).toEqual([
+			{ startLine: 1, endLine: 1, index: 1 },
+			{ startLine: 8, endLine: 8, index: 2 },
+		]);
 	});
 });
 

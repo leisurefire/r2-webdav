@@ -7,12 +7,11 @@ import './styles/responsive.css';
 import { hasSession } from './api/client';
 import { pageFromPath, registerRender } from './shell';
 import { renderCalendar } from './pages/calendar';
-import { renderDevices } from './pages/devices';
 import { renderFiles } from './pages/files';
 import { renderLinks } from './pages/bookmarks';
 import { renderLogin } from './pages/login';
 import { renderNotes, paintNotes } from './notes/page';
-import { renderSettings } from './pages/settings';
+import { openSettingsModal } from './pages/settings';
 import { flushAllNoteCommits, hasUnsyncedNoteChanges } from './notes/commits';
 import {
 	flushMobileNote,
@@ -30,6 +29,9 @@ async function render(): Promise<void> {
 		renderLogin();
 		return;
 	}
+	const legacySettingsTab =
+		location.pathname === '/devices' ? 'devices' : location.pathname === '/settings' ? 'connection' : null;
+	if (legacySettingsTab) history.replaceState({}, '', '/files');
 	const page = pageFromPath();
 	if (
 		location.pathname === '/' ||
@@ -40,11 +42,12 @@ async function render(): Promise<void> {
 	else if (page === 'calendar') await renderCalendar();
 	else if (page === 'notes') await renderNotes();
 	else if (page === 'links') await renderLinks();
-	else if (page === 'devices') await renderDevices();
-	else renderSettings();
+	else await renderLinks();
+	if (legacySettingsTab) await openSettingsModal(legacySettingsTab);
 }
 
 registerRender(render);
+document.addEventListener('truespace:open-settings', () => void openSettingsModal());
 
 window.addEventListener('popstate', () => {
 	if (mobileNoteDialogOpen) {

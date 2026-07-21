@@ -3306,6 +3306,218 @@ body:has(.app-shell) {
 	margin-bottom: 28px;
 }
 
+/* Settings is an account-level modal so the current workspace stays in place. */
+.settings-dialog {
+	width: min(920px, calc(100vw - 32px));
+	height: min(680px, calc(100dvh - 32px));
+	max-width: none;
+	max-height: none;
+	border-radius: 8px;
+	overflow: hidden;
+}
+
+.settings-modal-shell {
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	background: var(--panel-bg);
+}
+
+.settings-modal-head {
+	min-height: 76px;
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 16px 18px;
+	border-bottom: 1px solid var(--line);
+}
+
+.settings-modal-head h2,
+.settings-panels h3 {
+	margin: 0;
+	font-size: 18px;
+	font-weight: 650;
+	letter-spacing: 0;
+}
+
+.settings-modal-head p,
+.settings-panel-hint {
+	margin: 4px 0 0;
+	color: var(--muted);
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.settings-modal-head > button {
+	margin-left: auto;
+}
+
+.settings-modal-body {
+	min-height: 0;
+	flex: 1;
+	display: grid;
+	grid-template-columns: 190px minmax(0, 1fr);
+}
+
+.settings-tabs {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	padding: 12px;
+	border-right: 1px solid var(--line);
+	background: var(--surface);
+}
+
+.settings-tabs button {
+	min-height: 38px;
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	padding: 7px 9px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--muted);
+	font: inherit;
+	font-size: 13px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.settings-tabs button:hover {
+	background: var(--hover-bg);
+	color: var(--ink);
+}
+
+.settings-tabs button.active {
+	background: var(--panel-bg);
+	color: var(--ink);
+	box-shadow: 0 0 0 1px var(--line);
+	font-weight: 600;
+}
+
+.settings-tabs svg {
+	width: 16px;
+	height: 16px;
+}
+
+.settings-panels {
+	min-width: 0;
+	overflow-y: auto;
+	padding: 24px;
+}
+
+.settings-panels > section {
+	max-width: 640px;
+}
+
+.settings-panels .settings-panel-hint {
+	margin-bottom: 24px;
+}
+
+.settings-ai-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 2px 14px;
+}
+
+.settings-inline-action {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-top: 8px;
+}
+
+.settings-device-list {
+	display: grid;
+	gap: 8px;
+}
+
+.settings-device-card {
+	display: grid;
+	grid-template-columns: 36px minmax(0, 1fr) auto;
+	align-items: start;
+	gap: 12px;
+	padding: 12px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+}
+
+.settings-device-card .device-icon {
+	width: 36px;
+	height: 36px;
+}
+
+.settings-device-card h3 {
+	display: inline;
+	font-size: 14px;
+}
+
+.settings-device-card .device-info p {
+	margin: 4px 0 8px;
+}
+
+.settings-device-card dl {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 20px;
+}
+
+@media (max-width: 680px) {
+	.settings-dialog {
+		width: calc(100vw - 16px);
+		height: calc(100dvh - 16px);
+	}
+
+	.settings-modal-head {
+		min-height: 64px;
+		padding: 12px;
+	}
+
+	.settings-modal-head p {
+		display: none;
+	}
+
+	.settings-modal-body {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.settings-tabs {
+		flex-direction: row;
+		padding: 8px;
+		border-right: 0;
+		border-bottom: 1px solid var(--line);
+		overflow-x: auto;
+	}
+
+	.settings-tabs button {
+		flex: none;
+	}
+
+	.settings-panels {
+		padding: 18px 14px;
+	}
+
+	.settings-ai-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.settings-inline-action {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.settings-device-card {
+		grid-template-columns: 36px minmax(0, 1fr);
+	}
+
+	.settings-device-card > .button {
+		grid-column: 2;
+		justify-self: start;
+	}
+}
+
 @media (max-width: 760px) {
 	:root {
 		--page-gutter-x: 12px;
