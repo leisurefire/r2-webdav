@@ -3,7 +3,7 @@ import { html, refreshIcons, toast, errorMessage } from '../shell';
 import { locale, t, type MessageKey } from '../i18n';
 import { openFolderDialog } from '../ui/helpers';
 import { flushNoteCommit, noteCommitStates } from './commits';
-import { optimisticallyUpdateNote } from './scope';
+import { ensureFolderNotesLoaded, optimisticallyUpdateNote } from './scope';
 import type { NoteChanges } from './outbox';
 import { noteFolderPath } from './folderTree';
 import { currentSelectedNoteId, deleteNote, paintNotes, replaceNotesSidebar } from './page';
@@ -12,17 +12,21 @@ import {
 	noteFolders,
 	notesData,
 	mobileNoteDialogOpen,
+	highlightedNoteFolderId,
 	setFlushMobileNote,
 	setMobileNoteId,
+	setHighlightedNoteFolderId,
 	setSelectedNoteFolderId,
 } from './store';
 import type { NoteSaveState } from './commits';
+
+let noteFolderHighlightTimer: ReturnType<typeof setTimeout> | undefined;
 
 export function notePathMarkup(note: Note): string {
 	const title = note.title.trim() || (locale === 'zh' ? '无标题便签' : 'Untitled note');
 	const crumbs: string[] = [];
 	for (const folder of noteFolderPath(noteFolders, note.folderId)) {
-		crumbs.push('<span class="note-path-separator" aria-hidden="true">/</span>');
+		if (crumbs.length) crumbs.push('<span class="note-path-separator" aria-hidden="true">/</span>');
 		crumbs.push(
 			`<button type="button" class="note-path-item" data-note-path-folder="${html(folder.id)}" title="${html(folder.name)}">${html(folder.name)}</button>`,
 		);
@@ -39,8 +43,11 @@ export function revealNoteFolderInTree(folderId: string | null): void {
 	} else {
 		setSelectedNoteFolderId(null);
 	}
+	setHighlightedNoteFolderId(folderId);
+	if (noteFolderHighlightTimer) clearTimeout(noteFolderHighlightTimer);
 	const selectedId = currentSelectedNoteId();
 	if (notesData) replaceNotesSidebar(notesData, selectedId);
+	if (folderId) void ensureFolderNotesLoaded(folderId);
 	requestAnimationFrame(() => {
 		const tree = document.querySelector<HTMLElement>('[data-notes-tree]');
 		if (!tree) return;
@@ -49,8 +56,17 @@ export function revealNoteFolderInTree(folderId: string | null): void {
 			: tree.querySelector<HTMLElement>(
 					'.notes-tree-root-pinned, .notes-tree-root-unpinned, [data-note-folder-drop="root"]',
 				);
-		target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+		const row = target?.matches('.collection-tree-row')
+			? target
+			: target?.querySelector<HTMLElement>(':scope > .collection-tree-row');
+		row?.classList.add('path-highlight');
+		row?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 	});
+	noteFolderHighlightTimer = setTimeout(() => {
+		if (highlightedNoteFolderId !== folderId) return;
+		setHighlightedNoteFolderId(undefined);
+		document.querySelectorAll('.notes-tree .path-highlight').forEach((row) => row.classList.remove('path-highlight'));
+	}, 900);
 }
 
 export type NoteFont = 'sans' | 'serif';

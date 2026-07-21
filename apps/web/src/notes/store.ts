@@ -10,7 +10,8 @@ export const noteSortValues: NoteSort[] = [
 	'created-asc',
 ];
 const savedNoteSort = localStorage.getItem('r2_note_sort') as NoteSort | null;
-export let noteSort: NoteSort = savedNoteSort && noteSortValues.includes(savedNoteSort) ? savedNoteSort : 'modified-desc';
+export let noteSort: NoteSort =
+	savedNoteSort && noteSortValues.includes(savedNoteSort) ? savedNoteSort : 'modified-desc';
 export function setNoteSort(next: NoteSort): void {
 	noteSort = next;
 }
@@ -56,6 +57,10 @@ export function setNoteFoldersLoaded(next: boolean): void {
 export let selectedNoteFolderId: string | null | undefined;
 export function setSelectedNoteFolderId(next: string | null | undefined): void {
 	selectedNoteFolderId = next;
+}
+export let highlightedNoteFolderId: string | null | undefined;
+export function setHighlightedNoteFolderId(next: string | null | undefined): void {
+	highlightedNoteFolderId = next;
 }
 /** Obsidian-style folder expand state; folders start collapsed and only open on user click. */
 export const noteExpandedFolders = new Set<string>();

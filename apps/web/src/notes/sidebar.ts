@@ -1,6 +1,15 @@
 import type { Note, NotePage } from '@r2-webdav/shared-types';
 import { api } from '../api/client';
-import { closeActionMenus, confirmAction, errorMessage, html, loadingMarkup, pageFromPath, refreshIcons, toast } from '../shell';
+import {
+	closeActionMenus,
+	confirmAction,
+	errorMessage,
+	html,
+	loadingMarkup,
+	pageFromPath,
+	refreshIcons,
+	toast,
+} from '../shell';
 import { locale, t } from '../i18n';
 import { openFolderDialog, openTextDialog, renderTreeNodes } from '../ui/helpers';
 import { trackNoteNetworkOp } from './commits';
@@ -15,6 +24,7 @@ import {
 	archivedNotesData,
 	archiveExpanded,
 	draggingNoteFolderId,
+	highlightedNoteFolderId,
 	mobileNoteDialogOpen,
 	noteContentLoaded,
 	noteExpandedFolders,
@@ -50,7 +60,16 @@ import {
 	loadNoteFolders,
 	optimisticallyUpdateNote,
 } from './scope';
-import { currentSelectedNoteId, deleteNote, loadMoreNotes, paintNotes, renderNotes, replaceNotesSidebar, setNotesTreeScrollTop, sortNotes } from './page';
+import {
+	currentSelectedNoteId,
+	deleteNote,
+	loadMoreNotes,
+	paintNotes,
+	renderNotes,
+	replaceNotesSidebar,
+	setNotesTreeScrollTop,
+	sortNotes,
+} from './page';
 import { syncNoteMetadata, syncNotePinControls } from './editorPane';
 import type { NoteChanges } from './outbox';
 import { cacheNotes, invalidateNoteCaches } from './cache';
@@ -98,24 +117,15 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 		`<i class="tree-caret-icon" data-lucide="${expanded ? 'chevron-down' : 'chevron-right'}" aria-hidden="true"></i>`;
 	const notesFor = (folderId: string | null) =>
 		data.items.filter((note) => !note.archived && effectiveNoteFolderId(note) === folderId);
-	const scopeStatus = (folderId: string | null, noteCount: number) => {
-		const scope = noteScopeKey(folderId, false);
-		const loading = noteScopesLoading.has(scope);
-		const loaded = noteScopesLoaded.has(scope);
-		if (loading || (!loaded && noteCount > 0)) {
-			return `<div class="note-scope-status muted">${locale === 'zh' ? '加载中…' : 'Loading…'}</div>`;
-		}
-		return '';
-	};
 	type NoteTreeNode = {
 		kind: 'folder' | 'note' | 'archive';
 		key: string;
 		name: string;
 		expanded: boolean;
+		loading: boolean;
 		active: boolean;
 		children: NoteTreeNode[];
 		note?: Note;
-		statusHtml?: string;
 	};
 	const noteNodes = (items: Note[]): NoteTreeNode[] =>
 		items.map((note) => ({
@@ -123,6 +133,7 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 			key: note.id,
 			name: note.title,
 			expanded: false,
+			loading: false,
 			active: note.id === selected?.id,
 			children: [],
 			note,
@@ -133,31 +144,16 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 	const unpinnedRootNotes = rootNotes.filter((note) => !note.pinned);
 	const folderNode = (node: ReturnType<typeof buildNoteFolderTree>[number]): NoteTreeNode => {
 		const folderNotes = notesFor(node.folder.id);
-		const status = scopeStatus(node.folder.id, node.folder.noteCount);
+		const expanded = noteExpandedFolders.has(node.folder.id);
+		const scope = noteScopeKey(node.folder.id, false);
 		return {
 			kind: 'folder',
 			key: node.folder.id,
 			name: node.folder.name,
-			expanded: noteExpandedFolders.has(node.folder.id),
+			expanded,
+			loading: expanded && noteScopesLoading.has(scope),
 			active: false,
-			children: [
-				...node.children.map(folderNode),
-				...noteNodes(folderNotes),
-				...(status
-					? [
-							{
-								kind: 'note' as const,
-								key: `status-${node.folder.id}`,
-								name: '',
-								expanded: false,
-								active: false,
-								children: [],
-								note: undefined,
-								statusHtml: status,
-							},
-						]
-					: []),
-			],
+			children: [...node.children.map(folderNode), ...noteNodes(folderNotes)],
 		};
 	};
 	const folderTree = buildNoteFolderTree(noteFolders).map(folderNode);
@@ -167,6 +163,7 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 			key: 'archive',
 			name: t('archived'),
 			expanded: archiveExpanded,
+			loading: false,
 			active: false,
 			children: archiveExpanded ? noteNodes(archivedNotesData?.items ?? []) : [],
 		},
@@ -177,12 +174,13 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 			(node) => node.children,
 			(node, depth, children) => {
 				if (node.kind === 'note') {
-					if (node.statusHtml) return node.statusHtml;
 					return node.note ? noteCardMarkup(node.note, selected) : '';
 				}
 				const folder = node.kind === 'folder';
 				const icon = folder
-					? `<span class="note-tree-leading" aria-hidden="true"><i class="tree-folder-icon" data-lucide="${node.expanded ? 'folder-open' : 'folder'}"></i>${caret(node.expanded)}</span>`
+					? node.loading
+						? '<span class="note-tree-leading" aria-hidden="true"><i class="note-tree-loader" data-lucide="loader-circle"></i></span>'
+						: `<span class="note-tree-leading" aria-hidden="true"><i class="tree-folder-icon" data-lucide="${node.expanded ? 'folder-open' : 'folder'}"></i>${caret(node.expanded)}</span>`
 					: caret(node.expanded);
 				const actions = folder
 					? `<div class="note-folder-actions action-menu" data-action-menu><button class="row-action" data-new-note="${html(node.key)}" title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button><button class="row-action" data-menu-toggle title="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-label="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button><div class="action-menu-popover" data-menu-popover role="menu"><button data-move-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="folder-input"></i><span>${locale === 'zh' ? '移动目录' : 'Move folder'}</span></button><button data-rename-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="pencil"></i><span>${locale === 'zh' ? '重命名' : 'Rename'}</span></button><button class="danger" data-delete-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="folder-minus"></i><span>${locale === 'zh' ? '解散' : 'Dissolve'}</span></button></div></div>`
@@ -190,7 +188,8 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 				const filter = node.kind === 'archive' ? 'data-note-archived' : `data-note-folder-filter="${html(node.key)}"`;
 				const drop = node.kind === 'archive' ? 'archive' : node.key;
 				const draggable = folder ? ` draggable="true" data-note-folder-id="${html(node.key)}"` : '';
-				return `<div class="note-tree-node ${folder ? 'note-folder-card' : 'note-tree-special'} ${node.kind === 'archive' ? 'archive-tree-item' : ''} ${node.active ? 'active' : ''} ${node.expanded ? 'expanded' : ''}" data-note-folder-drop="${html(drop)}" style="--tree-depth:${depth}"${draggable}><button type="button" class="collection-tree-row" ${filter}>${icon}<span>${html(node.name)}</span></button>${actions}${node.expanded && children ? `<div class="notes-tree-children">${children}</div>` : ''}</div>`;
+				const highlighted = folder && highlightedNoteFolderId === node.key ? 'path-highlight' : '';
+				return `<div class="note-tree-node ${folder ? 'note-folder-card' : 'note-tree-special'} ${node.kind === 'archive' ? 'archive-tree-item' : ''} ${node.active ? 'active' : ''} ${node.expanded ? 'expanded' : ''}" data-note-folder-drop="${html(drop)}" style="--tree-depth:${depth}"${draggable}><button type="button" class="collection-tree-row ${highlighted}" ${filter}>${icon}<span>${html(node.name)}</span></button>${actions}${node.expanded && children ? `<div class="notes-tree-children">${children}</div>` : ''}</div>`;
 			},
 		);
 	const rootStatus =
@@ -466,8 +465,7 @@ export function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?:
 		node.addEventListener('click', () => {
 			const noteId = node.dataset.note;
 			const note =
-				data.items.find((item) => item.id === noteId) ??
-				archivedNotesData?.items.find((item) => item.id === noteId);
+				data.items.find((item) => item.id === noteId) ?? archivedNotesData?.items.find((item) => item.id === noteId);
 			// Only a note click switches the open document; also reveal its folder.
 			if (note) {
 				if (note.folderId && knownNoteFolderIds().has(note.folderId)) {

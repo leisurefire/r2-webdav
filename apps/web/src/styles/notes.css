@@ -1983,6 +1983,16 @@ details.markdown-callout > .markdown-callout-title::marker {
 	grid-area: 1 / 1;
 }
 
+.note-tree-leading .note-tree-loader {
+	animation: note-tree-spin 800ms linear infinite;
+}
+
+@keyframes note-tree-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
 .note-tree-leading .tree-caret-icon {
 	display: none;
 }
