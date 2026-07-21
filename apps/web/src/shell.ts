@@ -53,6 +53,7 @@ import {
 	X,
 	createIcons,
 } from 'lucide';
+import { openConfirmDialog } from './ui/dialogs';
 import { api, ApiError } from './api/client';
 import { locale, t } from './i18n';
 
@@ -279,17 +280,7 @@ document.addEventListener('keydown', (event) => {
 });
 
 export function confirmAction(title: string, message: string, confirmLabel = 'Delete'): Promise<boolean> {
-	return new Promise((resolve) => {
-		const dialog = document.createElement('dialog');
-		dialog.innerHTML = `<form method="dialog" class="dialog-body"><h2>${html(title)}</h2><p class="muted">${html(message)}</p><div class="dialog-actions"><button class="button" value="cancel">${locale === 'zh' ? '取消' : 'Cancel'}</button><button class="button danger" value="confirm">${html(confirmLabel)}</button></div></form>`;
-		document.body.append(dialog);
-		dialog.addEventListener('close', () => {
-			const confirmed = dialog.returnValue === 'confirm';
-			dialog.remove();
-			resolve(confirmed);
-		});
-		dialog.showModal();
-	});
+	return openConfirmDialog(title, message, confirmLabel, locale === 'zh' ? '取消' : 'Cancel');
 }
 
 export async function confirmLogout(): Promise<void> {

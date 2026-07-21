@@ -41,9 +41,11 @@ const AI_MODEL_ACTION_PREFIX = 'r2_ai_model_';
 
 export function availableAiModels(): string[] {
 	try {
-		const stored = JSON.parse(localStorage.getItem(AI_MODELS_KEY) ?? '[]') as unknown;
+		const raw = localStorage.getItem(AI_MODELS_KEY);
+		if (raw === null) return [...AI_MODEL_FALLBACK];
+		const stored = JSON.parse(raw) as unknown;
 		const models = Array.isArray(stored) ? stored.filter((item): item is string => typeof item === 'string') : [];
-		return models.length ? models : [...AI_MODEL_FALLBACK];
+		return Array.isArray(stored) ? models : [...AI_MODEL_FALLBACK];
 	} catch {
 		return [...AI_MODEL_FALLBACK];
 	}
@@ -433,6 +435,30 @@ export const api = {
 		const payload = (await response.json()) as ApiResponse<{ chats: NoteChatSession[] }>;
 		if (!payload.ok) throw new ApiError(payload.error.message, response.status);
 		return payload.data.chats;
+	},
+	async renameNoteAiChat(noteId: string, chatId: string, title: string): Promise<NoteChatSession> {
+		const response = await fetch(
+			`${notesApiBase}/api/v1/ai?resource=chats&noteId=${encodeURIComponent(noteId)}&chatId=${encodeURIComponent(chatId)}`,
+			{
+				method: 'PATCH',
+				headers: authHeaders({ 'Content-Type': 'application/json' }),
+				credentials: 'include',
+				body: JSON.stringify({ title }),
+			},
+		);
+		if (!response.ok) throw new ApiError('Unable to rename AI chat', response.status);
+		const payload = (await response.json()) as ApiResponse<{ chat: NoteChatSession }>;
+		if (!payload.ok) throw new ApiError(payload.error.message, response.status);
+		return payload.data.chat;
+	},
+	async deleteNoteAiChat(noteId: string, chatId: string): Promise<void> {
+		const response = await fetch(
+			`${notesApiBase}/api/v1/ai?resource=chats&noteId=${encodeURIComponent(noteId)}&chatId=${encodeURIComponent(chatId)}`,
+			{ method: 'DELETE', headers: authHeaders(), credentials: 'include' },
+		);
+		if (!response.ok) throw new ApiError('Unable to delete AI chat', response.status);
+		const payload = (await response.json()) as ApiResponse<{ chat: null }>;
+		if (!payload.ok) throw new ApiError(payload.error.message, response.status);
 	},
 };
 

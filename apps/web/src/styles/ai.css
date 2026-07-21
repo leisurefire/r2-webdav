@@ -475,26 +475,27 @@
 .note-ai-history-select {
 	min-width: 0;
 	max-width: 142px;
+	flex: 0 1 142px;
+	display: block !important;
+}
+
+.note-ai-history-select .custom-select-trigger {
 	height: 30px;
-	padding: 0 24px 0 8px;
-	border: 1px solid transparent;
-	border-radius: 5px;
-	background-color: transparent;
+	min-height: 30px;
+	padding: 0 6px 0 8px;
+	border-color: transparent;
+	background: transparent;
 	color: var(--muted);
-	font: inherit;
 	font-size: 11px;
-	text-overflow: ellipsis;
-	cursor: pointer;
 	transition:
 		border-color 140ms ease,
 		background-color 140ms ease;
 }
 
-.note-ai-history-select:hover,
-.note-ai-history-select:focus {
+.note-ai-history-select:hover .custom-select-trigger,
+.note-ai-history-select.open .custom-select-trigger {
 	border-color: var(--line);
 	background-color: var(--surface);
-	outline: 0;
 }
 
 .note-ai-chat-title {
@@ -523,6 +524,7 @@
 
 	.note-ai-history-select {
 		max-width: 104px;
+		flex-basis: 104px;
 	}
 }
 

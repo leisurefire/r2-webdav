@@ -29,6 +29,10 @@
 	padding-block: 6px;
 }
 
+.bookmark-folder-custom-select {
+	width: 100%;
+}
+
 .bookmark-folder {
 	position: relative;
 	text-overflow: ellipsis;

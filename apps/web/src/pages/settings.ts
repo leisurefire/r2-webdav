@@ -1,4 +1,5 @@
 import type { DeviceSession } from '@r2-webdav/shared-types';
+import { Trash2 } from 'lucide';
 import {
 	API_BASE,
 	aiModelForAction,
@@ -10,6 +11,7 @@ import {
 } from '../api/client';
 import { confirmAction, errorMessage, html, loadingMarkup, navigate, refreshIcons, render, toast } from '../shell';
 import { locale, setLocale, t, type Locale, type MessageKey } from '../i18n';
+import { enhanceSelect, type CustomSelectHandle } from '../ui/dropdown';
 
 type SettingsTab = 'connection' | 'language' | 'ai' | 'devices';
 
@@ -56,7 +58,7 @@ function deviceMarkup(device: DeviceSession): string {
 export async function openSettingsModal(initialTab: SettingsTab = 'connection'): Promise<void> {
 	document.querySelector<HTMLDialogElement>('#settings-dialog')?.remove();
 	const davOrigin = API_BASE || location.origin;
-	const models = availableAiModels();
+	let models = availableAiModels();
 	const dialog = document.createElement('dialog');
 	dialog.id = 'settings-dialog';
 	dialog.className = 'settings-dialog';
@@ -150,6 +152,26 @@ export async function openSettingsModal(initialTab: SettingsTab = 'connection'):
 		close();
 		void render().then(() => openSettingsModal('language'));
 	});
+	const languageSelect = dialog.querySelector<HTMLSelectElement>('#language-select');
+	if (languageSelect) enhanceSelect(languageSelect);
+	const modelDropdowns = new Map<HTMLSelectElement, CustomSelectHandle>();
+	const refreshModelSelects = () => {
+		dialog.querySelectorAll<HTMLSelectElement>('[data-ai-model-select]').forEach((select) => {
+			const action = select.dataset.aiModelSelect as AiAction;
+			const current = aiModelForAction(action);
+			const custom = dialog.querySelector<HTMLInputElement>(`[data-ai-model-custom="${action}"]`);
+			const isCustom = !models.includes(current);
+			select.replaceChildren(
+				...models.map((model) => new Option(model, model, false, model === current)),
+				new Option(label('自定义模型 ID…', 'Custom model ID…'), '__custom__', false, isCustom),
+			);
+			if (custom) {
+				custom.hidden = !isCustom;
+				if (isCustom) custom.value = current;
+			}
+			modelDropdowns.get(select)?.refresh();
+		});
+	};
 	dialog.querySelectorAll<HTMLSelectElement>('[data-ai-model-select]').forEach((select) => {
 		select.addEventListener('change', () => {
 			const action = select.dataset.aiModelSelect as AiAction;
@@ -159,6 +181,20 @@ export async function openSettingsModal(initialTab: SettingsTab = 'connection'):
 			if (isCustom) custom?.focus();
 			else saveAiModelForAction(action, select.value);
 		});
+		modelDropdowns.set(
+			select,
+			enhanceSelect(select, {
+				getActions: (option) =>
+					option.value === '__custom__'
+						? []
+						: [{ id: 'remove', label: label('移除模型', 'Remove model'), icon: Trash2, danger: true }],
+				onAction: (_action, option) => {
+					models = models.filter((model) => model !== option.value);
+					saveAvailableAiModels(models);
+					refreshModelSelects();
+				},
+			}),
+		);
 	});
 	dialog.querySelectorAll<HTMLInputElement>('[data-ai-model-custom]').forEach((input) => {
 		const save = () => saveAiModelForAction(input.dataset.aiModelCustom as AiAction, input.value);
@@ -174,17 +210,8 @@ export async function openSettingsModal(initialTab: SettingsTab = 'connection'):
 			const remoteModels = await api.aiModels();
 			if (!remoteModels.length) throw new Error(label('服务未返回可用模型', 'No models returned by the provider'));
 			saveAvailableAiModels(remoteModels);
-			dialog.querySelectorAll<HTMLSelectElement>('[data-ai-model-select]').forEach((select) => {
-				const action = select.dataset.aiModelSelect as AiAction;
-				const current = aiModelForAction(action);
-				const custom = dialog.querySelector<HTMLInputElement>(`[data-ai-model-custom="${action}"]`);
-				const isCustom = !remoteModels.includes(current);
-				select.replaceChildren(
-					...remoteModels.map((model) => new Option(model, model, false, model === current)),
-					new Option(label('自定义模型 ID…', 'Custom model ID…'), '__custom__', false, isCustom),
-				);
-				if (custom) custom.hidden = !isCustom;
-			});
+			models = remoteModels;
+			refreshModelSelects();
 			toast(t('aiPullModelsDone'));
 		} catch (error) {
 			toast(errorMessage(error));

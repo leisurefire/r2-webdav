@@ -36,6 +36,7 @@ import {
 	type WikiLinkRange,
 } from './markdownStructure';
 import { normalizeClipboardText, prepareClipboardText, readClipboardText } from './markdownClipboard';
+import { markdownWrapEdit } from './markdownFormatting';
 import {
 	renderMarkdown,
 	renderMarkdownDocument,
@@ -219,33 +220,10 @@ export function parsedDeleteRange(state: EditorState, direction: DeleteDirection
 
 export function toggleMarkdownWrap(view: EditorView, marker: string): boolean {
 	const selection = view.state.selection.main;
-	const { from, to } = selection;
-	const selected = view.state.sliceDoc(from, to);
-	const before = from >= marker.length ? view.state.sliceDoc(from - marker.length, from) : '';
-	const after = view.state.sliceDoc(to, to + marker.length);
-	if (before === marker && after === marker) {
-		view.dispatch({
-			changes: [
-				{ from: from - marker.length, to: from },
-				{ from: to, to: to + marker.length },
-			],
-			selection: { anchor: from - marker.length, head: to - marker.length },
-			annotations: Transaction.userEvent.of('input.format'),
-		});
-		return true;
-	}
-	if (selected.length >= marker.length * 2 && selected.startsWith(marker) && selected.endsWith(marker)) {
-		const inner = selected.slice(marker.length, -marker.length);
-		view.dispatch({
-			changes: { from, to, insert: inner },
-			selection: { anchor: from, head: from + inner.length },
-			annotations: Transaction.userEvent.of('input.format'),
-		});
-		return true;
-	}
+	const edit = markdownWrapEdit(view.state.doc.toString(), selection.from, selection.to, marker);
 	view.dispatch({
-		changes: { from, to, insert: `${marker}${selected}${marker}` },
-		selection: { anchor: from + marker.length, head: to + marker.length },
+		changes: { from: edit.from, to: edit.to, insert: edit.insert },
+		selection: { anchor: edit.selectionFrom, head: edit.selectionTo },
 		annotations: Transaction.userEvent.of('input.format'),
 	});
 	return true;

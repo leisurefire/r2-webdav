@@ -3,6 +3,7 @@ import { Lunar, Solar } from 'lunar-typescript';
 import { api } from '../api/client';
 import { confirmAction, errorMessage, html, pageFromPath, refreshIcons, shell, sidebarContext, toast } from '../shell';
 import { locale, t } from '../i18n';
+import { enhanceSelect } from '../ui/dropdown';
 
 export let calendarCursor = new Date();
 calendarCursor.setDate(1);
@@ -240,6 +241,7 @@ export async function eventDialog(
 			<div class="dialog-actions">${existing ? `<button type="button" class="button danger danger-zone" id="event-delete">${copy.delete}</button>` : ''}<button type="button" class="button" id="event-cancel">${copy.cancel}</button><button class="button primary">${copy.save}</button></div>
 		</form>`;
 		document.body.append(dialog);
+		dialog.querySelectorAll<HTMLSelectElement>('select').forEach((select) => enhanceSelect(select));
 		const setState = () => {
 			dialog
 				.querySelectorAll<HTMLElement>('[data-event-kind]')

@@ -2400,13 +2400,11 @@ dialog::backdrop {
 	position: relative;
 }
 
-.action-menu-popover {
+.action-menu-popover,
+.ui-menu-popover {
 	position: absolute;
-	top: calc(100% + 5px);
-	right: 0;
 	z-index: 40;
 	min-width: 156px;
-	display: none;
 	padding: 4px;
 	border: 1px solid var(--line);
 	border-radius: 7px;
@@ -2414,12 +2412,19 @@ dialog::backdrop {
 	box-shadow: 0 12px 28px rgb(15 23 42 / 0.14);
 }
 
+.action-menu-popover {
+	top: calc(100% + 5px);
+	right: 0;
+	display: none;
+}
+
 .action-menu.open .action-menu-popover {
 	display: grid;
 	gap: 1px;
 }
 
-.action-menu-popover button {
+.action-menu-popover button,
+.ui-menu-popover button {
 	min-height: 30px;
 	display: flex;
 	align-items: center;
@@ -2436,19 +2441,141 @@ dialog::backdrop {
 }
 
 .action-menu-popover button:hover,
-.action-menu-popover button.selected {
+.action-menu-popover button.selected,
+.ui-menu-popover button:hover,
+.ui-menu-popover button:focus-visible {
 	background: var(--hover-bg);
 	color: var(--ink);
+	outline: 0;
 }
 
-.action-menu-popover button.danger {
+.action-menu-popover button.danger,
+.ui-menu-popover button.danger {
 	color: #b42318;
 }
 
-.action-menu-popover svg {
+.action-menu-popover svg,
+.ui-menu-popover svg {
 	width: 14px;
 	height: 14px;
 	flex: none;
+}
+
+.custom-select {
+	position: relative;
+	min-width: 0;
+}
+
+.custom-select-native {
+	position: absolute !important;
+	width: 1px !important;
+	height: 1px !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.custom-select-trigger {
+	width: 100%;
+	min-height: 36px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 7px 9px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--panel-bg);
+	color: var(--ink);
+	font: inherit;
+	font-size: 13px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.custom-select-trigger:hover,
+.custom-select.open .custom-select-trigger {
+	border-color: color-mix(in srgb, var(--ink) 24%, var(--line));
+	background: var(--hover-bg);
+}
+
+.custom-select-trigger:focus-visible {
+	outline: 2px solid color-mix(in srgb, var(--accent) 38%, transparent);
+	outline-offset: 1px;
+}
+
+.custom-select-value {
+	min-width: 0;
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.custom-select-chevron {
+	width: 14px;
+	height: 14px;
+	color: var(--quiet);
+	transition: transform 140ms ease;
+}
+
+.custom-select.open .custom-select-chevron {
+	transform: rotate(180deg);
+}
+
+.custom-select-menu {
+	position: fixed;
+	inset: auto;
+	z-index: 120;
+	margin: 0;
+	max-height: min(320px, calc(100dvh - 16px));
+	overflow-y: auto;
+}
+
+.custom-select-menu[hidden],
+.custom-select-menu:not(:popover-open) {
+	display: none;
+}
+
+.custom-select-row {
+	display: flex;
+	align-items: center;
+	gap: 1px;
+}
+
+.custom-select-option {
+	min-width: 0;
+	flex: 1;
+}
+
+.custom-select-option > span {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.custom-select-check {
+	opacity: 0;
+}
+
+.custom-select-option[aria-selected='true'] {
+	color: var(--ink);
+	font-weight: 600;
+}
+
+.custom-select-option[aria-selected='true'] .custom-select-check {
+	opacity: 1;
+}
+
+.custom-select-action {
+	width: 30px;
+	justify-content: center;
+	padding: 5px !important;
+	color: var(--quiet) !important;
+}
+
+.custom-select-action.danger:hover {
+	color: #b42318 !important;
 }
 
 .file-card:has(.action-menu.open) {
@@ -2481,8 +2608,7 @@ dialog {
 
 .dialog-body h2 {
 	margin: 0;
-	padding: 20px 24px 16px;
-	border-bottom: 1px solid var(--soft-line);
+	padding: 20px 24px 10px;
 	font-size: 19px;
 	font-weight: 650;
 }
@@ -2507,9 +2633,7 @@ dialog {
 
 .dialog-actions {
 	margin-top: 22px;
-	padding: 14px 24px;
-	border-top: 1px solid var(--soft-line);
-	background: color-mix(in srgb, var(--surface) 70%, transparent);
+	padding: 0 24px 20px;
 }
 
 .file-markdown-preview,
@@ -3329,7 +3453,6 @@ body:has(.app-shell) {
 	align-items: center;
 	gap: 16px;
 	padding: 16px 18px;
-	border-bottom: 1px solid var(--line);
 }
 
 .settings-modal-head h2,
@@ -3364,8 +3487,7 @@ body:has(.app-shell) {
 	flex-direction: column;
 	gap: 3px;
 	padding: 12px;
-	border-right: 1px solid var(--line);
-	background: var(--surface);
+	background: color-mix(in srgb, var(--surface) 68%, var(--panel-bg));
 }
 
 .settings-tabs button {
@@ -3525,7 +3647,6 @@ body:has(.app-shell) {
 		flex-direction: row;
 		padding: 8px;
 		border-right: 0;
-		border-bottom: 1px solid var(--line);
 		overflow-x: auto;
 	}
 

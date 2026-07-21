@@ -155,6 +155,32 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
 			];
 			return json({ ok: true, data: { models } });
 		}
+		if (request.method === 'PATCH' || request.method === 'DELETE') {
+			const url = new URL(request.url);
+			if (url.searchParams.get('resource') !== 'chats') return fail('Unknown AI resource', 404);
+			const noteId = url.searchParams.get('noteId') ?? '';
+			const chatId = url.searchParams.get('chatId') ?? '';
+			if (!/^[0-9a-f-]{36}$/i.test(noteId) || !/^[0-9a-f-]{36}$/i.test(chatId)) return fail('Invalid chat ID', 400);
+			const row = await env.NOTES_DB.prepare('SELECT ai_chats FROM r2_webdav_notes WHERE id = ? AND user_id = ?')
+				.bind(noteId, owner)
+				.first<{ ai_chats: string | null }>();
+			if (!row) return fail('Note not found', 404);
+			const chats = parseChats(row.ai_chats);
+			const index = chats.findIndex((chat) => chat.id === chatId);
+			if (index < 0) return fail('Chat not found', 404);
+			if (request.method === 'DELETE') chats.splice(index, 1);
+			else {
+				const input = (await request.json()) as { title?: string };
+				const title = input.title?.replace(/\s+/g, ' ').trim().slice(0, 80) ?? '';
+				if (!title) return fail('Invalid chat title', 400);
+				chats[index].title = title;
+				chats[index].updatedAt = new Date().toISOString();
+			}
+			await env.NOTES_DB.prepare('UPDATE r2_webdav_notes SET ai_chats = ? WHERE id = ? AND user_id = ?')
+				.bind(JSON.stringify(chats), noteId, owner)
+				.run();
+			return json({ ok: true, data: { chat: request.method === 'PATCH' ? chats[index] : null } });
+		}
 		if (request.method !== 'POST') return fail('Method not allowed', 405);
 		const input = (await request.json()) as {
 			model?: string;

@@ -3,10 +3,9 @@ import { api } from '../api/client';
 import { errorMessage, html, refreshIcons, shell, sidebarContext, toast } from '../shell';
 import { locale, t } from '../i18n';
 import { renderTreeNodes } from '../ui/helpers';
+import { enhanceSelect } from '../ui/dropdown';
 import { bindBookmarkPreviews } from '../bookmarks/previews';
 import { bookmarkHub, pullBookmarks } from '../bookmarks/store';
-
-
 
 interface BookmarkCard {
 	title: string;
@@ -157,6 +156,8 @@ export function paintBookmarkView(): void {
 	if (context)
 		context.innerHTML = `<div class="sidebar-context-head"><strong>${locale === 'zh' ? '链接目录' : 'Link folders'}</strong><div class="sidebar-context-tools"><button type="button" class="row-action" data-links-refresh title="${refreshLabel}" aria-label="${refreshLabel}"><i data-lucide="refresh-cw"></i></button></div></div><div class="notes-tree bookmark-folder-tree"><div class="bookmark-tree-node note-tree-node note-tree-special expanded"><button class="bookmark-folder collection-tree-row bookmark-folder-root ${folder === root && root.folders.length === 0 ? 'active' : ''}" data-bookmark-folder="" data-bookmark-has-children="${root.folders.length > 0}" style="--tree-depth:0"><i class="tree-caret-icon" data-lucide="chevron-down" aria-hidden="true"></i><span>${locale === 'zh' ? '全部链接' : 'All links'}</span></button>${folderTree || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</div></div>`;
 	refreshIcons();
+	const folderSelect = content.querySelector<HTMLSelectElement>('.bookmark-folder-select');
+	if (folderSelect) enhanceSelect(folderSelect, { className: 'bookmark-folder-custom-select' });
 	bindBookmarkPreviews(content);
 	const path = content.querySelector<HTMLElement>('.bookmark-path');
 	if (path) path.scrollLeft = path.scrollWidth;
@@ -179,7 +180,7 @@ export function paintBookmarkView(): void {
 			paintBookmarkView();
 		}),
 	);
-	content.querySelector<HTMLSelectElement>('.bookmark-folder-select')?.addEventListener('change', (event) => {
+	folderSelect?.addEventListener('change', (event) => {
 		const key = (event.target as HTMLSelectElement).value;
 		bookmarkFolderPath = key ? key.split('\u001f') : [];
 		paintBookmarkView();
@@ -188,12 +189,12 @@ export function paintBookmarkView(): void {
 		await pullBookmarks(true);
 		paintBookmarkView();
 	};
-	content.querySelectorAll('[data-links-refresh]').forEach((node) =>
-		node.addEventListener('click', () => void refreshLinks()),
-	);
-	context?.querySelectorAll('[data-links-refresh]').forEach((node) =>
-		node.addEventListener('click', () => void refreshLinks()),
-	);
+	content
+		.querySelectorAll('[data-links-refresh]')
+		.forEach((node) => node.addEventListener('click', () => void refreshLinks()));
+	context
+		?.querySelectorAll('[data-links-refresh]')
+		.forEach((node) => node.addEventListener('click', () => void refreshLinks()));
 }
 
 export async function renderLinks(forceSync = false): Promise<void> {

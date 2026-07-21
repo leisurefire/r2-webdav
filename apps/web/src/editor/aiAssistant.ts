@@ -8,6 +8,7 @@ import {
 	FileText,
 	Italic,
 	MessageCircle,
+	Pencil,
 	Plus,
 	Quote,
 	RotateCcw,
@@ -15,6 +16,7 @@ import {
 	Sparkles,
 	Square,
 	TextSelect,
+	Trash2,
 	WandSparkles,
 	X,
 	createElement,
@@ -31,6 +33,9 @@ import {
 } from './markdownLivePreview';
 import { buildAiReviewPreview } from './textDiff';
 import { renderMarkdown } from './markdownRenderer';
+import { markdownMarkerCoverage } from './markdownFormatting';
+import { enhanceSelect, type CustomSelectHandle } from '../ui/dropdown';
+import { openConfirmDialog, openTextInputDialog } from '../ui/dialogs';
 
 type Locale = 'en' | 'zh';
 
@@ -227,7 +232,7 @@ function bindNoteContextChat(
 		panel.innerHTML = `<header class="note-ai-chat-head">
 			<span class="ai-mark"><i data-lucide="message-circle"></i></span>
 			<div class="note-ai-chat-title"><strong>${t('询问 AI', 'Ask AI')}</strong><span>${aiModelForAction('chat')}</span></div>
-			<select class="note-ai-history-select" data-chat-history title="${t('历史对话', 'Chat history')}" aria-label="${t('历史对话', 'Chat history')}"></select>
+			<select data-chat-history title="${t('历史对话', 'Chat history')}" aria-label="${t('历史对话', 'Chat history')}"></select>
 			<button type="button" class="row-action" data-chat-new title="${t('新建对话', 'New chat')}" aria-label="${t('新建对话', 'New chat')}"><i data-lucide="plus"></i></button>
 			<button type="button" class="row-action" data-chat-close title="${t('关闭', 'Close')}" aria-label="${t('关闭', 'Close')}"><i data-lucide="x"></i></button>
 		</header>
@@ -246,6 +251,7 @@ function bindNoteContextChat(
 		send.disabled = true;
 		const historySelect = panel.querySelector<HTMLSelectElement>('[data-chat-history]')!;
 		let conversation = session.messages;
+		let historyDropdown: CustomSelectHandle;
 		const paintHistory = () => {
 			const visible = [session, ...sessions.filter((item) => item.id !== session.id)];
 			historySelect.replaceChildren(
@@ -253,6 +259,7 @@ function bindNoteContextChat(
 					(item) => new Option(item.title || t('新对话', 'New chat'), item.id, false, item.id === session.id),
 				),
 			);
+			historyDropdown?.refresh();
 		};
 		const citationExcerpt = (citation: AiCitation): string => {
 			const lines = documentText.split('\n');
@@ -361,6 +368,8 @@ function bindNoteContextChat(
 				);
 				if (!answer.trim()) throw new Error(t('AI 没有返回内容', 'AI returned no content'));
 				conversation.push({ role: 'assistant', content: answer });
+				sessions = [session, ...sessions.filter((item) => item.id !== session.id)];
+				paintHistory();
 				renderAnswer(answerNode, answer);
 			} catch (error) {
 				if (controller?.signal.aborted) return;
@@ -370,6 +379,54 @@ function bindNoteContextChat(
 				controller = null;
 			}
 		};
+		historyDropdown = enhanceSelect(historySelect, {
+			className: 'note-ai-history-select',
+			getActions: () => [
+				{ id: 'rename', label: t('重命名', 'Rename'), icon: Pencil },
+				{ id: 'delete', label: t('删除', 'Delete'), icon: Trash2, danger: true },
+			],
+			onAction: async (action, option) => {
+				const target = [session, ...sessions].find((item) => item.id === option.value);
+				if (!target) return;
+				if (action.id === 'rename') {
+					const title = await openTextInputDialog(
+						t('重命名对话', 'Rename chat'),
+						t('对话名称', 'Chat name'),
+						target.title,
+						t('保存', 'Save'),
+						t('取消', 'Cancel'),
+					);
+					if (!title || title === target.title) return;
+					try {
+						const stored = sessions.some((item) => item.id === target.id);
+						if (stored) await api.renameNoteAiChat(noteId, target.id, title);
+						target.title = title;
+						paintHistory();
+					} catch (error) {
+						options.onError(error);
+					}
+					return;
+				}
+				if (
+					!(await openConfirmDialog(
+						t('删除这段对话？', 'Delete this chat?'),
+						target.title,
+						t('删除', 'Delete'),
+						t('取消', 'Cancel'),
+					))
+				)
+					return;
+				try {
+					const stored = sessions.some((item) => item.id === target.id);
+					if (stored) await api.deleteNoteAiChat(noteId, target.id);
+					sessions = sessions.filter((item) => item.id !== target.id);
+					if (session.id === target.id) createSession();
+					else paintHistory();
+				} catch (error) {
+					options.onError(error);
+				}
+			},
+		});
 		paintHistory();
 		renderConversation();
 		historySelect.addEventListener('change', () => {
@@ -431,19 +488,7 @@ function bindNoteContextChat(
 
 /** How much of [from, to) is wrapped by paired markers: none, partially, or fully. */
 function markerCoverage(view: EditorView, from: number, to: number, marker: string): 'none' | 'partial' | 'full' {
-	const doc = view.state.doc.toString();
-	const char = marker === '**' ? '\\*' : marker === '`' ? '`' : marker === '$' ? '\\$' : '\\*';
-	const run = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-	const paired = new RegExp(`(?<!${char})${run}(?!${char})([^\\n]+?)(?<!${char})${run}(?!${char})`, 'g');
-	let covered = 0;
-	let match: RegExpExecArray | null;
-	while ((match = paired.exec(doc))) {
-		const start = Math.max(match.index, from);
-		const end = Math.min(match.index + match[0].length, to);
-		if (end > start) covered += end - start;
-	}
-	if (covered >= to - from) return 'full';
-	return covered > 0 ? 'partial' : 'none';
+	return markdownMarkerCoverage(view.state.doc.toString(), from, to, marker);
 }
 
 export function bindMarkdownAiAssistant(
