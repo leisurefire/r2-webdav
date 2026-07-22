@@ -254,11 +254,11 @@ function bindNoteContextChat(
 		if (panel) {
 			panel.classList.add('is-closing');
 			const closing = panel;
+			root.classList.remove('note-ai-sidebar-open');
 			window.setTimeout(() => {
 				closing.remove();
-				root?.classList.remove('note-ai-sidebar-open');
-			}, 180);
-		} else root?.classList.remove('note-ai-sidebar-open');
+			}, 240);
+		} else root.classList.remove('note-ai-sidebar-open');
 		panel = null;
 		activeSelectionKey = '';
 		trigger.classList.remove('active');
@@ -348,6 +348,7 @@ function bindNoteContextChat(
 			modelSelect.add(new Option(selectedModel, selectedModel, true, true));
 		enhanceSelect(modelSelect, {
 			className: 'note-ai-model-select',
+			menuMinWidth: 360,
 			getOptionVisual: (option) => providerLogoElement(option.value),
 		});
 		modelSelect.addEventListener('change', () => {
@@ -663,7 +664,16 @@ function bindNoteContextChat(
 				renderAnswer(answerNode, answer);
 			} catch (error) {
 				if (controller?.signal.aborted) return;
-				answerNode.innerHTML = `<div class="ai-error">${t('回答失败，请重试', 'Could not answer. Please retry.')}</div>`;
+				answerNode.innerHTML = `<div class="ai-error"><span>${t('回答失败', 'Could not answer.')}</span><button type="button" class="button" data-ai-retry><i data-lucide="rotate-ccw"></i><span>${t('重试', 'Retry')}</span></button></div>`;
+				paintIcons(answerNode);
+				answerNode.querySelector('[data-ai-retry]')?.addEventListener('click', () => {
+					answerNode.remove();
+					userNode.remove();
+					const last = conversation.at(-1);
+					if (last?.role === 'user' && last.content === question) conversation.pop();
+					input.value = question;
+					void submit();
+				});
 				options.onError(error);
 			} finally {
 				controller = null;
@@ -1061,9 +1071,11 @@ export function bindMarkdownAiAssistant(
 			} catch (error) {
 				if (destroyed || !panel?.isConnected) return;
 				if (controller.signal.aborted) return;
-				resultNode.innerHTML = `<div class="ai-error">${t('生成失败，请重试', 'Generation failed. Please retry.')}</div>`;
+				resultNode.innerHTML = `<div class="ai-error"><span>${t('生成失败', 'Generation failed.')}</span><button type="button" class="button" data-ai-retry><i data-lucide="rotate-ccw"></i><span>${t('重试', 'Retry')}</span></button></div>`;
 				setStage('done');
 				editButton.hidden = false;
+				paintIcons(resultNode);
+				resultNode.querySelector('[data-ai-retry]')?.addEventListener('click', () => void generate());
 				onError(error);
 			}
 		};

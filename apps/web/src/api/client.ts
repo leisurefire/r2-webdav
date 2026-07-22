@@ -39,21 +39,44 @@ export const AI_MODEL_FALLBACK: AiModel[] = ['deepseek-v4-flash', 'deepseek-v4-p
 const AI_MODELS_KEY = 'r2_ai_models';
 const AI_MODEL_ACTION_PREFIX = 'r2_ai_model_';
 
+function aiModelProvider(model: string): string {
+	const value = model.trim().toLowerCase();
+	if (/claude|anthropic/.test(value)) return 'anthropic';
+	if (/deepseek/.test(value)) return 'deepseek';
+	if (/gemini|google/.test(value)) return 'google';
+	if (/kimi|moonshot/.test(value)) return 'moonshot';
+	if (/gpt|openai|codex/.test(value)) return 'openai';
+	if (/grok|xai/.test(value)) return 'xai';
+	return value.split(/[\/:._-]/, 1)[0] || 'other';
+}
+
+/** Keep provider groups together without changing provider or model priority. */
+export function groupAiModelsByProvider(models: string[]): string[] {
+	const unique = [...new Set(models.map((model) => model.trim()).filter(Boolean))];
+	const groups = new Map<string, string[]>();
+	for (const model of unique) {
+		const provider = aiModelProvider(model);
+		const group = groups.get(provider) ?? [];
+		group.push(model);
+		groups.set(provider, group);
+	}
+	return [...groups.values()].flat();
+}
+
 export function availableAiModels(): string[] {
 	try {
 		const raw = localStorage.getItem(AI_MODELS_KEY);
 		if (raw === null) return [...AI_MODEL_FALLBACK];
 		const stored = JSON.parse(raw) as unknown;
 		const models = Array.isArray(stored) ? stored.filter((item): item is string => typeof item === 'string') : [];
-		return Array.isArray(stored) ? models : [...AI_MODEL_FALLBACK];
+		return groupAiModelsByProvider(Array.isArray(stored) ? models : [...AI_MODEL_FALLBACK]);
 	} catch {
 		return [...AI_MODEL_FALLBACK];
 	}
 }
 
 export function saveAvailableAiModels(models: string[]): void {
-	const unique = [...new Set(models.map((model) => model.trim()).filter(Boolean))];
-	localStorage.setItem(AI_MODELS_KEY, JSON.stringify(unique));
+	localStorage.setItem(AI_MODELS_KEY, JSON.stringify(groupAiModelsByProvider(models)));
 }
 
 export function aiModelForAction(action: AiAction): string {

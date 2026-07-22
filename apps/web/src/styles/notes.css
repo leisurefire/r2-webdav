@@ -406,11 +406,12 @@
 }
 
 .note-editor.note-ai-sidebar-open .note-ai-chat-panel {
+	--note-ai-panel-width: min(360px, 32vw);
 	position: absolute;
 	top: 0;
 	right: 0;
 	bottom: 0;
-	width: min(360px, 32vw);
+	width: var(--note-ai-panel-width);
 	height: auto;
 	min-height: 0;
 	max-height: none;
@@ -419,7 +420,14 @@
 }
 
 .note-editor.note-ai-sidebar-open > .notes-inner-toolbar,
-.note-editor.note-ai-sidebar-open > form { margin-right: min(360px, 32vw); }
+.note-editor.note-ai-sidebar-open > form {
+	margin-right: min(360px, 32vw);
+}
+
+.note-editor > .notes-inner-toolbar,
+.note-editor > form {
+	transition: margin-right 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
 
 .note-editor.note-ai-sidebar-open .note-ai-chat-trigger {
 	display: none;
@@ -501,8 +509,14 @@
 }
 
 @keyframes note-outline-pulse {
-	0%, 100% { background: transparent; }
-	25%, 65% { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+	0%,
+	100% {
+		background: transparent;
+	}
+	25%,
+	65% {
+		background: color-mix(in srgb, var(--accent) 22%, transparent);
+	}
 }
 
 /* Float the list over the marks so moving onto the panel keeps hover open. */
@@ -651,7 +665,11 @@
 }
 
 .note-source .cm-gutters {
-	display: none;
+	display: flex;
+	border-right: 1px solid var(--soft-line);
+	background: transparent;
+	color: var(--quiet);
+	font-size: 11px;
 }
 
 .cm-live-heading {
@@ -1416,7 +1434,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 	outline: 0;
 	background: transparent;
 	color: var(--ink);
-	font-size: 20px;
+	font-size: 28px;
 	font-weight: 650;
 	letter-spacing: 0;
 }
@@ -1532,7 +1550,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 	}
 
 	.note-heading > input {
-		font-size: 18px;
+		font-size: 24px;
 	}
 
 	.note-mobile-back {
@@ -1725,10 +1743,10 @@ details.markdown-callout > .markdown-callout-title::marker {
 	max-height: min(56vh, 460px);
 }
 
-	.note-outline-rail {
+.note-outline-rail {
 	min-width: 22px;
 	max-height: min(56vh, 460px);
-		gap: 8px;
+	gap: 8px;
 }
 
 .note-outline-mark {
@@ -1747,14 +1765,6 @@ details.markdown-callout > .markdown-callout-title::marker {
 	border: 1px solid var(--line);
 	background: var(--panel-bg);
 	backdrop-filter: none;
-}
-
-.note-source .cm-gutters {
-	display: flex;
-	border-right: 1px solid var(--soft-line);
-	background: transparent;
-	color: var(--quiet);
-	font-size: 11px;
 }
 
 .note-source .cm-lineNumbers .cm-gutterElement {

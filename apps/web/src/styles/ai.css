@@ -443,17 +443,15 @@
 }
 
 .note-ai-chat-panel {
-	animation: note-ai-panel-in 180ms ease-out;
+	animation: note-ai-panel-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes note-ai-panel-in {
 	from {
-		opacity: 0;
-		transform: translateX(8px);
+		width: 0;
 	}
 	to {
-		opacity: 1;
-		transform: translateX(0);
+		width: var(--note-ai-panel-width);
 	}
 }
 
@@ -503,21 +501,6 @@
 }
 
 @media (max-width: 720px) {
-	.note-ai-chat-panel {
-		animation-name: note-ai-sheet-in;
-	}
-
-	@keyframes note-ai-sheet-in {
-		from {
-			opacity: 0;
-			transform: translateY(12px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
 	.note-ai-chat-head {
 		gap: 6px;
 	}
@@ -609,12 +592,13 @@
 }
 
 .note-ai-chat-panel {
+	--note-ai-panel-width: min(420px, calc(100vw - 24px));
 	position: absolute;
 	z-index: 90;
 	top: 0;
 	right: 0;
 	bottom: 0;
-	width: min(420px, calc(100vw - 24px));
+	width: var(--note-ai-panel-width);
 	display: flex;
 	flex-direction: column;
 	border: 1px solid var(--line);
@@ -622,11 +606,12 @@
 	background: var(--panel-bg);
 	box-shadow: 0 18px 56px rgba(15, 23, 42, 0.18);
 	overflow: hidden;
-	transition: transform 180ms ease, opacity 180ms ease;
-	transform-origin: right center;
+	transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.note-ai-chat-panel.is-closing { opacity: 0; transform: translateX(18px); }
+.note-ai-chat-panel.is-closing {
+	width: 0;
+}
 
 .note-ai-chat-footer {
 	display: flex;
@@ -656,21 +641,51 @@
 }
 
 .ai-provider-logo-openai,
-.ai-provider-logo-moonshot { color: #111111; }
-.ai-provider-logo-anthropic { color: #d97757; }
-.ai-provider-logo-google { color: #4285f4; }
-.ai-provider-logo-deepseek { color: #2563eb; }
+.ai-provider-logo-moonshot {
+	color: #111111;
+}
+.ai-provider-logo-anthropic {
+	color: #d97757;
+}
+.ai-provider-logo-google {
+	color: #4285f4;
+}
+.ai-provider-logo-deepseek {
+	color: #2563eb;
+}
 
-.note-ai-mode-select { width: 0; min-width: 0; }
-.note-ai-mode-select .custom-select-trigger[hidden] { display: none; }
-.note-ai-model-select { min-width: 0; max-width: 176px; }
-.note-ai-model-select .custom-select-trigger { min-height: 28px; padding: 0 7px; border-radius: 6px; font-size: 11px; }
+.note-ai-mode-select {
+	width: 0;
+	min-width: 0;
+}
+.note-ai-mode-select .custom-select-trigger[hidden] {
+	display: none;
+}
+.note-ai-model-select {
+	min-width: 160px;
+	max-width: 230px;
+	flex: 1 1 210px;
+}
+.note-ai-model-select .custom-select-trigger {
+	min-height: 28px;
+	padding: 0 7px;
+	border-radius: 6px;
+	font-size: 11px;
+}
 .note-ai-model-select .custom-select-value,
-.note-ai-model-select .custom-select-option { gap: 7px; }
+.note-ai-model-select .custom-select-option {
+	gap: 7px;
+}
+
+.note-ai-model-select .custom-select-value {
+	text-overflow: clip;
+}
 
 @media (prefers-color-scheme: dark) {
 	.ai-provider-logo-openai,
-	.ai-provider-logo-moonshot { color: #ffffff; }
+	.ai-provider-logo-moonshot {
+		color: #ffffff;
+	}
 }
 
 .note-ai-chat-head {
@@ -737,6 +752,28 @@
 
 .note-ai-chat-message.assistant {
 	padding-inline: 3px;
+}
+
+.ai-error {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+}
+
+.ai-error .button {
+	flex: none;
+	min-height: 28px;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 4px 8px;
+	font-size: 12px;
+}
+
+.ai-error .button svg {
+	width: 13px;
+	height: 13px;
 }
 
 .note-ai-citations {
@@ -962,11 +999,12 @@
 	}
 
 	.note-ai-chat-panel {
+		--note-ai-panel-width: 100%;
 		top: auto;
 		left: 0;
 		right: 0;
 		bottom: 0;
-		width: 100%;
+		width: var(--note-ai-panel-width);
 		height: 52dvh;
 		border-width: 1px 0 0;
 		border-radius: 8px 8px 0 0;

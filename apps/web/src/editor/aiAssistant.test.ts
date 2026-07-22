@@ -8,6 +8,7 @@ import {
 } from './aiAssistant';
 import { buildAiReviewPreview, diffText } from './textDiff';
 import { buildAiReviewMarkDecorations } from './markdownLivePreview';
+import { groupAiModelsByProvider } from '../api/client';
 
 describe('normalizeAiMarkdown / splitAiTitle', () => {
 	it('strips markdown fences and carriage returns', () => {
@@ -123,5 +124,13 @@ describe('mapChatSegments', () => {
 		expect(mapChatSegments([{ from: 0, to: 7, kind: 'inserted' as const }], 0)).toEqual([
 			{ from: 0, to: 7, kind: 'inserted' },
 		]);
+	});
+});
+
+describe('AI model provider grouping', () => {
+	it('groups each provider while preserving provider and model priority', () => {
+		expect(
+			groupAiModelsByProvider(['claude-haiku', 'kimi-k3', 'claude-sonnet', 'grok-4.5', 'deepseek-v4', 'kimi-k2']),
+		).toEqual(['claude-haiku', 'claude-sonnet', 'kimi-k3', 'kimi-k2', 'grok-4.5', 'deepseek-v4']);
 	});
 });

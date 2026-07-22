@@ -195,16 +195,17 @@ function compactListItems(root: ParentNode): void {
 	root.querySelectorAll('li').forEach((item) => {
 		const only = item.children.length === 1 ? item.firstElementChild : null;
 		if (!only || only.tagName !== 'P') return;
-		// Keep multi-paragraph list bodies intact.
-		if (only.nextSibling) return;
+		// children.length already excludes the whitespace text nodes Marked emits.
 		while (only.firstChild) item.insertBefore(only.firstChild, only);
 		only.remove();
 	});
-	// Blank quote lines become empty paragraphs between blocks; drop pure spacers.
+	// Blank quote lines and explicit <br> spacers must not inflate callouts or
+	// other rendered Markdown blocks.
 	root.querySelectorAll('p').forEach((paragraph) => {
 		const text = paragraph.textContent?.replace(/\u00a0/g, ' ').trim() ?? '';
-		const onlyBreak = paragraph.childElementCount === 1 && paragraph.children[0]?.tagName === 'BR' && text.length === 0;
-		if ((text.length === 0 && paragraph.childElementCount === 0) || onlyBreak) paragraph.remove();
+		const onlyBreaks =
+			paragraph.childElementCount > 0 && Array.from(paragraph.children).every((child) => child.tagName === 'BR');
+		if (text.length === 0 && (paragraph.childElementCount === 0 || onlyBreaks)) paragraph.remove();
 	});
 }
 

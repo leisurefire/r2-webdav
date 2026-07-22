@@ -10,6 +10,7 @@ export interface DropdownAction {
 export interface CustomSelectOptions {
 	className?: string;
 	hideTrigger?: boolean;
+	menuMinWidth?: number;
 	getAnchor?: () => HTMLElement | null;
 	getOptionIcon?: (option: HTMLOptionElement) => IconNode | undefined;
 	getOptionVisual?: (option: HTMLOptionElement) => HTMLElement | undefined;
@@ -76,7 +77,7 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 	const place = () => {
 		const anchor = options.getAnchor?.() ?? button;
 		const rect = anchor.getBoundingClientRect();
-		const width = Math.max(rect.width, 180);
+		const width = Math.max(rect.width, options.menuMinWidth ?? 180);
 		menu.style.width = `${Math.min(width, window.innerWidth - 16)}px`;
 		menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))}px`;
 		const menuHeight = Math.min(menu.scrollHeight || 280, 320);
@@ -142,6 +143,7 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 			check.classList.add('custom-select-check');
 			const label = document.createElement('span');
 			label.textContent = option.label;
+			choice.title = option.label;
 			const optionIcon = options.getOptionIcon?.(option);
 			if (optionIcon) choice.append(createElement(optionIcon));
 			const optionVisual = options.getOptionVisual?.(option);
@@ -285,5 +287,3 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 	refresh();
 	return handle;
 }
-
-

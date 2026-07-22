@@ -210,7 +210,7 @@ export async function openSettingsModal(initialTab: SettingsTab = 'connection'):
 			const remoteModels = await api.aiModels();
 			if (!remoteModels.length) throw new Error(label('服务未返回可用模型', 'No models returned by the provider'));
 			saveAvailableAiModels(remoteModels);
-			models = remoteModels;
+			models = availableAiModels();
 			refreshModelSelects();
 			toast(t('aiPullModelsDone'));
 		} catch (error) {

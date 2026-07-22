@@ -34,7 +34,7 @@ export function notePathMarkup(note: Note): string {
 	}
 	if (crumbs.length) crumbs.push('<span class="note-path-separator" aria-hidden="true">/</span>');
 	crumbs.push(`<span class="note-path-item current" data-note-path-title title="${html(title)}">${html(title)}</span>`);
-	return `<nav class="collection-path note-location note-head-path note-path" aria-label="${locale === 'zh' ? '当前便签路径' : 'Current note path'}">${crumbs.join('')}</nav>`;
+	return `<nav class="collection-path note-location note-head-path note-path" data-note-path-id="${html(note.id)}" aria-label="${locale === 'zh' ? '当前便签路径' : 'Current note path'}">${crumbs.join('')}</nav>`;
 }
 
 export function revealNoteFolderInTree(folderId: string | null): void {
@@ -223,18 +223,20 @@ export function syncNoteTitle(note: Note, source?: HTMLInputElement): void {
 		const input = editor.querySelector<HTMLInputElement>('[data-note-title]');
 		if (input && input !== source && input !== document.activeElement) input.value = note.title;
 	});
-	document.querySelectorAll<HTMLElement>('.note-location').forEach((location) => {
-		const locationTitle = location?.querySelector<HTMLElement>('[data-note-path-title]');
-		const title = note.title.trim() || (locale === 'zh' ? '无标题便签' : 'Untitled note');
-		if (locationTitle) {
-			locationTitle.textContent = title;
-			locationTitle.title = title;
-		}
-		if (location) {
-			const path = noteFolderPath(noteFolders, note.folderId).map((item) => item.name);
-			location.title = [...path, title].join(' / ');
-		}
-	});
+	document
+		.querySelectorAll<HTMLElement>(`.note-location[data-note-path-id="${CSS.escape(note.id)}"]`)
+		.forEach((location) => {
+			const locationTitle = location?.querySelector<HTMLElement>('[data-note-path-title]');
+			const title = note.title.trim() || (locale === 'zh' ? '无标题便签' : 'Untitled note');
+			if (locationTitle) {
+				locationTitle.textContent = title;
+				locationTitle.title = title;
+			}
+			if (location) {
+				const path = noteFolderPath(noteFolders, note.folderId).map((item) => item.name);
+				location.title = [...path, title].join(' / ');
+			}
+		});
 }
 
 export function syncNotePinControls(note: Note): void {
@@ -253,7 +255,7 @@ export function syncNotePinControls(note: Note): void {
 
 export function syncNoteMetadata(note: Note): void {
 	syncNoteTitle(note);
-	document.querySelectorAll<HTMLElement>('.note-path').forEach((path) => {
+	document.querySelectorAll<HTMLElement>(`.note-path[data-note-path-id="${CSS.escape(note.id)}"]`).forEach((path) => {
 		if (path) {
 			const wrapper = document.createElement('div');
 			wrapper.innerHTML = notePathMarkup(note);
@@ -586,7 +588,10 @@ export function bindNoteEditor(
 			updateStructure({ archived: false, folderId: destination });
 		}),
 	);
-	for (const host of actionHosts) bindNotePath(host, selected);
+	const pathRoots = new Set<HTMLElement>();
+	root.querySelectorAll<HTMLElement>('.note-path').forEach((path) => pathRoots.add(path));
+	actionRoot.querySelectorAll<HTMLElement>('.note-path').forEach((path) => pathRoots.add(path));
+	for (const path of pathRoots) bindNotePath(path, selected);
 	root
 		.querySelector<HTMLFormElement>('[data-note-form]')
 		?.addEventListener('submit', (event) => event.preventDefault());
