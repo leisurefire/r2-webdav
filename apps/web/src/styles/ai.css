@@ -326,8 +326,8 @@
 
 .ai-empty-prompt {
 	position: absolute;
-	top: 6px;
-	left: 4px;
+	top: calc(var(--note-heading-space, 78px) + 6px);
+	left: calc(var(--note-content-inset, 0px) + var(--note-gutter-width, 34px) + 20px);
 	display: none;
 	align-items: center;
 	gap: 8px;

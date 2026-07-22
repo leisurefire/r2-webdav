@@ -12,11 +12,9 @@ import {
 	EditorView,
 	Decoration,
 	WidgetType,
-	GutterMarker,
-	gutter,
 	keymap,
+	lineNumbers,
 	type DecorationSet,
-	type BlockInfo,
 	type MouseSelectionStyle,
 	type ViewUpdate,
 } from '@codemirror/view';
@@ -1391,59 +1389,6 @@ function clipboardText(event: ClipboardEvent): string {
 	return normalizeClipboardText(fragment.innerText || fragment.textContent || '');
 }
 
-/**
- * Render a line number against the first visual row of a wrapped line.
- * CodeMirror sizes gutter elements to the full line block, which puts the
- * number too low when that block contains wrapped text or tall inline marks.
- */
-class NoteLineNumberMarker extends GutterMarker {
-	readonly elementClass = '';
-
-	constructor(
-		readonly number: string,
-		private readonly from: number,
-	) {
-		super();
-	}
-
-	eq(other: GutterMarker): boolean {
-		return other instanceof NoteLineNumberMarker && other.number === this.number && other.from === this.from;
-	}
-
-	toDOM(view: EditorView): Node {
-		const node = document.createElement('span');
-		node.className = 'cm-note-lineNumber';
-		node.textContent = this.number;
-		const coords = view.coordsAtPos(this.from);
-		if (coords) {
-			// A line-height equal to the first visual row centers the glyph in that row,
-			// while the surrounding gutter element may be much taller after wrapping.
-			node.style.lineHeight = `${Math.max(1, coords.bottom - coords.top)}px`;
-		}
-		return node;
-	}
-}
-
-function noteLineNumbers(): Extension {
-	return gutter({
-		class: 'cm-lineNumbers',
-		lineMarker(view: EditorView, line: BlockInfo) {
-			const number = view.state.doc.lineAt(line.from).number;
-			return new NoteLineNumberMarker(String(number), line.from);
-		},
-		initialSpacer: (view) => new NoteLineNumberMarker(String(view.state.doc.lines), 0),
-		updateSpacer: (spacer, update) => {
-			const number = String(update.view.state.doc.lines);
-			return spacer instanceof NoteLineNumberMarker && spacer.number === number
-				? spacer
-				: new NoteLineNumberMarker(number, 0);
-		},
-		// Recreate markers after wrapping/font/layout changes so their measured
-		// first-row height stays in sync with the content.
-		lineMarkerChange: (update) => update.docChanged || update.geometryChanged,
-	});
-}
-
 export function createMarkdownLivePreview(
 	parent: HTMLElement,
 	value: string,
@@ -1546,7 +1491,7 @@ export function createMarkdownLivePreview(
 			editingKeymap,
 			clipboardHandlers,
 			EditorView.clipboardInputFilter.of(normalizeClipboardText),
-			noteLineNumbers(),
+			lineNumbers(),
 			EditorView.lineWrapping,
 			EditorView.theme(
 				{

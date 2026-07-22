@@ -453,10 +453,6 @@
 	pointer-events: none;
 }
 
-.note-editor:not(.note-width-full) .note-outline {
-	right: max(18px, calc((100% - 880px) / 2 - 28px));
-}
-
 .note-outline-rail {
 	pointer-events: auto;
 	position: relative;
@@ -658,6 +654,33 @@
 	color: var(--ink);
 	font-family: inherit;
 	font-size: var(--note-body-size, 14px);
+}
+
+.note-source {
+	--note-content-inset: max(0px, calc((100% - 880px) / 2));
+	--note-gutter-width: 34px;
+	--note-heading-space: 78px;
+}
+
+.note-editor.note-width-full .note-source {
+	--note-content-inset: 0px;
+}
+
+.note-source .cm-editor .cm-scroller {
+	box-sizing: border-box;
+	padding-inline: var(--note-content-inset);
+}
+
+.note-source .cm-editor .cm-content {
+	padding-top: var(--note-heading-space);
+}
+
+.note-source .cm-scroller > .note-heading {
+	position: absolute;
+	top: 0;
+	left: calc(var(--note-content-inset) + var(--note-gutter-width));
+	right: var(--note-content-inset);
+	z-index: 1;
 }
 
 .note-source .cm-editor.cm-focused {
@@ -1770,11 +1793,8 @@ details.markdown-callout > .markdown-callout-title::marker {
 .note-source .cm-lineNumbers .cm-gutterElement {
 	min-width: 34px;
 	padding: 0 8px 0 4px;
+	line-height: 24.5px;
 	text-align: right;
-}
-
-.note-source .cm-note-lineNumber {
-	display: block;
 }
 
 .note-source .cm-activeLineGutter {
@@ -1992,20 +2012,9 @@ details.markdown-callout > .markdown-callout-title::marker {
 	font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', SimSun, Georgia, serif;
 }
 
-@media (min-width: 761px) {
-	.note-editor:not(.note-width-full) .note-document {
-		width: min(100%, 880px);
-		margin-inline: auto;
-	}
-
-	.note-editor:not(.note-width-full) .note-outline {
-		right: max(8px, calc((100% - 880px) / 2 + 8px));
-	}
-}
-
-.note-document > .note-heading {
+.note-source .note-heading {
 	flex: none;
-	padding: 18px 12px 6px;
+	padding: 18px 24px 6px;
 }
 
 .note-document > .note-source {
@@ -2013,7 +2022,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 	min-height: 0;
 }
 
-.note-document > .note-heading > input::placeholder {
+.note-source .note-heading > input::placeholder {
 	color: var(--quiet);
 }
 

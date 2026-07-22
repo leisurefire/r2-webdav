@@ -174,7 +174,7 @@ export function noteEditorMarkup(selected: Note, mobile = false): string {
 		${!mobile ? noteToolbarMarkup(selected) : ''}
 		<form data-note-form>
 			${mobile ? `<div class="note-editor-head"><button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>${notePathMarkup(selected)}${noteActionControlsMarkup(selected)}</div>` : ''}
-			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-heading"><input data-note-title value="${html(selected.title)}" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}"></div><div class="note-source" data-note-source aria-label="${t('markdown')}"></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
+			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-source" data-note-source aria-label="${t('markdown')}"><div class="note-heading"><input data-note-title value="${html(selected.title)}" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}"></div></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
 			${
 				mobile
 					? `<div class="note-mobile-edit-tools" data-mobile-editor-tools aria-label="${locale === 'zh' ? '编辑工具' : 'Editing tools'}">
@@ -525,6 +525,8 @@ export function bindNoteEditor(
 					toast(locale === 'zh' ? '图片超过 256 KB，暂不允许粘贴' : 'Images over 256 KB cannot be pasted yet'),
 				onImageReadError: () => toast(locale === 'zh' ? '无法读取粘贴的图片' : 'Could not read the pasted image'),
 			});
+			const heading = source.querySelector<HTMLElement>('.note-heading');
+			if (heading) view.scrollDOM.insertBefore(heading, view.contentDOM);
 			let syncAiEmptyPrompt: (() => void) | undefined;
 			void import('../editor/aiAssistant').then(({ bindMarkdownAiAssistant }) => {
 				if (!source.isConnected) return;
