@@ -681,6 +681,9 @@
 	left: calc(var(--note-content-inset) + var(--note-gutter-width));
 	right: var(--note-content-inset);
 	z-index: 1;
+	/* Absolute heading already accounts for inset/gutter via left/right. */
+	margin-inline: 0;
+	padding: 18px 24px 6px;
 }
 
 .note-source .cm-editor.cm-focused {
@@ -2014,7 +2017,10 @@ details.markdown-callout > .markdown-callout-title::marker {
 
 .note-source .note-heading {
 	flex: none;
-	padding: 18px 24px 6px;
+	box-sizing: border-box;
+	/* Pre-CM title must match post-CM inset so non-full-width open does not jump. */
+	margin-inline: var(--note-content-inset);
+	padding: 18px 24px 6px calc(var(--note-gutter-width) + 24px);
 }
 
 .note-document > .note-source {
