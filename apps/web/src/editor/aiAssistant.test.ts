@@ -1,14 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+	applyChatEditPatches,
 	mapChatSegments,
 	normalizeAiMarkdown,
 	parseAiCitations,
+	parseChatAiEnvelope,
 	splitAiTitle,
 	splitRewriteSummary,
 } from './aiAssistant';
 import { buildAiReviewPreview, diffText } from './textDiff';
 import { buildAiReviewMarkDecorations } from './markdownLivePreview';
-import { groupAiModelsByProvider } from '../api/client';
+import { aiChatMode, groupAiModelsByProvider, saveAiChatMode } from '../api/client';
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('normalizeAiMarkdown / splitAiTitle', () => {
 	it('strips markdown fences and carriage returns', () => {
@@ -84,6 +88,57 @@ describe('read-only AI answer citations', () => {
 	});
 });
 
+describe('chat AI response contract', () => {
+	it('keeps ordinary answers separate from edits', () => {
+		expect(parseChatAiEnvelope('[[R2_ANSWER]]\nA cited answer [[cite:2]].')).toEqual({
+			kind: 'answer',
+			content: 'A cited answer [[cite:2]].',
+		});
+		expect(parseChatAiEnvelope('An older unmarked answer')).toEqual({
+			kind: 'legacy',
+			content: 'An older unmarked answer',
+		});
+	});
+
+	it('merges targeted patches without deleting untouched paragraphs', () => {
+		const original = '# Note\n\nFirst paragraph.\n\nSecond paragraph.\n\nLast paragraph.';
+		const editPayload = [
+			'[[R2_EDIT]]',
+			`${'<'.repeat(7)} SEARCH`,
+			'Second paragraph.',
+			'='.repeat(7),
+			'Revised second paragraph.',
+			`${'>'.repeat(7)} REPLACE`,
+		].join('\n');
+		const envelope = parseChatAiEnvelope(editPayload);
+		expect(envelope.kind).toBe('edit');
+		if (envelope.kind !== 'edit') return;
+		expect(applyChatEditPatches(original, envelope.content)).toEqual({
+			ok: true,
+			markdown: '# Note\n\nFirst paragraph.\n\nRevised second paragraph.\n\nLast paragraph.',
+			patchCount: 1,
+		});
+	});
+
+	it('rejects missing and ambiguous SEARCH text instead of replacing the document', () => {
+		const patch = (search: string, replacement: string) =>
+			[`${'<'.repeat(7)} SEARCH`, search, '='.repeat(7), replacement, `${'>'.repeat(7)} REPLACE`].join('\n');
+		expect(applyChatEditPatches('same\n\nsame', patch('same', 'changed'))).toEqual({
+			ok: false,
+			reason: 'ambiguous',
+		});
+		expect(applyChatEditPatches('original', patch('missing', 'changed'))).toEqual({
+			ok: false,
+			reason: 'missing',
+		});
+		expect(applyChatEditPatches('keep remove keep', patch('remove ', ''))).toEqual({
+			ok: true,
+			markdown: 'keep keep',
+			patchCount: 1,
+		});
+	});
+});
+
 describe('splitRewriteSummary', () => {
 	it('takes the first paragraph as the status note', () => {
 		expect(splitRewriteSummary('已按照你的要求添加了代码，请查看。\n\n```js\n1\n```')).toEqual({
@@ -132,5 +187,20 @@ describe('AI model provider grouping', () => {
 		expect(
 			groupAiModelsByProvider(['claude-haiku', 'kimi-k3', 'claude-sonnet', 'grok-4.5', 'deepseek-v4', 'kimi-k2']),
 		).toEqual(['claude-haiku', 'claude-sonnet', 'kimi-k3', 'kimi-k2', 'grok-4.5', 'deepseek-v4']);
+	});
+});
+
+describe('AI chat mode preference', () => {
+	it('persists and restores the read-only/edit choice', () => {
+		const values = new Map<string, string>();
+		vi.stubGlobal('localStorage', {
+			getItem: (key: string) => values.get(key) ?? null,
+			setItem: (key: string, value: string) => values.set(key, value),
+		});
+		expect(aiChatMode()).toBe('edit');
+		saveAiChatMode('ask');
+		expect(aiChatMode()).toBe('ask');
+		saveAiChatMode('edit');
+		expect(aiChatMode()).toBe('edit');
 	});
 });

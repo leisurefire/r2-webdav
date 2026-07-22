@@ -30,9 +30,11 @@ import {
 	type IconNode,
 } from 'lucide';
 import {
+	aiChatMode,
 	aiModelForAction,
 	api,
 	availableAiModels,
+	saveAiChatMode,
 	saveAiModelForAction,
 	type AiAction,
 	type NoteChatSession,
@@ -116,6 +118,62 @@ export function normalizeAiMarkdown(value: string): string {
 	const trimmed = value.trim();
 	const fenced = /^```(?:markdown|md)?\s*\n([\s\S]*?)\n```$/i.exec(trimmed);
 	return (fenced?.[1] ?? trimmed).replaceAll('\r', '');
+}
+
+const CHAT_EDIT_MARKER = '[[R2_EDIT]]';
+const CHAT_ANSWER_MARKER = '[[R2_ANSWER]]';
+
+export type ChatAiEnvelope =
+	| { kind: 'edit'; content: string }
+	| { kind: 'answer'; content: string }
+	| { kind: 'legacy'; content: string };
+
+/** Separate edit payloads from ordinary answers so answers can never replace note text. */
+export function parseChatAiEnvelope(value: string): ChatAiEnvelope {
+	const normalized = value.replaceAll('\r', '').trim();
+	if (normalized.startsWith(CHAT_EDIT_MARKER)) {
+		return { kind: 'edit', content: normalized.slice(CHAT_EDIT_MARKER.length).trim() };
+	}
+	if (normalized.startsWith(CHAT_ANSWER_MARKER)) {
+		return { kind: 'answer', content: normalized.slice(CHAT_ANSWER_MARKER.length).trim() };
+	}
+	return { kind: 'legacy', content: normalized };
+}
+
+export type ChatEditPatchResult =
+	| { ok: true; markdown: string; patchCount: number }
+	| { ok: false; reason: 'format' | 'missing' | 'ambiguous' | 'overlap' };
+
+/** Apply model-produced SEARCH/REPLACE blocks against the exact submitted Markdown. */
+export function applyChatEditPatches(original: string, payload: string): ChatEditPatchResult {
+	const normalized = payload.replaceAll('\r', '').trim();
+	const block = /<<<<<<< SEARCH\n([\s\S]*?)\n=======\n([\s\S]*?)\n?>>>>>>> REPLACE/g;
+	const patches: Array<{ from: number; to: number; replacement: string }> = [];
+	let consumed = '';
+	let cursor = 0;
+	for (const match of normalized.matchAll(block)) {
+		const index = match.index ?? 0;
+		consumed += normalized.slice(cursor, index);
+		cursor = index + match[0].length;
+		const search = match[1];
+		const replacement = match[2];
+		if (!search) return { ok: false, reason: 'format' };
+		const from = original.indexOf(search);
+		if (from < 0) return { ok: false, reason: 'missing' };
+		if (original.indexOf(search, from + 1) >= 0) return { ok: false, reason: 'ambiguous' };
+		patches.push({ from, to: from + search.length, replacement });
+	}
+	consumed += normalized.slice(cursor);
+	if (!patches.length || consumed.trim()) return { ok: false, reason: 'format' };
+	patches.sort((left, right) => left.from - right.from);
+	for (let index = 1; index < patches.length; index += 1) {
+		if (patches[index]!.from < patches[index - 1]!.to) return { ok: false, reason: 'overlap' };
+	}
+	let markdown = original;
+	for (const patch of [...patches].reverse()) {
+		markdown = `${markdown.slice(0, patch.from)}${patch.replacement}${markdown.slice(patch.to)}`;
+	}
+	return { ok: true, markdown, patchCount: patches.length };
 }
 
 /** Extract a leading "# Title" from generated Markdown so it can drive the note title. */
@@ -240,17 +298,32 @@ function bindNoteContextChat(
 	let activeSelectionKey = '';
 	/** Freeze the exact submitted context so edits never leak into a wider live range. */
 	let chatRange: AiRange = { from: 0, to: 0 };
+	interface ChatReview {
+		undoFrom: number;
+		undoTo: number;
+		original: string;
+		generated: string;
+		segments: AiReviewSegment[];
+		diffVisible: boolean;
+		button?: HTMLButtonElement;
+	}
+	let review: ChatReview | null = null;
+	const reviewBarId = 'chat-review';
+	const removeReviewBar = () => compose.querySelector(`[data-chat-review="${reviewBarId}"]`)?.remove();
+	const discardChatReview = () => {
+		removeReviewBar();
+		if (!review) return;
+		clearAiReview(view);
+		view.dispatch({
+			changes: { from: review.undoFrom, to: review.undoTo, insert: review.original },
+			annotations: Transaction.userEvent.of('input'),
+		});
+		review = null;
+	};
 	const close = () => {
 		controller?.abort();
 		controller = null;
-		if (review) {
-			clearAiReview(view);
-			view.dispatch({
-				changes: { from: review.undoFrom, to: review.undoTo, insert: review.original },
-				annotations: Transaction.userEvent.of('input'),
-			});
-			review = null;
-		}
+		discardChatReview();
 		if (panel) {
 			panel.classList.add('is-closing');
 			const closing = panel;
@@ -265,17 +338,6 @@ function bindNoteContextChat(
 		trigger.setAttribute('aria-expanded', 'false');
 		if (activeNoteChatClose === close) activeNoteChatClose = null;
 	};
-	interface ChatReview {
-		undoFrom: number;
-		undoTo: number;
-		original: string;
-		generated: string;
-		segments: AiReviewSegment[];
-		diffVisible: boolean;
-		button?: HTMLButtonElement;
-	}
-	let review: ChatReview | null = null;
-	const reviewBarId = 'chat-review';
 	const open = async () => {
 		if (panel) return close();
 		activeNoteChatClose?.();
@@ -302,7 +364,7 @@ function bindNoteContextChat(
 			`<div class="note-ai-chat-welcome">${hasSelection ? t('我会参考你选中的内容回答；在编辑模式下也可以直接改写它。', 'I answer from your selection and can rewrite it directly in Edit mode.') : t('我会仅参考当前提交的便签内容回答，并标注引用来源。', 'I will answer only from the submitted note context and cite the source passages.')}</div>`;
 		let sessions: NoteChatSession[] = [];
 		/** Chat mode is a permission only: ask is read-only, edit may propose edits; both remember their model. */
-		let chatMode: 'edit' | 'ask' = 'edit';
+		let chatMode: 'edit' | 'ask' = aiChatMode();
 		let selectedModel = aiModelForAction(chatMode === 'edit' ? 'rewrite' : 'chat');
 		let session: NoteChatSession = {
 			id: crypto.randomUUID(),
@@ -341,6 +403,7 @@ function bindNoteContextChat(
 		const send = panel.querySelector<HTMLButtonElement>('[data-chat-send]')!;
 		const modeSelect = panel.querySelector<HTMLSelectElement>('[data-chat-mode]')!;
 		const modelSelect = panel.querySelector<HTMLSelectElement>('[data-chat-model]')!;
+		modeSelect.value = chatMode;
 		modelSelect.replaceChildren(
 			...availableAiModels().map((model) => new Option(model, model, false, model === selectedModel)),
 		);
@@ -363,7 +426,9 @@ function bindNoteContextChat(
 			getOptionIcon: (option) => (option.value === 'edit' ? Pencil : MessageCircle),
 		});
 		modeSelect.addEventListener('change', () => {
+			if (review) acceptChatReview();
 			chatMode = modeSelect.value === 'ask' ? 'ask' : 'edit';
+			saveAiChatMode(chatMode);
 			selectedModel = aiModelForAction(chatMode === 'edit' ? 'rewrite' : 'chat');
 			if ([...modelSelect.options].some((option) => option.value === selectedModel)) {
 				modelSelect.value = selectedModel;
@@ -425,7 +490,12 @@ function bindNoteContextChat(
 			dialog.showModal();
 		};
 		const renderAnswer = (node: HTMLElement, answer: string) => {
-			const parsed = parseAiCitations(answer);
+			const envelope = parseChatAiEnvelope(answer);
+			if (envelope.kind === 'edit') {
+				node.innerHTML = `<div class="ai-review-note">${t('AI 已生成待检查的修改。', 'AI prepared edits for review.')}</div>`;
+				return;
+			}
+			const parsed = parseAiCitations(envelope.content);
 			node.innerHTML = `<article class="ai-markdown-preview">${renderMarkdown(parsed.markdown)}</article>`;
 			if (!parsed.citations.length) return;
 			node.querySelectorAll<HTMLAnchorElement>('a[href^="#note-ai-cite-"]').forEach((link) => {
@@ -464,10 +534,7 @@ function bindNoteContextChat(
 			messagesNode.scrollTop = messagesNode.scrollHeight;
 		};
 		const createSession = () => {
-			if (review) {
-				discardChatReview();
-				removeReviewBar();
-			}
+			discardChatReview();
 			controller?.abort();
 			controller = null;
 			session = {
@@ -484,17 +551,6 @@ function bindNoteContextChat(
 			renderConversation();
 			input.focus();
 		};
-		/** Discard the pending chat review and restore the original context text. */
-		const discardChatReview = () => {
-			if (!review) return;
-			clearAiReview(view);
-			view.dispatch({
-				changes: { from: review.undoFrom, to: review.undoTo, insert: review.original },
-				annotations: Transaction.userEvent.of('input'),
-			});
-			review = null;
-		};
-		const removeReviewBar = () => compose.querySelector(`[data-chat-review="${reviewBarId}"]`)?.remove();
 		/** Toggle diff decorations: hiding them leaves the accepted text, showing restores the preview. */
 		const toggleChatDiff = () => {
 			if (!review) return;
@@ -528,14 +584,17 @@ function bindNoteContextChat(
 		/** Accept the pending review: keep the generated text, drop deleted spans, close the bar. */
 		const acceptChatReview = () => {
 			if (!review) return;
+			const acceptedFrom = review.undoFrom;
+			const acceptedText = review.generated;
 			if (review.diffVisible) {
 				clearAiReview(view);
 				view.dispatch({
-					changes: { from: review.undoFrom, to: review.undoTo, insert: review.generated },
+					changes: { from: review.undoFrom, to: review.undoTo, insert: acceptedText },
 					annotations: Transaction.userEvent.of('input'),
 				});
 			}
-			markNewContent(view, review.undoFrom, review.undoFrom + review.generated.length);
+			chatRange = { from: acceptedFrom, to: acceptedFrom + acceptedText.length };
+			markNewContent(view, chatRange.from, chatRange.to);
 			review = null;
 			removeReviewBar();
 		};
@@ -565,8 +624,21 @@ function bindNoteContextChat(
 		const addReviewActions = (answerNode: HTMLElement, rawAnswer: string) => {
 			removeReviewBar();
 			const original = contextText;
-			const generated = normalizeAiMarkdown(rawAnswer).trimEnd();
-			if (!generated || generated === original.trim()) return;
+			const envelope = parseChatAiEnvelope(rawAnswer);
+			if (envelope.kind !== 'edit') return;
+			const applied = applyChatEditPatches(original, envelope.content);
+			if (!applied.ok) {
+				answerNode.innerHTML = `<div class="ai-review-note">${t(
+					'AI 返回的修改无法与原文安全匹配，因此没有应用。请重试或缩小修改范围。',
+					'The edits could not be matched safely, so nothing was applied. Retry or narrow the request.',
+				)}</div>`;
+				return;
+			}
+			const generated = applied.markdown;
+			if (generated === original) {
+				answerNode.innerHTML = `<div class="ai-review-note">${t('AI 没有生成实际改动。', 'AI did not produce any changes.')}</div>`;
+				return;
+			}
 			view.dispatch({
 				changes: { from: chatRange.from, to: chatRange.to, insert: generated },
 				annotations: Transaction.userEvent.of('input'),
@@ -597,18 +669,13 @@ function bindNoteContextChat(
 			review.button.addEventListener('click', toggleChatDiff);
 			bar.querySelector('[data-review-revert]')?.addEventListener('click', () => {
 				discardChatReview();
-				removeReviewBar();
 			});
 			bar.querySelector('[data-review-below]')?.addEventListener('click', insertChatBelow);
 			bar.querySelector('[data-review-accept]')?.addEventListener('click', acceptChatReview);
 		};
 		/** Re-read the submitted range in edit mode so each turn builds on the current document. */
 		const refreshEditContext = () => {
-			if (review) {
-				chatRange = { from: review.undoFrom, to: review.undoFrom + review.generated.length };
-				review = null;
-				removeReviewBar();
-			}
+			if (review) acceptChatReview();
 			contextText = view.state.sliceDoc(chatRange.from, chatRange.to);
 			const firstLine = view.state.doc.lineAt(chatRange.from).number;
 			numberedContext = contextText
@@ -644,6 +711,7 @@ function bindNoteContextChat(
 						mode: chatMode,
 						text: question,
 						context: numberedContext,
+						editableContext: contextText,
 						noteId,
 						conversationId: session.id,
 						contextKey,
@@ -657,11 +725,11 @@ function bindNoteContextChat(
 					controller.signal,
 				);
 				if (!answer.trim()) throw new Error(t('AI 没有返回内容', 'AI returned no content'));
-				if (chatMode === 'edit' && !controller.signal.aborted) addReviewActions(answerNode, answer);
 				conversation.push({ role: 'assistant', content: answer });
 				sessions = [session, ...sessions.filter((item) => item.id !== session.id)];
 				paintHistory();
 				renderAnswer(answerNode, answer);
+				if (chatMode === 'edit' && !controller.signal.aborted) addReviewActions(answerNode, answer);
 			} catch (error) {
 				if (controller?.signal.aborted) return;
 				answerNode.innerHTML = `<div class="ai-error"><span>${t('回答失败', 'Could not answer.')}</span><button type="button" class="button" data-ai-retry><i data-lucide="rotate-ccw"></i><span>${t('重试', 'Retry')}</span></button></div>`;
@@ -739,10 +807,7 @@ function bindNoteContextChat(
 			}
 			const next = sessions.find((item) => item.id === historySelect.value);
 			if (!next) return;
-			if (review) {
-				discardChatReview();
-				removeReviewBar();
-			}
+			discardChatReview();
 			session = next;
 			conversation = session.messages;
 			renderConversation();

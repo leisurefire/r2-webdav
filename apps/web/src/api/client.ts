@@ -89,6 +89,19 @@ export function saveAiModelForAction(action: AiAction, model: string): void {
 	if (value) localStorage.setItem(`${AI_MODEL_ACTION_PREFIX}${action}`, value);
 }
 
+export type AiChatMode = 'edit' | 'ask';
+
+const AI_CHAT_MODE_KEY = 'r2_ai_chat_mode';
+
+/** Persisted chat panel permission: edit may propose edits, ask is read-only. */
+export function aiChatMode(): AiChatMode {
+	return localStorage.getItem(AI_CHAT_MODE_KEY) === 'ask' ? 'ask' : 'edit';
+}
+
+export function saveAiChatMode(mode: AiChatMode): void {
+	localStorage.setItem(AI_CHAT_MODE_KEY, mode === 'ask' ? 'ask' : 'edit');
+}
+
 export interface AiRequest {
 	model: string;
 	action: AiAction;
@@ -97,6 +110,8 @@ export interface AiRequest {
 	/** Chat panel permission: ask is read-only Q&A, edit allows proposing Markdown edits. */
 	mode?: 'ask' | 'edit';
 	context?: string;
+	/** Unnumbered Markdown used for exact search/replace patches in chat edit mode. */
+	editableContext?: string;
 	noteId?: string;
 	conversationId?: string;
 	contextKey?: string;

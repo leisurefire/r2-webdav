@@ -189,6 +189,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
 			text?: string;
 			instruction?: string;
 			context?: string;
+			editableContext?: string;
 			noteId?: string;
 			conversationId?: string;
 			contextKey?: string;
@@ -197,9 +198,11 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
 		if (!input.model?.trim() || input.model.length > 200 || !input.text?.trim() || input.text.length > 120_000)
 			return fail('Invalid AI request', 400);
 		const language =
-			input.action === 'rewrite'
-				? 'Use the same language as the user text. Do not wrap the whole answer in code fences.'
-				: 'Use the same language as the user text. Return Markdown only, without code fences or commentary.';
+			input.action === 'chat'
+				? 'Use the same language as the user request. Follow the response envelope exactly.'
+				: input.action === 'rewrite'
+					? 'Use the same language as the user text. Do not wrap the whole answer in code fences.'
+					: 'Use the same language as the user text. Return Markdown only, without code fences or commentary.';
 		const selectionAction = input.action === 'summarize' || input.action === 'polish' || input.action === 'rewrite';
 		let chatHistory = '';
 		if (input.action === 'chat') {
@@ -224,14 +227,16 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
 			input.action === 'chat'
 				? chatEdit
 					? [
-							'Answer the user request using the supplied note context.',
-							'If the request asks to change, rewrite, fix, translate, format, or restructure the context, return ONLY the full revised Markdown for the submitted context, without commentary or code fences.',
-							'Otherwise answer the question briefly. The user can still inspect or apply edits manually.',
-							'Every factual claim taken from the note must end with one or more citations in the exact form [[cite:START-END]], using the provided line numbers.',
-							'Use the smallest line range that supports the claim. Never invent a line number.',
-							'If the context does not contain the answer, say so directly.',
+							'Classify the request as either an edit or a question.',
+							'For an edit, begin with exactly [[R2_EDIT]] on its own line. Then return one or more SEARCH/REPLACE blocks in this exact form:',
+							'<<<<<<< SEARCH\nexact text copied verbatim from Editable Markdown\n=======\nreplacement Markdown\n>>>>>>> REPLACE',
+							'Use the smallest unique passage needed for each edit. Every SEARCH must be copied exactly from Editable Markdown, without line numbers. Use multiple non-overlapping blocks for separate passages. Never omit unrelated text by putting a partial document in a replacement.',
+							'For a question or any request that does not modify the note, begin with exactly [[R2_ANSWER]] on its own line, then answer briefly in Markdown.',
+							'Only answers use citations. Every factual claim taken from the note must end with [[cite:START-END]] using the numbered context. Never add citations inside edit patches.',
+							'If the context does not contain the answer or an edit cannot be expressed safely, return an answer and explain that directly.',
 						].join(' ')
 					: [
+							'Begin with exactly [[R2_ANSWER]] on its own line.',
 							'Answer the user question using the supplied note context.',
 							'Do not propose or perform edits to the note.',
 							'Every factual claim taken from the note must end with one or more citations in the exact form [[cite:START-END]], using the provided line numbers.',
@@ -255,7 +260,10 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
 			task,
 			language,
 			input.instruction ? `Instruction: ${input.instruction}` : '',
-			!selectionAction && input.context ? `Document context:\n${input.context.slice(0, 20_000)}` : '',
+			!selectionAction && input.context ? `Numbered note context:\n${input.context.slice(0, 100_000)}` : '',
+			chatEdit && input.editableContext
+				? `Editable Markdown (exact, unnumbered):\n${input.editableContext.slice(0, 100_000)}`
+				: '',
 			chatHistory ? `Earlier conversation:\n${chatHistory}` : '',
 			selectionAction ? `Selected text:\n${input.text}` : `Request:\n${input.text}`,
 		]
