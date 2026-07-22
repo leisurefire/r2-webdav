@@ -2,6 +2,7 @@ import { Transaction } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import {
 	ArrowUp,
+	Diff,
 	Bold,
 	Check,
 	Code,
@@ -13,6 +14,7 @@ import {
 	Settings2,
 	SlidersHorizontal,
 	ChevronUp,
+	EyeOff,
 	Pencil,
 	Plus,
 	Quote,
@@ -27,8 +29,15 @@ import {
 	createElement,
 	type IconNode,
 } from 'lucide';
-import { aiModelForAction, api, availableAiModels, type AiAction, type NoteChatSession } from '../api/client';
-import { clearAiReview, showAiReview, toggleMarkdownWrap } from './markdownLivePreview';
+import {
+	aiModelForAction,
+	api,
+	availableAiModels,
+	saveAiModelForAction,
+	type AiAction,
+	type NoteChatSession,
+} from '../api/client';
+import { clearAiReview, showAiReview, toggleMarkdownWrap, type AiReviewSegment } from './markdownLivePreview';
 import { clearSelectionHold, holdSelectionHighlight, markNewContent, showEditorHighlight } from './editorHighlights';
 import { buildAiReviewPreview } from './textDiff';
 import { renderMarkdown } from './markdownRenderer';
@@ -51,6 +60,8 @@ const AI_ICONS: Record<string, IconNode> = {
 	'settings-2': Settings2,
 	'sliders-horizontal': SlidersHorizontal,
 	'chevron-up': ChevronUp,
+	diff: Diff,
+	'eye-off': EyeOff,
 	plus: Plus,
 	quote: Quote,
 	'rotate-ccw': RotateCcw,
@@ -201,6 +212,14 @@ export function parseAiCitations(value: string): { markdown: string; citations: 
 	return { markdown, citations };
 }
 
+/** Chat review segments are stored relative to the submitted context; shift them into document coordinates. */
+export function mapChatSegments(
+	segments: Array<{ from: number; to: number; kind: 'deleted' | 'inserted' }>,
+	offset: number,
+): AiReviewSegment[] {
+	return segments.map((segment) => ({ from: segment.from + offset, to: segment.to + offset, kind: segment.kind }));
+}
+
 let activeNoteChatClose: (() => void) | null = null;
 
 function bindNoteContextChat(
@@ -219,13 +238,26 @@ function bindNoteContextChat(
 	let panel: HTMLElement | null = null;
 	let controller: AbortController | null = null;
 	let activeSelectionKey = '';
+	/** Freeze the exact submitted context so edits never leak into a wider live range. */
+	let chatRange: AiRange = { from: 0, to: 0 };
 	const close = () => {
 		controller?.abort();
 		controller = null;
+		if (review) {
+			clearAiReview(view);
+			view.dispatch({
+				changes: { from: review.undoFrom, to: review.undoTo, insert: review.original },
+				annotations: Transaction.userEvent.of('input'),
+			});
+			review = null;
+		}
 		if (panel) {
 			panel.classList.add('is-closing');
 			const closing = panel;
-			window.setTimeout(() => { closing.remove(); root?.classList.remove('note-ai-sidebar-open'); }, 180);
+			window.setTimeout(() => {
+				closing.remove();
+				root?.classList.remove('note-ai-sidebar-open');
+			}, 180);
 		} else root?.classList.remove('note-ai-sidebar-open');
 		panel = null;
 		activeSelectionKey = '';
@@ -233,6 +265,17 @@ function bindNoteContextChat(
 		trigger.setAttribute('aria-expanded', 'false');
 		if (activeNoteChatClose === close) activeNoteChatClose = null;
 	};
+	interface ChatReview {
+		undoFrom: number;
+		undoTo: number;
+		original: string;
+		generated: string;
+		segments: AiReviewSegment[];
+		diffVisible: boolean;
+		button?: HTMLButtonElement;
+	}
+	let review: ChatReview | null = null;
+	const reviewBarId = 'chat-review';
 	const open = async () => {
 		if (panel) return close();
 		activeNoteChatClose?.();
@@ -241,12 +284,12 @@ function bindNoteContextChat(
 		const selection = view.state.selection.main;
 		activeSelectionKey = `${selection.from}:${selection.to}`;
 		const hasSelection = !selection.empty;
-		const contextText = hasSelection ? view.state.sliceDoc(selection.from, selection.to) : documentText;
+		let contextText = hasSelection ? view.state.sliceDoc(selection.from, selection.to) : documentText;
 		const startLine = hasSelection ? view.state.doc.lineAt(selection.from).number : 1;
 		const endLine = hasSelection
 			? view.state.doc.lineAt(Math.max(selection.from, selection.to - 1)).number
 			: view.state.doc.lines;
-		const numberedContext = contextText
+		let numberedContext = contextText
 			.split('\n')
 			.map((line, index) => `${startLine + index}: ${line}`)
 			.join('\n');
@@ -254,8 +297,13 @@ function bindNoteContextChat(
 			? t(`已选 ${endLine - startLine + 1} 行`, `${endLine - startLine + 1} selected lines`)
 			: options.noteTitle?.() || t('当前便签', 'Current note');
 		const contextKey = `${selection.from}:${selection.to}:${documentText.length}:${contextText.slice(0, 80)}`;
+		chatRange = hasSelection ? { from: selection.from, to: selection.to } : { from: 0, to: documentText.length };
+		const welcomeHtml = () =>
+			`<div class="note-ai-chat-welcome">${hasSelection ? t('我会参考你选中的内容回答；在编辑模式下也可以直接改写它。', 'I answer from your selection and can rewrite it directly in Edit mode.') : t('我会仅参考当前提交的便签内容回答，并标注引用来源。', 'I will answer only from the submitted note context and cite the source passages.')}</div>`;
 		let sessions: NoteChatSession[] = [];
-		let selectedModel = aiModelForAction('chat');
+		/** Chat mode is a permission only: ask is read-only, edit may propose edits; both remember their model. */
+		let chatMode: 'edit' | 'ask' = 'edit';
+		let selectedModel = aiModelForAction(chatMode === 'edit' ? 'rewrite' : 'chat');
 		let session: NoteChatSession = {
 			id: crypto.randomUUID(),
 			title: t('新对话', 'New chat'),
@@ -275,36 +323,52 @@ function bindNoteContextChat(
 			<button type="button" class="row-action" data-chat-new title="${t('新建对话', 'New chat')}" aria-label="${t('新建对话', 'New chat')}"><i data-lucide="message-circle-plus"></i></button>
 			<button type="button" class="row-action" data-chat-close title="${t('收起 AI 侧栏', 'Collapse AI sidebar')}" aria-label="${t('收起 AI 侧栏', 'Collapse AI sidebar')}"><i data-lucide="panel-right-close"></i></button>
 		</header>
-		<div class="note-ai-chat-messages" data-chat-messages><div class="note-ai-chat-welcome">${t('我会仅参考当前提交的便签内容回答，并标注引用来源。', 'I will answer only from the submitted note context and cite the source passages.')}</div></div>
+		<div class="note-ai-chat-messages" data-chat-messages>${welcomeHtml()}</div>
 		<div class="note-ai-chat-composer">
 			<div class="note-ai-context-chip"><i data-lucide="${hasSelection ? 'text-select' : 'file-text'}"></i><span>${contextLabel}</span></div>
 			<div class="note-ai-chat-input-row"><textarea rows="1" data-chat-input placeholder="${t('询问这段内容…', 'Ask about this content…')}" aria-label="${t('向 AI 提问', 'Ask AI')}"></textarea></div>
 			<div class="note-ai-chat-footer"><button type="button" class="row-action" data-chat-settings title="${t('编辑或询问', 'Edit or ask')}" aria-label="${t('编辑或询问', 'Edit or ask')}"><i data-lucide="sliders-horizontal"></i></button><select class="note-ai-mode" data-chat-mode aria-label="${t('AI 模式', 'AI mode')}"><option value="edit">${t('编辑', 'Edit')}</option><option value="ask">${t('询问', 'Ask')}</option></select><span class="toolbar-spacer"></span><select class="note-ai-model" data-chat-model aria-label="${t('选择模型', 'Choose model')}"></select><button type="button" class="ai-send" data-chat-send title="${t('提交', 'Submit')}" aria-label="${t('提交', 'Submit')}"><i data-lucide="arrow-up"></i></button></div>
 		</div>`;
+		compose.querySelector(`[data-chat-review="${reviewBarId}"]`)?.remove();
 		root.append(panel);
 		root.classList.add('note-ai-sidebar-open');
 		paintIcons(panel);
 		trigger.classList.add('active');
 		trigger.setAttribute('aria-expanded', 'true');
 		const messagesNode = panel.querySelector<HTMLElement>('[data-chat-messages]')!;
+		const composer = panel.querySelector<HTMLElement>('.note-ai-chat-composer')!;
 		const input = panel.querySelector<HTMLTextAreaElement>('[data-chat-input]')!;
 		const send = panel.querySelector<HTMLButtonElement>('[data-chat-send]')!;
 		const modeSelect = panel.querySelector<HTMLSelectElement>('[data-chat-mode]')!;
 		const modelSelect = panel.querySelector<HTMLSelectElement>('[data-chat-model]')!;
-		modelSelect.replaceChildren(...availableAiModels().map((model) => new Option(model, model, false, model === selectedModel)));
+		modelSelect.replaceChildren(
+			...availableAiModels().map((model) => new Option(model, model, false, model === selectedModel)),
+		);
 		if (!modelSelect.options.length || ![...modelSelect.options].some((option) => option.value === selectedModel))
 			modelSelect.add(new Option(selectedModel, selectedModel, true, true));
 		enhanceSelect(modelSelect, {
 			className: 'note-ai-model-select',
 			getOptionVisual: (option) => providerLogoElement(option.value),
 		});
-		modelSelect.addEventListener('change', () => { selectedModel = modelSelect.value || selectedModel; });
+		modelSelect.addEventListener('change', () => {
+			selectedModel = modelSelect.value || selectedModel;
+			saveAiModelForAction(chatMode === 'edit' ? 'rewrite' : 'chat', selectedModel);
+		});
 		const settingsButton = panel.querySelector<HTMLButtonElement>('[data-chat-settings]')!;
 		const modeDropdown = enhanceSelect(modeSelect, {
 			className: 'note-ai-mode-select',
 			hideTrigger: true,
 			getAnchor: () => settingsButton,
-			getOptionIcon: (option) => option.value === 'edit' ? Pencil : MessageCircle,
+			getOptionIcon: (option) => (option.value === 'edit' ? Pencil : MessageCircle),
+		});
+		modeSelect.addEventListener('change', () => {
+			chatMode = modeSelect.value === 'ask' ? 'ask' : 'edit';
+			selectedModel = aiModelForAction(chatMode === 'edit' ? 'rewrite' : 'chat');
+			if ([...modelSelect.options].some((option) => option.value === selectedModel)) {
+				modelSelect.value = selectedModel;
+				modelSelect.dispatchEvent(new Event('change', { bubbles: true }));
+			}
+			if (!conversation.length) messagesNode.innerHTML = welcomeHtml();
 		});
 		settingsButton.addEventListener('click', () => modeDropdown.open());
 		send.disabled = true;
@@ -386,7 +450,7 @@ function bindNoteContextChat(
 		const renderConversation = () => {
 			messagesNode.innerHTML = '';
 			if (!conversation.length) {
-				messagesNode.innerHTML = `<div class="note-ai-chat-welcome">${t('我会仅参考当前提交的便签内容回答，并标注引用来源。', 'I will answer only from the submitted note context and cite the source passages.')}</div>`;
+				messagesNode.innerHTML = welcomeHtml();
 				return;
 			}
 			for (const message of conversation) {
@@ -399,6 +463,10 @@ function bindNoteContextChat(
 			messagesNode.scrollTop = messagesNode.scrollHeight;
 		};
 		const createSession = () => {
+			if (review) {
+				discardChatReview();
+				removeReviewBar();
+			}
 			controller?.abort();
 			controller = null;
 			session = {
@@ -415,9 +483,142 @@ function bindNoteContextChat(
 			renderConversation();
 			input.focus();
 		};
+		/** Discard the pending chat review and restore the original context text. */
+		const discardChatReview = () => {
+			if (!review) return;
+			clearAiReview(view);
+			view.dispatch({
+				changes: { from: review.undoFrom, to: review.undoTo, insert: review.original },
+				annotations: Transaction.userEvent.of('input'),
+			});
+			review = null;
+		};
+		const removeReviewBar = () => compose.querySelector(`[data-chat-review="${reviewBarId}"]`)?.remove();
+		/** Toggle diff decorations: hiding them leaves the accepted text, showing restores the preview. */
+		const toggleChatDiff = () => {
+			if (!review) return;
+			review.diffVisible = !review.diffVisible;
+			if (review.diffVisible) {
+				const preview = buildAiReviewPreview(review.original, review.generated);
+				view.dispatch({
+					changes: { from: review.undoFrom, to: review.undoTo, insert: preview.text },
+					annotations: Transaction.userEvent.of('input'),
+				});
+				review.undoTo = review.undoFrom + preview.text.length;
+				showAiReview(view, review.segments);
+			} else {
+				clearAiReview(view);
+				view.dispatch({
+					changes: { from: review.undoFrom, to: review.undoTo, insert: review.generated },
+					annotations: Transaction.userEvent.of('input'),
+				});
+				review.undoTo = review.undoFrom + review.generated.length;
+				markNewContent(view, review.undoFrom, review.undoTo);
+			}
+			if (review.button) {
+				const label = review.diffVisible ? t('隐藏差异', 'Hide diff') : t('查看差异', 'Show diff');
+				review.button.title = label;
+				review.button.setAttribute('aria-label', label);
+				review.button.setAttribute('aria-pressed', String(review.diffVisible));
+				review.button.innerHTML = `<i data-lucide="${review.diffVisible ? 'eye-off' : 'diff'}"></i>`;
+				paintIcons(review.button);
+			}
+		};
+		/** Accept the pending review: keep the generated text, drop deleted spans, close the bar. */
+		const acceptChatReview = () => {
+			if (!review) return;
+			if (review.diffVisible) {
+				clearAiReview(view);
+				view.dispatch({
+					changes: { from: review.undoFrom, to: review.undoTo, insert: review.generated },
+					annotations: Transaction.userEvent.of('input'),
+				});
+			}
+			markNewContent(view, review.undoFrom, review.undoFrom + review.generated.length);
+			review = null;
+			removeReviewBar();
+		};
+		/** Keep the original context and insert the AI result below it. */
+		const insertChatBelow = () => {
+			if (!review) return;
+			clearAiReview(view);
+			const original = review.original;
+			const generated = review.generated.trimEnd();
+			const separator = !original ? '' : original.endsWith('\n\n') ? '' : original.endsWith('\n') ? '\n' : '\n\n';
+			const combined = `${original}${separator}${generated}`;
+			const insertedFrom = review.undoFrom + original.length + separator.length;
+			view.dispatch({
+				changes: { from: review.undoFrom, to: review.undoTo, insert: combined },
+				selection: { anchor: insertedFrom + generated.length },
+				annotations: Transaction.userEvent.of('input'),
+				scrollIntoView: true,
+			});
+			markNewContent(view, insertedFrom, insertedFrom + generated.length);
+			review = null;
+			removeReviewBar();
+		};
+		/**
+		 * Edit mode: default to accepted text, then offer a fixed review bar
+		 * (show/hide diff, revert, insert below, done) above the composer.
+		 */
+		const addReviewActions = (answerNode: HTMLElement, rawAnswer: string) => {
+			removeReviewBar();
+			const original = contextText;
+			const generated = normalizeAiMarkdown(rawAnswer).trimEnd();
+			if (!generated || generated === original.trim()) return;
+			view.dispatch({
+				changes: { from: chatRange.from, to: chatRange.to, insert: generated },
+				annotations: Transaction.userEvent.of('input'),
+			});
+			const preview = buildAiReviewPreview(original, generated);
+			const segments = mapChatSegments(preview.segments, chatRange.from);
+			review = {
+				undoFrom: chatRange.from,
+				undoTo: chatRange.from + generated.length,
+				original,
+				generated,
+				segments,
+				diffVisible: false,
+			};
+			markNewContent(view, chatRange.from, chatRange.from + generated.length);
+			const bar = document.createElement('div');
+			bar.className = 'note-ai-chat-review';
+			bar.dataset.chatReview = reviewBarId;
+			bar.innerHTML = `<span class="note-ai-chat-review-label">${t('已更新', 'Updated')}</span>
+				<button type="button" class="row-action" data-review-diff title="${t('查看差异', 'Show diff')}" aria-label="${t('查看差异', 'Show diff')}" aria-pressed="false"><i data-lucide="diff"></i></button>
+				<button type="button" class="row-action" data-review-revert title="${t('回撤改动', 'Revert changes')}" aria-label="${t('回撤改动', 'Revert changes')}"><i data-lucide="rotate-ccw"></i></button>
+				<button type="button" class="row-action" data-review-below title="${t('保留原文并在下方插入 AI 结果', 'Keep the original and insert the AI result below')}" aria-label="${t('在下面插入', 'Insert below')}"><i data-lucide="plus"></i></button>
+				<span class="toolbar-spacer"></span>
+				<button type="button" class="button primary" data-review-accept>${t('完成', 'Done')}</button>`;
+			composer.prepend(bar);
+			paintIcons(bar);
+			review.button = bar.querySelector<HTMLButtonElement>('[data-review-diff]')!;
+			review.button.addEventListener('click', toggleChatDiff);
+			bar.querySelector('[data-review-revert]')?.addEventListener('click', () => {
+				discardChatReview();
+				removeReviewBar();
+			});
+			bar.querySelector('[data-review-below]')?.addEventListener('click', insertChatBelow);
+			bar.querySelector('[data-review-accept]')?.addEventListener('click', acceptChatReview);
+		};
+		/** Re-read the submitted range in edit mode so each turn builds on the current document. */
+		const refreshEditContext = () => {
+			if (review) {
+				chatRange = { from: review.undoFrom, to: review.undoFrom + review.generated.length };
+				review = null;
+				removeReviewBar();
+			}
+			contextText = view.state.sliceDoc(chatRange.from, chatRange.to);
+			const firstLine = view.state.doc.lineAt(chatRange.from).number;
+			numberedContext = contextText
+				.split('\n')
+				.map((line, index) => `${firstLine + index}: ${line}`)
+				.join('\n');
+		};
 		const submit = async () => {
 			const question = input.value.trim();
 			if (!question || controller) return;
+			if (chatMode === 'edit') refreshEditContext();
 			input.value = '';
 			input.style.height = '';
 			conversation.push({ role: 'user', content: question });
@@ -428,7 +629,7 @@ function bindNoteContextChat(
 			userNode.textContent = question;
 			const answerNode = document.createElement('div');
 			answerNode.className = 'note-ai-chat-message assistant';
-			answerNode.innerHTML = `<div class="ai-thinking"><i data-lucide="sparkles"></i><span>${t('正在查找原文…', 'Reading the note…')}</span></div>`;
+			answerNode.innerHTML = `<div class="ai-thinking"><i data-lucide="sparkles"></i><span>${chatMode === 'edit' ? t('正在修改…', 'Editing…') : t('正在查找原文…', 'Reading the note…')}</span></div>`;
 			messagesNode.append(userNode, answerNode);
 			paintIcons(answerNode);
 			messagesNode.scrollTop = messagesNode.scrollHeight;
@@ -439,6 +640,7 @@ function bindNoteContextChat(
 					{
 						model: selectedModel,
 						action: 'chat',
+						mode: chatMode,
 						text: question,
 						context: numberedContext,
 						noteId,
@@ -454,6 +656,7 @@ function bindNoteContextChat(
 					controller.signal,
 				);
 				if (!answer.trim()) throw new Error(t('AI 没有返回内容', 'AI returned no content'));
+				if (chatMode === 'edit' && !controller.signal.aborted) addReviewActions(answerNode, answer);
 				conversation.push({ role: 'assistant', content: answer });
 				sessions = [session, ...sessions.filter((item) => item.id !== session.id)];
 				paintHistory();
@@ -526,6 +729,10 @@ function bindNoteContextChat(
 			}
 			const next = sessions.find((item) => item.id === historySelect.value);
 			if (!next) return;
+			if (review) {
+				discardChatReview();
+				removeReviewBar();
+			}
 			session = next;
 			conversation = session.messages;
 			renderConversation();

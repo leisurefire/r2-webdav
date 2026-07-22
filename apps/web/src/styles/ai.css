@@ -885,6 +885,31 @@
 	background: var(--surface);
 }
 
+.note-ai-chat-review {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	margin-bottom: 6px;
+	padding-bottom: 6px;
+	border-bottom: 1px solid var(--line);
+}
+
+.note-ai-chat-review-label {
+	margin-right: 4px;
+	font-size: 12px;
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.note-ai-chat-review .button {
+	min-height: 28px;
+	font-size: 12px;
+}
+
+.note-ai-chat-review [aria-pressed='true'] {
+	background: var(--surface);
+}
+
 .note-ai-context-chip {
 	display: flex;
 	align-items: center;

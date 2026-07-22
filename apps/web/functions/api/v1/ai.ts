@@ -185,6 +185,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
 		const input = (await request.json()) as {
 			model?: string;
 			action?: string;
+			mode?: string;
 			text?: string;
 			instruction?: string;
 			context?: string;
@@ -218,15 +219,25 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
 				.map((item) => `${item.role === 'user' ? 'User' : 'Assistant'}: ${item.content}`)
 				.join('\n\n');
 		}
+		const chatEdit = input.action === 'chat' && input.mode === 'edit';
 		const task =
 			input.action === 'chat'
-				? [
-						'Answer the user question using the supplied note context.',
-						'Do not propose or perform edits to the note.',
-						'Every factual claim taken from the note must end with one or more citations in the exact form [[cite:START-END]], using the provided line numbers.',
-						'Use the smallest line range that supports the claim. Never invent a line number.',
-						'If the context does not contain the answer, say so directly.',
-					].join(' ')
+				? chatEdit
+					? [
+							'Answer the user request using the supplied note context.',
+							'If the request asks to change, rewrite, fix, translate, format, or restructure the context, return ONLY the full revised Markdown for the submitted context, without commentary or code fences.',
+							'Otherwise answer the question briefly. The user can still inspect or apply edits manually.',
+							'Every factual claim taken from the note must end with one or more citations in the exact form [[cite:START-END]], using the provided line numbers.',
+							'Use the smallest line range that supports the claim. Never invent a line number.',
+							'If the context does not contain the answer, say so directly.',
+						].join(' ')
+					: [
+							'Answer the user question using the supplied note context.',
+							'Do not propose or perform edits to the note.',
+							'Every factual claim taken from the note must end with one or more citations in the exact form [[cite:START-END]], using the provided line numbers.',
+							'Use the smallest line range that supports the claim. Never invent a line number.',
+							'If the context does not contain the answer, say so directly.',
+						].join(' ')
 				: input.action === 'summarize'
 					? 'Summarize ONLY the selected text below. Do not use or invent content outside that selection. Return only the summary body.'
 					: input.action === 'polish'

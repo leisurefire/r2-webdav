@@ -71,6 +71,8 @@ export interface AiRequest {
 	action: AiAction;
 	text: string;
 	instruction?: string;
+	/** Chat panel permission: ask is read-only Q&A, edit allows proposing Markdown edits. */
+	mode?: 'ask' | 'edit';
 	context?: string;
 	noteId?: string;
 	conversationId?: string;

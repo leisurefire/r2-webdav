@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeAiMarkdown, parseAiCitations, splitAiTitle, splitRewriteSummary } from './aiAssistant';
+import {
+	mapChatSegments,
+	normalizeAiMarkdown,
+	parseAiCitations,
+	splitAiTitle,
+	splitRewriteSummary,
+} from './aiAssistant';
 import { buildAiReviewPreview, diffText } from './textDiff';
 import { buildAiReviewMarkDecorations } from './markdownLivePreview';
 
@@ -95,5 +101,27 @@ describe('MarkdownAiHandle contract', () => {
 		// Shape is enforced at the type level via MarkdownAiHandle; runtime export stays a dual-method handle.
 		const sample = { syncEmptyPrompt: () => {}, destroy: () => {} };
 		expect(Object.keys(sample).sort()).toEqual(['destroy', 'syncEmptyPrompt']);
+	});
+});
+
+describe('mapChatSegments', () => {
+	it('shifts context-relative diff segments into document coordinates', () => {
+		const segments = mapChatSegments(
+			[
+				{ from: 3, to: 5, kind: 'deleted' as const },
+				{ from: 5, to: 9, kind: 'inserted' as const },
+			],
+			40,
+		);
+		expect(segments).toEqual([
+			{ from: 43, to: 45, kind: 'deleted' },
+			{ from: 45, to: 49, kind: 'inserted' },
+		]);
+	});
+
+	it('keeps a zero offset unchanged for whole-note edits', () => {
+		expect(mapChatSegments([{ from: 0, to: 7, kind: 'inserted' as const }], 0)).toEqual([
+			{ from: 0, to: 7, kind: 'inserted' },
+		]);
 	});
 });
