@@ -3447,70 +3447,83 @@ body:has(.app-shell) {
 
 /* Settings is an account-level modal so the current workspace stays in place. */
 .settings-dialog {
-	width: min(1120px, calc(100vw - 40px));
-	height: min(760px, calc(100dvh - 40px));
-	max-width: none;
-	max-height: none;
 	border-radius: var(--overlay-radius);
 	overflow: visible;
 }
 
 .settings-modal-shell {
+	position: relative;
 	height: 100%;
-	display: flex;
-	flex-direction: column;
 	overflow: hidden;
 	border-radius: inherit;
 	background: var(--panel-bg);
 }
 
 .settings-modal-head {
-	min-height: 64px;
-	display: flex;
-	align-items: center;
-	gap: 16px;
-	padding: 12px 16px;
-	border-bottom: 1px solid var(--line);
+	margin-bottom: 32px;
+	padding-right: 48px;
 }
 
 .settings-modal-head h2,
 .settings-panels h3 {
 	margin: 0;
-	font-size: 18px;
+	font-size: 22px;
 	font-weight: 650;
 	letter-spacing: 0;
 }
 
 .settings-modal-head p,
 .settings-panel-hint {
-	margin: 4px 0 0;
+	margin: 6px 0 0;
 	color: var(--muted);
-	font-size: 12px;
+	font-size: 13px;
 	line-height: 1.5;
 }
 
-.settings-modal-head > button {
-	margin-left: auto;
+.settings-modal-close {
+	position: absolute;
+	top: 12px;
+	right: 12px;
+	z-index: 3;
 }
 
 .settings-modal-body {
-	min-height: 0;
-	flex: 1;
+	height: 100%;
 	display: grid;
-	grid-template-columns: 216px minmax(0, 1fr);
+	grid-template-columns: 240px minmax(0, 1fr);
+}
+
+.settings-sidebar {
+	min-width: 0;
+	padding: 14px 8px;
+	border-right: 1px solid var(--line);
+	background: var(--sidebar-bg);
+}
+
+.settings-sidebar-head {
+	display: grid;
+	gap: 2px;
+	padding: 8px 10px 18px;
+}
+
+.settings-sidebar-head strong {
+	font-size: 14px;
+	font-weight: 650;
+}
+
+.settings-sidebar-head span {
+	color: var(--quiet);
+	font-size: 11px;
 }
 
 .settings-tabs {
 	display: flex;
 	flex-direction: column;
-	gap: 3px;
-	padding: 12px 10px;
-	border-right: 1px solid var(--line);
-	background: var(--sidebar-bg);
+	gap: 2px;
 }
 
 .settings-tabs button {
-	min-height: 38px;
+	min-height: 34px;
 	display: flex;
 	align-items: center;
 	gap: 9px;
@@ -3545,11 +3558,12 @@ body:has(.app-shell) {
 .settings-panels {
 	min-width: 0;
 	overflow-y: auto;
-	padding: 40px 52px;
+	padding: 38px 52px 52px;
+	overscroll-behavior: contain;
 }
 
 .settings-panels > section {
-	max-width: 720px;
+	max-width: 800px;
 }
 
 .settings-panels .settings-panel-hint {
@@ -3615,23 +3629,7 @@ body:has(.app-shell) {
 	}
 }
 
-.settings-dialog[open] {
-	animation: settings-dialog-in 170ms ease-out;
-}
-
-@keyframes settings-dialog-in {
-	from {
-		opacity: 0;
-		transform: translateY(5px) scale(0.995);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0) scale(1);
-	}
-}
-
 @media (prefers-reduced-motion: reduce) {
-	.settings-dialog[open],
 	.settings-custom-model {
 		animation: none;
 	}
@@ -3649,13 +3647,13 @@ body:has(.app-shell) {
 		height: calc(100dvh - 16px);
 	}
 
-	.settings-modal-head {
-		min-height: 64px;
-		padding: 12px;
+	.settings-sidebar-head {
+		display: none;
 	}
 
-	.settings-modal-head p {
-		display: none;
+	.settings-modal-head {
+		margin-bottom: 24px;
+		padding-right: 36px;
 	}
 
 	.settings-modal-body {
@@ -3663,10 +3661,14 @@ body:has(.app-shell) {
 		flex-direction: column;
 	}
 
-	.settings-tabs {
-		flex-direction: row;
+	.settings-sidebar {
 		padding: 8px;
 		border-right: 0;
+		border-bottom: 1px solid var(--line);
+	}
+
+	.settings-tabs {
+		flex-direction: row;
 		overflow-x: auto;
 	}
 

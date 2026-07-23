@@ -11,6 +11,7 @@ import {
 } from '../api/client';
 import { confirmAction, errorMessage, html, loadingMarkup, navigate, refreshIcons, render, toast } from '../shell';
 import { locale, setLocale, t, type Locale, type MessageKey } from '../i18n';
+import { createModalDialog } from '../ui/dialogs';
 import { enhanceSelect, type CustomSelectHandle } from '../ui/dropdown';
 
 type SettingsTab = 'connection' | 'language' | 'ai' | 'devices';
@@ -59,24 +60,24 @@ export async function openSettingsModal(initialTab: SettingsTab = 'connection'):
 	document.querySelector<HTMLDialogElement>('#settings-dialog')?.remove();
 	const davOrigin = API_BASE || location.origin;
 	let models = availableAiModels();
-	const dialog = document.createElement('dialog');
+	const dialog = createModalDialog('large', 'settings-dialog');
 	dialog.id = 'settings-dialog';
-	dialog.className = 'settings-dialog';
+	dialog.setAttribute('aria-labelledby', `settings-modal-title-${initialTab}`);
 	dialog.innerHTML = `<div class="settings-modal-shell">
-		<header class="settings-modal-head"><div><h2>${t('settings')}</h2><p>${t('settingsDesc')}</p></div><button type="button" class="row-action" data-settings-close aria-label="${label('关闭', 'Close')}" title="${label('关闭', 'Close')}"><i data-lucide="x"></i></button></header>
+		<button type="button" class="row-action settings-modal-close" data-settings-close aria-label="${label('关闭', 'Close')}" title="${label('关闭', 'Close')}"><i data-lucide="x"></i></button>
 		<div class="settings-modal-body">
-			<nav class="settings-tabs" aria-label="${t('settings')}">${tabs.map((tab) => `<button type="button" data-settings-tab="${tab.id}" class="${tab.id === initialTab ? 'active' : ''}"><i data-lucide="${tab.icon}"></i><span>${label(tab.zh, tab.en)}</span></button>`).join('')}</nav>
+			<aside class="settings-sidebar"><div class="settings-sidebar-head"><strong>TrueSpace</strong><span>${t('settings')}</span></div><nav class="settings-tabs" aria-label="${t('settings')}">${tabs.map((tab) => `<button type="button" data-settings-tab="${tab.id}" class="${tab.id === initialTab ? 'active' : ''}"><i data-lucide="${tab.icon}"></i><span>${label(tab.zh, tab.en)}</span></button>`).join('')}</nav></aside>
 			<div class="settings-panels">
-				<section data-settings-panel="connection"><h3>${t('settingsConnection')}</h3><p class="settings-panel-hint">${label('用于第三方客户端连接 TrueSpace。', 'Use these endpoints to connect third-party clients.')}</p>
+		<section data-settings-panel="connection"><header class="settings-modal-head"><h2 id="settings-modal-title-connection">${t('settingsConnection')}</h2><p>${label('用于第三方客户端连接 TrueSpace。', 'Use these endpoints to connect third-party clients.')}</p></header>
 					<div class="field"><label>${t('webdavUrl')}</label><div class="input-row"><input class="input" readonly value="${html(davOrigin)}/"><button class="button icon-button" data-copy="${html(davOrigin)}/" title="${t('copy')} ${t('webdavUrl')}" aria-label="${t('copy')} ${t('webdavUrl')}"><i data-lucide="copy"></i></button></div></div>
 					<div class="field"><label>${t('caldavUrl')}</label><div class="input-row"><input class="input" readonly value="${html(davOrigin)}/caldav/"><button class="button icon-button" data-copy="${html(davOrigin)}/caldav/" title="${t('copy')} ${t('caldavUrl')}" aria-label="${t('copy')} ${t('caldavUrl')}"><i data-lucide="copy"></i></button></div></div>
 				</section>
-				<section data-settings-panel="language" hidden><h3>${t('settingsLanguage')}</h3><p class="settings-panel-hint">${t('settingsLanguageHint')}</p><div class="field"><label for="language-select">${t('settingsLanguage')}</label><select class="input" id="language-select"><option value="en" ${locale === 'en' ? 'selected' : ''}>${t('english')}</option><option value="zh" ${locale === 'zh' ? 'selected' : ''}>${t('chinese')}</option></select></div></section>
-				<section data-settings-panel="ai" hidden><h3>${t('settingsAi')}</h3><p class="settings-panel-hint">${label('可以从远端拉取模型，也可以直接输入任意模型 ID。', 'Pull models from the provider or enter any model ID manually.')}</p>
+				<section data-settings-panel="language" hidden><header class="settings-modal-head"><h2 id="settings-modal-title-language">${t('settingsLanguage')}</h2><p>${t('settingsLanguageHint')}</p></header><div class="field"><label for="language-select">${t('settingsLanguage')}</label><select class="input" id="language-select"><option value="en" ${locale === 'en' ? 'selected' : ''}>${t('english')}</option><option value="zh" ${locale === 'zh' ? 'selected' : ''}>${t('chinese')}</option></select></div></section>
+				<section data-settings-panel="ai" hidden><header class="settings-modal-head"><h2 id="settings-modal-title-ai">${t('settingsAi')}</h2><p>${label('可以从远端拉取模型，也可以直接输入任意模型 ID。', 'Pull models from the provider or enter any model ID manually.')}</p></header>
 					<div class="settings-ai-grid">${aiActions.map((action) => aiModelField(action, models)).join('')}</div>
 					<div class="settings-inline-action"><button type="button" class="button" id="ai-pull-models"><i data-lucide="refresh-cw"></i><span>${t('aiPullModels')}</span></button><span class="muted">${t('settingsAiHint')}</span></div>
 				</section>
-				<section data-settings-panel="devices" hidden><h3>${label('设备管理', 'Devices')}</h3><p class="settings-panel-hint">${t('devicesDesc')}</p><div class="settings-device-list" data-settings-devices>${loadingMarkup(true)}</div></section>
+				<section data-settings-panel="devices" hidden><header class="settings-modal-head"><h2 id="settings-modal-title-devices">${label('设备管理', 'Devices')}</h2><p>${t('devicesDesc')}</p></header><div class="settings-device-list" data-settings-devices>${loadingMarkup(true)}</div></section>
 			</div>
 		</div>
 	</div>`;
@@ -119,6 +120,7 @@ export async function openSettingsModal(initialTab: SettingsTab = 'connection'):
 	};
 	const activate = (tab: SettingsTab) => {
 		activeTab = tab;
+		dialog.setAttribute('aria-labelledby', `settings-modal-title-${tab}`);
 		dialog
 			.querySelectorAll<HTMLElement>('[data-settings-tab]')
 			.forEach((button) => button.classList.toggle('active', button.dataset.settingsTab === tab));
