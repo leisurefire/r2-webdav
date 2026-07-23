@@ -177,7 +177,7 @@ export function navigate(path: string): void {
 
 export function shell(page: Page, _title: string, content = loadingMarkup()): void {
 	app.innerHTML = `<div class="app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}">
-		<aside class="sidebar">
+		<aside class="sidebar workspace-rail workspace-rail-left">
 			<div class="sidebar-head">
 				<div class="brand" aria-label="TrueSpace"><span class="brand-full">TrueSpace</span></div>
 				<button class="sidebar-toggle" id="sidebar-toggle" title="${sidebarCollapsed ? (locale === 'zh' ? '展开侧栏' : 'Expand sidebar') : locale === 'zh' ? '折叠侧栏' : 'Collapse sidebar'}" aria-label="${sidebarCollapsed ? (locale === 'zh' ? '展开侧栏' : 'Expand sidebar') : locale === 'zh' ? '折叠侧栏' : 'Collapse sidebar'}"><i data-lucide="${sidebarCollapsed ? 'panel-left-open' : 'panel-left-close'}"></i></button>

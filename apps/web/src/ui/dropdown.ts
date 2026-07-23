@@ -1,4 +1,4 @@
-import { Check, ChevronDown, createElement, type IconNode } from 'lucide';
+import { Check, ChevronDown, Search, createElement, type IconNode } from 'lucide';
 
 export interface DropdownAction {
 	id: string;
@@ -11,6 +11,9 @@ export interface CustomSelectOptions {
 	className?: string;
 	hideTrigger?: boolean;
 	menuMinWidth?: number;
+	/** Add a search field above long option lists. */
+	searchable?: boolean;
+	searchPlaceholder?: string;
 	getAnchor?: () => HTMLElement | null;
 	getOptionIcon?: (option: HTMLOptionElement) => IconNode | undefined;
 	getOptionVisual?: (option: HTMLOptionElement) => HTMLElement | undefined;
@@ -53,6 +56,20 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 	menu.setAttribute('role', 'listbox');
 	menu.setAttribute('aria-label', select.getAttribute('aria-label') ?? '');
 	menu.setAttribute('popover', 'manual');
+	const menuSearch = options.searchable ? document.createElement('div') : null;
+	const searchInput = options.searchable ? document.createElement('input') : null;
+	const optionList = document.createElement('div');
+	optionList.className = 'custom-select-options';
+	if (menuSearch && searchInput) {
+		menuSearch.className = 'custom-select-search';
+		searchInput.type = 'search';
+		searchInput.className = 'custom-select-search-input';
+		searchInput.placeholder = options.searchPlaceholder ?? 'Search…';
+		searchInput.setAttribute('aria-label', searchInput.placeholder);
+		menuSearch.append(createElement(Search), searchInput);
+		menu.append(menuSearch);
+	}
+	menu.append(optionList);
 	// Prefer mounting inside a modal dialog so the menu stays interactive.
 	// Outside a modal, body content is inert and pointer/hover/scroll all fail.
 	const resolveHost = () => select.closest('dialog') ?? document.body;
@@ -103,7 +120,9 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 		root.classList.remove('open');
 	};
 	const focusOption = (offset: number) => {
-		const rows = [...menu.querySelectorAll<HTMLButtonElement>('.custom-select-option:not(:disabled)')];
+		const rows = [...menu.querySelectorAll<HTMLButtonElement>('.custom-select-option:not(:disabled)')].filter(
+			(item) => !item.closest<HTMLElement>('.custom-select-row')?.hidden,
+		);
 		if (!rows.length) return;
 		const active =
 			document.activeElement instanceof HTMLElement ? rows.indexOf(document.activeElement as HTMLButtonElement) : -1;
@@ -128,10 +147,22 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 		button.disabled = select.disabled;
 		button.title = select.title;
 		button.setAttribute('aria-label', select.getAttribute('aria-label') ?? current?.label ?? '');
-		menu.replaceChildren();
+		optionList.replaceChildren();
+		let previousGroup = '';
 		for (const option of select.options) {
+			const group = option.parentElement instanceof HTMLOptGroupElement ? option.parentElement.label : '';
+			if (group && group !== previousGroup) {
+				const heading = document.createElement('div');
+				heading.className = 'custom-select-group-label';
+				heading.textContent = group;
+				heading.dataset.group = group.toLocaleLowerCase();
+				optionList.append(heading);
+			}
+			previousGroup = group;
 			const row = document.createElement('div');
 			row.className = 'custom-select-row';
+			row.dataset.group = group.toLocaleLowerCase();
+			row.dataset.searchText = `${option.label} ${group}`.toLocaleLowerCase();
 			const choice = document.createElement('button');
 			choice.type = 'button';
 			choice.className = 'custom-select-option';
@@ -148,7 +179,7 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 			if (optionIcon) choice.append(createElement(optionIcon));
 			const optionVisual = options.getOptionVisual?.(option);
 			if (optionVisual) choice.append(optionVisual);
-			choice.append(check, label);
+			choice.append(label, check);
 			choice.addEventListener('click', (event) => {
 				event.preventDefault();
 				event.stopPropagation();
@@ -170,8 +201,33 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 				});
 				row.append(actionButton);
 			}
-			menu.append(row);
+			optionList.append(row);
 		}
+		if (searchInput) {
+			searchInput.value = '';
+			applySearch();
+		}
+	};
+	const applySearch = () => {
+		if (!searchInput) return;
+		const query = searchInput.value.trim().toLocaleLowerCase();
+		let visible = 0;
+		const rows = [...optionList.querySelectorAll<HTMLElement>('.custom-select-row')];
+		for (const row of rows) {
+			const matches = !query || (row.dataset.searchText ?? '').includes(query);
+			row.hidden = !matches;
+			if (matches) visible += 1;
+		}
+		optionList.querySelectorAll<HTMLElement>('.custom-select-group-label').forEach((heading) => {
+			heading.hidden = !rows.some((row) => row.dataset.group === heading.dataset.group && !row.hidden);
+		});
+		let empty = optionList.querySelector<HTMLElement>('.custom-select-empty');
+		if (!visible && query) {
+			empty ??= document.createElement('div');
+			empty.className = 'custom-select-empty';
+			empty.textContent = 'No matches';
+			if (!empty.parentElement) optionList.append(empty);
+		} else empty?.remove();
 	};
 	const show = () => {
 		if (open || select.disabled) return;
@@ -195,6 +251,10 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 		place();
 		requestAnimationFrame(() => {
 			// Focus may be ignored while a modal dialog traps focus; that's fine for pointer use.
+			if (searchInput) {
+				searchInput.focus({ preventScroll: true });
+				return;
+			}
 			const selected =
 				menu.querySelector<HTMLButtonElement>('.custom-select-option[aria-selected="true"]') ??
 				menu.querySelector<HTMLButtonElement>('.custom-select-option:not(:disabled)');
@@ -230,6 +290,14 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 			);
 			match?.focus();
 		}
+	});
+	searchInput?.addEventListener('input', applySearch);
+	searchInput?.addEventListener('keydown', (event) => {
+		if (event.key === 'ArrowDown') {
+			event.preventDefault();
+			event.stopPropagation();
+			focusOption(1);
+		} else if (event.key !== 'Escape') event.stopPropagation();
 	});
 	// Keep wheel scrolling on the option list instead of the settings panel behind it.
 	menu.addEventListener(

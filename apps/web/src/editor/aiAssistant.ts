@@ -8,6 +8,7 @@ import {
 	Code,
 	FileText,
 	Italic,
+	Languages,
 	MessageCircle,
 	MessageCirclePlus,
 	PanelRightClose,
@@ -19,6 +20,7 @@ import {
 	Plus,
 	Quote,
 	RotateCcw,
+	Search,
 	Sigma,
 	Sparkles,
 	Square,
@@ -61,6 +63,8 @@ const AI_ICONS: Record<string, IconNode> = {
 	'panel-right-close': PanelRightClose,
 	'settings-2': Settings2,
 	'sliders-horizontal': SlidersHorizontal,
+	languages: Languages,
+	search: Search,
 	'chevron-up': ChevronUp,
 	diff: Diff,
 	'eye-off': EyeOff,
@@ -112,6 +116,28 @@ function providerLogoElement(model: string): HTMLElement | undefined {
 	icon.style.setProperty('--ai-provider-logo', `url("${logo}")`);
 	icon.setAttribute('aria-hidden', 'true');
 	return icon;
+}
+
+function populateModelSelect(
+	select: HTMLSelectElement,
+	models: string[],
+	selectedModel: string,
+	t: (zhText: string, enText: string) => string,
+): void {
+	const uniqueModels = [...new Set([...models, selectedModel].map((model) => model.trim()).filter(Boolean))];
+	const isSmall = (model: string) => /(?:flash|mini|nano|lite|small)/i.test(model);
+	const groups = [
+		{ label: t('模型', 'Models'), models: uniqueModels.filter((model) => !isSmall(model)) },
+		{ label: t('小型模型', 'Small models'), models: uniqueModels.filter(isSmall) },
+	];
+	select.replaceChildren();
+	for (const group of groups) {
+		if (!group.models.length) continue;
+		const optgroup = document.createElement('optgroup');
+		optgroup.label = group.label;
+		optgroup.append(...group.models.map((model) => new Option(model, model, false, model === selectedModel)));
+		select.append(optgroup);
+	}
 }
 
 export function normalizeAiMarkdown(value: string): string {
@@ -360,8 +386,16 @@ function bindNoteContextChat(
 			: options.noteTitle?.() || t('当前便签', 'Current note');
 		const contextKey = `${selection.from}:${selection.to}:${documentText.length}:${contextText.slice(0, 80)}`;
 		chatRange = hasSelection ? { from: selection.from, to: selection.to } : { from: 0, to: documentText.length };
-		const welcomeHtml = () =>
-			`<div class="note-ai-chat-welcome">${hasSelection ? t('我会参考你选中的内容回答；在编辑模式下也可以直接改写它。', 'I answer from your selection and can rewrite it directly in Edit mode.') : t('我会仅参考当前提交的便签内容回答，并标注引用来源。', 'I will answer only from the submitted note context and cite the source passages.')}</div>`;
+		const welcomeHtml = () => `<section class="note-ai-chat-welcome">
+			<span class="note-ai-welcome-mark"><i data-lucide="wand-sparkles"></i></span>
+			<h2>${t('今天事，我来帮。', 'What can I help with?')}</h2>
+			<div class="note-ai-quick-actions">
+				<button type="button" data-chat-quick="${t('总结当前便签，提炼重点与后续行动。', 'Summarize this note with key points and next actions.')}" data-chat-quick-mode="ask"><i data-lucide="file-text"></i><span>${t('总结当前便签', 'Summarize note')}</span></button>
+				<button type="button" data-chat-quick="${t('基于当前内容补全结构并继续写作。', 'Continue writing and improve the structure from the current content.')}" data-chat-quick-mode="edit"><i data-lucide="pencil"></i><span>${t('继续创作', 'Continue writing')}</span></button>
+				<button type="button" data-chat-quick="${t('将当前便签翻译为英文，保持 Markdown 结构。', 'Translate this note into Chinese and preserve its Markdown structure.')}" data-chat-quick-mode="edit"><i data-lucide="languages"></i><span>${t('翻译此页', 'Translate page')}</span></button>
+				<button type="button" data-chat-quick="${t('深入分析当前内容，指出关键结论、假设和风险。', 'Analyze this note for conclusions, assumptions, and risks.')}" data-chat-quick-mode="ask"><i data-lucide="search"></i><span>${t('深度分析', 'Deep analysis')}</span></button>
+			</div>
+		</section>`;
 		let sessions: NoteChatSession[] = [];
 		/** Chat mode is a permission only: ask is read-only, edit may propose edits; both remember their model. */
 		let chatMode: 'edit' | 'ask' = aiChatMode();
@@ -376,10 +410,9 @@ function bindNoteContextChat(
 			messages: [],
 		};
 		panel = document.createElement('aside');
-		panel.className = 'note-ai-chat-panel';
+		panel.className = 'note-ai-chat-panel workspace-rail workspace-rail-right';
 		panel.setAttribute('aria-label', t('AI 对话', 'AI conversation'));
-		panel.innerHTML = `<header class="note-ai-chat-head">
-			<span class="ai-mark"><i data-lucide="message-circle"></i></span>
+		panel.innerHTML = `<header class="note-ai-chat-head workspace-rail-head">
 			<select data-chat-history title="${t('历史对话', 'Chat history')}" aria-label="${t('历史对话', 'Chat history')}"></select>
 			<span class="toolbar-spacer"></span>
 			<button type="button" class="row-action" data-chat-new title="${t('新建对话', 'New chat')}" aria-label="${t('新建对话', 'New chat')}"><i data-lucide="message-circle-plus"></i></button>
@@ -388,7 +421,7 @@ function bindNoteContextChat(
 		<div class="note-ai-chat-messages" data-chat-messages>${welcomeHtml()}</div>
 		<div class="note-ai-chat-composer">
 			<div class="note-ai-context-chip"><i data-lucide="${hasSelection ? 'text-select' : 'file-text'}"></i><span>${contextLabel}</span></div>
-			<div class="note-ai-chat-input-row"><textarea rows="1" data-chat-input placeholder="${t('询问这段内容…', 'Ask about this content…')}" aria-label="${t('向 AI 提问', 'Ask AI')}"></textarea></div>
+			<div class="note-ai-chat-input-row"><textarea rows="1" data-chat-input placeholder="${t('使用 AI 处理当前内容…', 'Ask AI about this content…')}" aria-label="${t('向 AI 提问', 'Ask AI')}"></textarea></div>
 			<div class="note-ai-chat-footer"><button type="button" class="row-action" data-chat-settings title="${t('编辑或询问', 'Edit or ask')}" aria-label="${t('编辑或询问', 'Edit or ask')}"><i data-lucide="sliders-horizontal"></i></button><select class="note-ai-mode" data-chat-mode aria-label="${t('AI 模式', 'AI mode')}"><option value="edit">${t('编辑', 'Edit')}</option><option value="ask">${t('询问', 'Ask')}</option></select><span class="toolbar-spacer"></span><select class="note-ai-model" data-chat-model aria-label="${t('选择模型', 'Choose model')}"></select><button type="button" class="ai-send" data-chat-send title="${t('提交', 'Submit')}" aria-label="${t('提交', 'Submit')}"><i data-lucide="arrow-up"></i></button></div>
 		</div>`;
 		compose.querySelector(`[data-chat-review="${reviewBarId}"]`)?.remove();
@@ -404,14 +437,12 @@ function bindNoteContextChat(
 		const modeSelect = panel.querySelector<HTMLSelectElement>('[data-chat-mode]')!;
 		const modelSelect = panel.querySelector<HTMLSelectElement>('[data-chat-model]')!;
 		modeSelect.value = chatMode;
-		modelSelect.replaceChildren(
-			...availableAiModels().map((model) => new Option(model, model, false, model === selectedModel)),
-		);
-		if (!modelSelect.options.length || ![...modelSelect.options].some((option) => option.value === selectedModel))
-			modelSelect.add(new Option(selectedModel, selectedModel, true, true));
+		populateModelSelect(modelSelect, availableAiModels(), selectedModel, t);
 		enhanceSelect(modelSelect, {
 			className: 'note-ai-model-select',
-			menuMinWidth: 360,
+			menuMinWidth: 300,
+			searchable: true,
+			searchPlaceholder: t('搜索模型…', 'Search models…'),
 			getOptionVisual: (option) => providerLogoElement(option.value),
 		});
 		modelSelect.addEventListener('change', () => {
@@ -445,7 +476,7 @@ function bindNoteContextChat(
 		const isNewSession = () => !sessions.some((item) => item.id === session.id);
 		const paintHistory = () => {
 			historySelect.replaceChildren(
-				new Option(t('新对话', 'New chat'), newChatValue, false, isNewSession()),
+				new Option(t('新建 AI 对话', 'New AI chat'), newChatValue, false, isNewSession()),
 				...sessions.map(
 					(item) => new Option(item.title || t('未命名对话', 'Untitled chat'), item.id, false, item.id === session.id),
 				),
@@ -518,10 +549,13 @@ function bindNoteContextChat(
 			node.append(trigger);
 			paintIcons(trigger);
 		};
+		let bindWelcomeActions = () => {};
 		const renderConversation = () => {
 			messagesNode.innerHTML = '';
 			if (!conversation.length) {
 				messagesNode.innerHTML = welcomeHtml();
+				paintIcons(messagesNode);
+				bindWelcomeActions();
 				return;
 			}
 			for (const message of conversation) {
@@ -746,6 +780,19 @@ function bindNoteContextChat(
 			} finally {
 				controller = null;
 			}
+		};
+		bindWelcomeActions = () => {
+			messagesNode.querySelectorAll<HTMLButtonElement>('[data-chat-quick]').forEach((button) => {
+				button.addEventListener('click', () => {
+					const nextMode = button.dataset.chatQuickMode === 'edit' ? 'edit' : 'ask';
+					if (modeSelect.value !== nextMode) {
+						modeSelect.value = nextMode;
+						modeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+					}
+					input.value = button.dataset.chatQuick ?? '';
+					void submit();
+				});
+			});
 		};
 		historyDropdown = enhanceSelect(historySelect, {
 			className: 'note-ai-history-select',
