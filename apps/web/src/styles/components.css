@@ -1,0 +1,366 @@
+/*
+ * Shared visual system.
+ *
+ * Page styles own layout and content rendering. This file owns reusable
+ * surfaces, controls, menus, dialogs, motion, and sizing so those rules do not
+ * drift between files, notes, links, settings, and AI.
+ */
+
+:root {
+	--ink: #f1f1ef;
+	--input-caret: #ffffff;
+	--muted: #a8a8a5;
+	--quiet: #7f7f7b;
+	--accent: #2383e2;
+	--accent-hover: #1f75cc;
+	--accent-text: #6aabeb;
+	--danger: #eb5757;
+	--danger-soft: rgb(235 87 87 / 0.12);
+	--line: #30302f;
+	--soft-line: #292928;
+	--line-strong: #464644;
+	--app-bg: #191919;
+	--sidebar-bg: #202020;
+	--panel-bg: #191919;
+	--surface: #242424;
+	--surface-strong: #2c2c2b;
+	--elevated-bg: #252524;
+	--hover-bg: #2c2c2b;
+	--active-bg: #343434;
+	--control-border: #3a3a39;
+	--control-radius: 6px;
+	--overlay-radius: 8px;
+	--card-radius: 6px;
+	--pill-radius: 9999px;
+	--control-height: 36px;
+	--compact-control-height: 30px;
+	--icon-control-size: 32px;
+	--menu-row-height: 34px;
+	--toolbar-height: 44px;
+	--page-gutter-x: 24px;
+	--page-gutter-y: 12px;
+	--toolbar-gap: 6px;
+	--toolbar-spacing: 10px;
+	--sidebar-width: 252px;
+	--sidebar-collapsed-width: 56px;
+	--overlay-shadow: 0 18px 48px rgb(0 0 0 / 0.44), 0 2px 8px rgb(0 0 0 / 0.28);
+	--control-shadow: 0 1px 2px rgb(0 0 0 / 0.22);
+	--focus-ring: 0 0 0 2px rgb(35 131 226 / 0.42);
+	--motion-fast: 120ms ease;
+	--motion-base: 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html {
+	background: var(--app-bg);
+	color-scheme: dark;
+}
+
+body {
+	color: var(--ink);
+	background: var(--app-bg);
+}
+
+::selection {
+	background: rgb(35 131 226 / 0.32);
+}
+
+:where(button, input, textarea, select) {
+	letter-spacing: 0;
+}
+
+:where(button, input, textarea, select):focus-visible {
+	outline: 0;
+	box-shadow: var(--focus-ring);
+}
+
+:where(.workspace, .content, .notes-tree, .bookmarks-grid, .settings-panels, .note-ai-chat-messages, .ai-result) {
+	scrollbar-width: thin;
+	scrollbar-color: rgb(127 127 123 / 0.48) transparent;
+}
+
+:where(
+		.workspace,
+		.content,
+		.notes-tree,
+		.bookmarks-grid,
+		.settings-panels,
+		.note-ai-chat-messages,
+		.ai-result
+	)::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+:where(
+		.workspace,
+		.content,
+		.notes-tree,
+		.bookmarks-grid,
+		.settings-panels,
+		.note-ai-chat-messages,
+		.ai-result
+	)::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+:where(
+		.workspace,
+		.content,
+		.notes-tree,
+		.bookmarks-grid,
+		.settings-panels,
+		.note-ai-chat-messages,
+		.ai-result
+	)::-webkit-scrollbar-thumb {
+	border: 3px solid transparent;
+	border-radius: var(--pill-radius);
+	background: rgb(127 127 123 / 0.48) padding-box;
+}
+
+:where(
+		.workspace,
+		.content,
+		.notes-tree,
+		.bookmarks-grid,
+		.settings-panels,
+		.note-ai-chat-messages,
+		.ai-result
+	)::-webkit-scrollbar-thumb:hover {
+	background: rgb(168 168 165 / 0.62) padding-box;
+}
+
+/* Commands */
+:where(.button, .row-action, .sidebar-toggle, .header-action, .language-button) {
+	border-radius: var(--control-radius);
+	transition:
+		background-color var(--motion-fast),
+		border-color var(--motion-fast),
+		color var(--motion-fast),
+		opacity var(--motion-fast),
+		transform var(--motion-base);
+}
+
+.button {
+	height: var(--control-height);
+	min-height: var(--control-height);
+	padding-inline: 12px;
+	border: 1px solid var(--control-border);
+	background: var(--elevated-bg);
+	color: var(--ink);
+	box-shadow: var(--control-shadow);
+	font-size: 13px;
+	font-weight: 550;
+}
+
+.button:hover:not(:disabled) {
+	border-color: var(--line-strong);
+	background: var(--hover-bg);
+}
+
+.button.primary {
+	border-color: var(--accent);
+	background: var(--accent);
+	color: #ffffff;
+}
+
+.button.primary:hover:not(:disabled) {
+	border-color: var(--accent-hover);
+	background: var(--accent-hover);
+}
+
+.button.danger {
+	color: var(--danger);
+}
+
+.button.danger:hover:not(:disabled) {
+	background: var(--danger-soft);
+}
+
+.button:disabled {
+	cursor: default;
+	opacity: 0.42;
+}
+
+.icon-button,
+.row-action,
+.sidebar-toggle {
+	width: var(--icon-control-size);
+	height: var(--icon-control-size);
+	min-width: var(--icon-control-size);
+	min-height: var(--icon-control-size);
+	padding: 0;
+}
+
+.row-action,
+.sidebar-toggle {
+	border: 0;
+	background: transparent;
+	color: var(--muted);
+	box-shadow: none;
+}
+
+:where(.row-action, .sidebar-toggle):hover:not(:disabled),
+.row-action.active {
+	background: var(--hover-bg);
+	color: var(--ink);
+}
+
+.row-action.danger:hover:not(:disabled) {
+	background: var(--danger-soft);
+	color: var(--danger);
+}
+
+:where(.button, .row-action, .sidebar-toggle) svg {
+	width: 16px;
+	height: 16px;
+	stroke-width: 1.8;
+}
+
+/* Fields and enhanced selects */
+:where(.input, .custom-select-trigger, .ai-model, .ai-panel-model, .note-ai-mode, .note-ai-model) {
+	min-height: var(--control-height);
+	border: 1px solid var(--control-border);
+	border-radius: var(--control-radius);
+	background: var(--elevated-bg);
+	color: var(--ink);
+	box-shadow: var(--control-shadow);
+	transition:
+		border-color var(--motion-fast),
+		background-color var(--motion-fast),
+		box-shadow var(--motion-fast);
+}
+
+:where(.input, .custom-select-trigger, .ai-model, .note-ai-mode, .note-ai-model):hover {
+	border-color: var(--line-strong);
+	background: var(--hover-bg);
+}
+
+:where(.input, .custom-select-trigger, .ai-model, .note-ai-mode, .note-ai-model):focus,
+.custom-select.open .custom-select-trigger {
+	border-color: var(--accent);
+	outline: 0;
+	box-shadow: var(--focus-ring);
+}
+
+.input::placeholder,
+textarea::placeholder {
+	color: var(--quiet);
+}
+
+/* Toolbars and navigation rows */
+:where(.toolbar, .calendar-toolbar, .notes-toolbar, .notes-inner-toolbar, .note-ai-chat-head, .file-preview-head) {
+	min-height: var(--toolbar-height);
+	gap: var(--toolbar-gap);
+}
+
+:where(.nav-button, .collection-tree-row, .context-tree-row, .settings-tabs button) {
+	border-radius: var(--control-radius);
+	transition:
+		background-color var(--motion-fast),
+		color var(--motion-fast);
+}
+
+:where(.nav-button, .collection-tree-row, .context-tree-row, .settings-tabs button):hover,
+:where(.nav-button, .collection-tree-row, .context-tree-row, .settings-tabs button).active {
+	background: var(--hover-bg);
+	color: var(--ink);
+}
+
+/* Floating surfaces and menus */
+:where(.account-popover, .action-menu-popover, .ui-menu-popover, .ai-selection-menu, .ai-polish-menu) {
+	border: 1px solid var(--line);
+	border-radius: var(--overlay-radius);
+	background: var(--elevated-bg);
+	color: var(--ink);
+	box-shadow: var(--overlay-shadow);
+}
+
+:where(.action-menu-popover, .ui-menu-popover, .ai-polish-menu) {
+	padding: 5px;
+}
+
+:where(.action-menu-popover, .ui-menu-popover, .ai-polish-menu) button {
+	min-height: var(--menu-row-height);
+	border: 0;
+	border-radius: var(--control-radius);
+	background: transparent;
+	color: var(--muted);
+}
+
+:where(.action-menu-popover, .ui-menu-popover, .ai-polish-menu) button:hover,
+:where(.action-menu-popover, .ui-menu-popover, .ai-polish-menu) button:focus-visible,
+:where(.action-menu-popover, .ui-menu-popover) button.selected {
+	background: var(--hover-bg);
+	color: var(--ink);
+	box-shadow: none;
+}
+
+:where(.action-menu-popover, .ui-menu-popover, .ai-polish-menu) button.danger {
+	color: var(--danger);
+}
+
+.action-menu-separator,
+.ai-menu-divider {
+	background: var(--line);
+}
+
+/* Dialogs */
+dialog {
+	border: 1px solid var(--line);
+	border-radius: var(--overlay-radius);
+	background: var(--panel-bg);
+	color: var(--ink);
+	box-shadow: var(--overlay-shadow);
+}
+
+dialog::backdrop {
+	background: rgb(0 0 0 / 0.72);
+	backdrop-filter: blur(1px);
+}
+
+.dialog-actions {
+	border-top-color: var(--line);
+}
+
+/* Status and feedback */
+.status-dot {
+	background: var(--quiet);
+}
+
+.sync-status.syncing .status-dot,
+.note-save-status[data-state='pending'],
+.note-save-status[data-state='syncing'] {
+	background: var(--accent);
+}
+
+.note-save-status[data-state='failed'],
+.error-banner {
+	color: var(--danger);
+}
+
+.toast {
+	border: 1px solid var(--line-strong);
+	border-radius: var(--overlay-radius);
+	background: #f1f1ef;
+	color: #191919;
+	box-shadow: var(--overlay-shadow);
+}
+
+@media (max-width: 760px) {
+	:root {
+		--page-gutter-x: 12px;
+		--page-gutter-y: 8px;
+		--toolbar-height: 42px;
+	}
+
+	:where(.action-menu-popover, .ui-menu-popover, .ai-selection-menu, .ai-polish-menu) {
+		max-width: calc(100vw - 16px);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	:root {
+		--motion-fast: 0.01ms linear;
+		--motion-base: 0.01ms linear;
+	}
+}

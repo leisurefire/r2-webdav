@@ -24,16 +24,26 @@
 .notes-layout {
 	display: flex;
 	flex-direction: column;
+	height: 100%;
 	min-height: 0;
 	flex: 1;
-	gap: 10px;
+	gap: 0;
 	background: transparent;
-	overflow: auto;
+	overflow: hidden;
 }
 
 .notes-layout > .note-editor {
 	flex: 1;
 	min-height: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+}
+
+.content:has(.notes-layout) {
+	width: 100%;
+	max-width: none;
+	padding: 0;
 }
 
 .notes-folders,
@@ -536,10 +546,9 @@
 	scrollbar-color: color-mix(in srgb, var(--quiet) 40%, transparent) transparent;
 	padding: 6px;
 	border: 1px solid var(--line);
-	border-radius: 8px;
-	background: color-mix(in srgb, var(--panel-bg) 96%, transparent);
-	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
-	backdrop-filter: blur(10px);
+	border-radius: var(--overlay-radius);
+	background: var(--elevated-bg);
+	box-shadow: var(--overlay-shadow);
 	transition:
 		opacity 120ms ease,
 		visibility 120ms ease;
@@ -653,13 +662,16 @@
 	background: transparent;
 	color: var(--ink);
 	font-family: inherit;
-	font-size: var(--note-body-size, 14px);
+	font-size: var(--note-body-size, 16px);
+	line-height: 1.72;
 }
 
 .note-source {
-	--note-content-inset: max(0px, calc((100% - 880px) / 2));
-	--note-gutter-width: 34px;
-	--note-heading-space: 78px;
+	--note-content-inset: max(0px, calc((100% - 920px) / 2));
+	--note-gutter-width: 0px;
+	--note-heading-space: 118px;
+	--note-title-size: 40px;
+	--note-heading-padding: 42px 24px 14px;
 }
 
 .note-editor.note-width-full .note-source {
@@ -683,7 +695,7 @@
 	z-index: 1;
 	/* Absolute heading already accounts for inset/gutter via left/right. */
 	margin-inline: 0;
-	padding: 18px 24px 6px;
+	padding: var(--note-heading-padding);
 }
 
 .note-source .cm-editor.cm-focused {
@@ -691,11 +703,7 @@
 }
 
 .note-source .cm-gutters {
-	display: flex;
-	border-right: 1px solid var(--soft-line);
-	background: transparent;
-	color: var(--quiet);
-	font-size: 11px;
+	display: none;
 }
 
 .cm-live-heading {
@@ -1325,7 +1333,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 
 /* Shared editor highlight primitives. Only one can be active at a time. */
 .cm-editor-highlight {
-	--editor-highlight-color: color-mix(in srgb, #3b82f6 18%, transparent);
+	--editor-highlight-color: color-mix(in srgb, var(--accent) 24%, transparent);
 	background: var(--editor-highlight-color);
 	border-radius: 2px;
 	box-decoration-break: clone;
@@ -1333,12 +1341,12 @@ details.markdown-callout > .markdown-callout-title::marker {
 }
 
 .cm-editor-highlight-content {
-	color: #2563eb;
+	color: var(--accent-text);
 }
 
 .cm-editor:not(.cm-focused) .cm-editor-highlight-content,
 .cm-editor:not(.cm-focused) .cm-editor-highlight-selection {
-	background: color-mix(in srgb, #9ca3af 20%, transparent);
+	background: color-mix(in srgb, var(--muted) 20%, transparent);
 }
 
 .cm-editor-highlight-transient-0 {
@@ -1369,50 +1377,23 @@ details.markdown-callout > .markdown-callout-title::marker {
 	}
 }
 
-@media (prefers-color-scheme: dark) {
-	.cm-editor-highlight {
-		--editor-highlight-color: color-mix(in srgb, #60a5fa 24%, transparent);
-	}
-
-	.cm-editor-highlight-content {
-		color: #93c5fd;
-	}
-
-	.cm-editor:not(.cm-focused) .cm-editor-highlight-content,
-	.cm-editor:not(.cm-focused) .cm-editor-highlight-selection {
-		background: color-mix(in srgb, #6b7280 28%, transparent);
-	}
-}
-
 /* AI review: character-level delete/insert marks inside a unified preview. */
 .cm-ai-review-deleted {
 	color: var(--quiet);
 	text-decoration: line-through;
 	text-decoration-color: color-mix(in srgb, var(--quiet) 75%, transparent);
-	background: color-mix(in srgb, #9ca3af 12%, transparent);
+	background: color-mix(in srgb, var(--muted) 18%, transparent);
 	border-radius: 2px;
 	box-decoration-break: clone;
 	-webkit-box-decoration-break: clone;
 }
 
 .cm-ai-review-inserted {
-	color: #2563eb;
-	background: color-mix(in srgb, #3b82f6 16%, transparent);
+	color: var(--accent-text);
+	background: color-mix(in srgb, var(--accent) 24%, transparent);
 	border-radius: 2px;
 	box-decoration-break: clone;
 	-webkit-box-decoration-break: clone;
-}
-
-@media (prefers-color-scheme: dark) {
-	.cm-ai-review-inserted {
-		color: #93c5fd;
-		background: color-mix(in srgb, #3b82f6 24%, transparent);
-	}
-
-	.cm-ai-review-deleted {
-		color: #9ca3af;
-		background: color-mix(in srgb, #6b7280 18%, transparent);
-	}
 }
 
 .note-heading {
@@ -1460,8 +1441,9 @@ details.markdown-callout > .markdown-callout-title::marker {
 	outline: 0;
 	background: transparent;
 	color: var(--ink);
-	font-size: 28px;
-	font-weight: 650;
+	font-size: var(--note-title-size, 40px);
+	font-weight: 700;
+	line-height: 1.18;
 	letter-spacing: 0;
 }
 
@@ -1805,26 +1787,15 @@ details.markdown-callout > .markdown-callout-title::marker {
 	color: var(--muted);
 }
 
-.notes-layout {
-	display: flex;
-	flex-direction: column;
-	gap: 10px;
-}
-
-.notes-layout > .note-editor {
-	flex: 1;
-	min-height: 0;
-	border: 0;
-	border-radius: 0;
-	background: transparent;
-}
-
 .notes-inner-toolbar {
 	flex: none;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 0;
+	min-height: 44px;
+	margin-bottom: 0;
+	padding: 0 12px;
+	border-bottom: 1px solid var(--line);
 	min-width: 0;
 	flex-wrap: nowrap;
 	gap: var(--toolbar-gap, 8px);
@@ -1884,7 +1855,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 .note-action-more .action-menu-popover,
 .note-more-popover {
 	right: 0;
-	min-width: 220px;
+	min-width: 260px;
 	padding: 8px;
 }
 
@@ -1895,13 +1866,13 @@ details.markdown-callout > .markdown-callout-title::marker {
 	margin-bottom: 6px;
 	padding: 4px;
 	border: 1px solid var(--line);
-	border-radius: 10px;
-	background: color-mix(in srgb, var(--surface) 70%, transparent);
+	border-radius: var(--control-radius);
+	background: var(--surface);
 }
 
 .note-font-choice {
 	min-width: 0;
-	height: 78px;
+	height: 68px;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
@@ -1909,8 +1880,8 @@ details.markdown-callout > .markdown-callout-title::marker {
 	gap: 6px;
 	padding: 8px 6px;
 	border: 1px solid transparent;
-	border-radius: 8px;
-	background: var(--panel-bg, #fff);
+	border-radius: var(--control-radius);
+	background: var(--elevated-bg);
 	color: var(--ink);
 	font: inherit;
 	cursor: pointer;
@@ -2020,7 +1991,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 	box-sizing: border-box;
 	/* Pre-CM title must match post-CM inset so non-full-width open does not jump. */
 	margin-inline: var(--note-content-inset);
-	padding: 18px 24px 6px calc(var(--note-gutter-width) + 24px);
+	padding: var(--note-heading-padding);
 }
 
 .note-document > .note-source {
