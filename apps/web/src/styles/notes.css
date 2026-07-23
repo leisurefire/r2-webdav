@@ -717,11 +717,22 @@
 }
 
 .note-source {
+	position: relative;
 	--note-content-inset: max(0px, calc((100% - 920px) / 2));
 	--note-gutter-width: 38px;
 	--note-heading-space: 118px;
 	--note-title-size: 40px;
 	--note-heading-padding: 42px 24px 14px;
+}
+
+/* Keep the title on its final gutter-aligned track while CodeMirror loads. */
+.note-source.note-source-pending > .note-heading {
+	position: absolute;
+	top: 0;
+	left: calc(var(--note-content-inset) + var(--note-gutter-width));
+	right: var(--note-content-inset);
+	margin-inline: 0;
+	padding: var(--note-heading-padding);
 }
 
 .note-editor.note-width-full .note-source {

@@ -228,6 +228,16 @@ body {
 	stroke-width: 1.8;
 }
 
+:where(.button, .row-action).is-syncing svg {
+	animation: control-spin 760ms linear infinite;
+}
+
+@keyframes control-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
 /* Fields and enhanced selects */
 :where(.input, .custom-select-trigger, .ai-model, .ai-panel-model, .note-ai-mode, .note-ai-model) {
 	min-height: var(--control-height);

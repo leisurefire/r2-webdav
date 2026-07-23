@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { confirmAction, errorMessage, html, pageFromPath, refreshIcons, shell, sidebarContext, toast } from '../shell';
 import { locale, t } from '../i18n';
 import { enhanceSelect } from '../ui/dropdown';
+import { workspaceSidebarMarkup } from '../ui/helpers';
 
 export let calendarCursor = new Date();
 calendarCursor.setDate(1);
@@ -406,16 +407,19 @@ export function paintCalendarSidebar(calendar: CalendarSummary): void {
 		<button type="button" class="row-action" data-cal-new title="${newEventLabel}" aria-label="${newEventLabel}"><i data-lucide="plus"></i></button>
 		<button type="button" class="row-action" data-cal-refresh title="${syncLabel}" aria-label="${syncLabel}"><i data-lucide="refresh-cw"></i></button>
 	</div>`;
-	context.innerHTML = `<div class="sidebar-context-head"><strong>${locale === 'zh' ? '最近日程' : 'Recent schedule'}</strong>${tools}</div><div class="recent-events">${
-		recent.length
+	context.innerHTML = workspaceSidebarMarkup({
+		label: locale === 'zh' ? '最近日程' : 'Recent schedule',
+		tools,
+		body: recent.length
 			? recent
 					.map(
 						(event) =>
-							`<button class="recent-event" data-recent-event="${html(eventCacheKey(event))}"><span class="recent-event-date">${new Date(event.start).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en', { month: 'short', day: 'numeric' })}</span><span class="recent-event-copy"><strong>${html(event.title)}</strong><small>${event.allDay ? (locale === 'zh' ? '全天' : 'All day') : new Date(event.start).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en', { hour: '2-digit', minute: '2-digit' })}</small></span></button>`,
+							`<button class="recent-event collection-tree-row" data-recent-event="${html(eventCacheKey(event))}"><i data-lucide="calendar-days" aria-hidden="true"></i><span class="recent-event-copy"><strong>${html(event.title)}</strong><small>${event.allDay ? (locale === 'zh' ? '全天' : 'All day') : new Date(event.start).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en', { hour: '2-digit', minute: '2-digit' })}</small></span><span class="recent-event-date">${new Date(event.start).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en', { month: 'short', day: 'numeric' })}</span></button>`,
 					)
 					.join('')
-			: `<div class="sidebar-context-empty">${locale === 'zh' ? '暂无日程' : 'No events'}</div>`
-	}</div>`;
+			: `<div class="sidebar-context-empty">${locale === 'zh' ? '暂无日程' : 'No events'}</div>`,
+		treeClass: 'recent-events calendar-agenda-tree',
+	});
 	context.querySelectorAll<HTMLElement>('[data-recent-event]').forEach((item) =>
 		item.addEventListener('click', async () => {
 			const event = calendarCache.events.get(item.dataset.recentEvent!);

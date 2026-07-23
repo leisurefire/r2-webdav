@@ -13,14 +13,23 @@ import {
 	toast,
 } from '../shell';
 import { locale, t } from '../i18n';
-import { openTextDialog } from '../ui/helpers';
+import {
+	collapseTreeBranch,
+	expandTreeBranch,
+	openTextDialog,
+	treeLeadingMarkup,
+	workspaceSidebarMarkup,
+} from '../ui/helpers';
 import { renderMarkdown } from '../editor/markdownRenderer';
 
 export let currentPath = '';
 export let filePathHighlight: string | null = null;
 const fileCache = new Map<string, FileListing>();
 const validatedFilePaths = new Set<string>();
+const fileExpandedPaths = new Set<string>(['']);
+const fileTreeLoadingPaths = new Set<string>();
 let directoryLoadCleanup: (() => void) | null = null;
+let fileTreeExpansionPending: string | null = null;
 
 export function formatBytes(size: number): string {
 	if (size < 1024) return `${size} B`;
@@ -61,27 +70,26 @@ export function breadcrumbMarkup(path: string): string {
 }
 
 export function fileSidebarMarkup(listing: FileListing): string {
-	const pathRows: string[] = [];
-	let built = '';
-	pathRows.push(
-		`<button class="context-tree-row ${listing.path === '' ? 'active' : ''} ${filePathHighlight === '' ? 'path-highlight' : ''}" data-file-tree-path="" style="--tree-depth:0"><i data-lucide="database"></i><span>${locale === 'zh' ? '我的文件' : 'My files'}</span></button>`,
-	);
-	listing.path
-		.split('/')
-		.filter(Boolean)
-		.forEach((part, index) => {
-			built = built ? `${built}/${part}` : part;
-			pathRows.push(
-				`<button class="context-tree-row ${built === listing.path ? 'active' : ''} ${filePathHighlight === built ? 'path-highlight' : ''}" data-file-tree-path="${html(built)}" style="--tree-depth:${index + 1}"><i data-lucide="folder-open"></i><span>${html(part)}</span></button>`,
-			);
-		});
-	const childDepth = listing.path ? listing.path.split('/').length + 1 : 1;
-	for (const entry of listing.entries) {
-		if (entry.type !== 'directory') continue;
-		pathRows.push(
-			`<button class="context-tree-row" data-file-tree-path="${html(entry.path)}" style="--tree-depth:${childDepth}"><i data-lucide="folder"></i><span>${html(entry.name)}</span></button>`,
-		);
-	}
+	const directCurrentChild = (path: string): { path: string; name: string } | null => {
+		if (!currentPath || currentPath === path || (path && !currentPath.startsWith(`${path}/`))) return null;
+		const remainder = path ? currentPath.slice(path.length + 1) : currentPath;
+		const name = remainder.split('/')[0];
+		return name ? { name, path: path ? `${path}/${name}` : name } : null;
+	};
+	const childFolders = (path: string): Array<{ path: string; name: string }> => {
+		const known = (cachedFiles(path)?.entries ?? [])
+			.filter((entry) => entry.type === 'directory')
+			.map((entry) => ({ path: entry.path, name: entry.name }));
+		const currentChild = directCurrentChild(path);
+		if (currentChild && !known.some((entry) => entry.path === currentChild.path)) known.unshift(currentChild);
+		return known;
+	};
+	const renderFolder = (path: string, name: string, depth: number): string => {
+		const expanded = fileExpandedPaths.has(path);
+		const children = expanded ? childFolders(path) : [];
+		const loading = fileTreeLoadingPaths.has(path);
+		return `<div class="file-tree-node note-tree-node note-folder-card ${path === currentPath ? 'active' : ''} ${expanded ? 'expanded' : ''}" style="--tree-depth:${depth}"><button type="button" class="collection-tree-row ${filePathHighlight === path ? 'path-highlight' : ''}" data-file-tree-path="${html(path)}">${treeLeadingMarkup(path === '' ? 'database' : expanded ? 'folder-open' : 'folder', expanded, loading)}<span>${html(name)}</span></button>${expanded && children.length ? `<div class="notes-tree-children">${children.map((child) => renderFolder(child.path, child.name, depth + 1)).join('')}</div>` : ''}</div>`;
+	};
 	const uploadLabel = locale === 'zh' ? '上传' : 'Upload';
 	const mkdirLabel = locale === 'zh' ? '新建文件夹' : 'New folder';
 	const syncLabel = locale === 'zh' ? '同步文件' : 'Sync files';
@@ -90,35 +98,59 @@ export function fileSidebarMarkup(listing: FileListing): string {
 		<button type="button" class="row-action" data-files-mkdir title="${mkdirLabel}" aria-label="${mkdirLabel}"><i data-lucide="folder-plus"></i></button>
 		<button type="button" class="row-action" data-files-refresh title="${syncLabel}" aria-label="${syncLabel}"><i data-lucide="refresh-cw"></i></button>
 	</div>`;
-	return `<div class="sidebar-context-head"><strong>${locale === 'zh' ? '存储库结构' : 'Storage structure'}</strong>${tools}</div><nav class="context-tree" aria-label="${locale === 'zh' ? '存储库结构' : 'Storage structure'}">${pathRows.join('')}</nav>`;
+	return workspaceSidebarMarkup({
+		label: locale === 'zh' ? '存储库结构' : 'Storage structure',
+		tools,
+		body: renderFolder('', locale === 'zh' ? '我的文件' : 'My files', 0),
+		treeClass: 'file-folder-tree',
+		treeAttributes: 'data-file-tree',
+	});
 }
 
-export function openFileDirectory(path: string, highlight = false): void {
+function expandFilePath(path: string): void {
+	fileExpandedPaths.add('');
+	let built = '';
+	for (const part of path.split('/').filter(Boolean)) {
+		built = built ? `${built}/${part}` : part;
+		fileExpandedPaths.add(built);
+	}
+}
+
+export function openFileDirectory(path: string, highlight = false, expand = true): void {
 	directoryLoadCleanup?.();
+	if (expand) expandFilePath(path);
+	const showLoading = !validatedFilePaths.has(path);
+	if (showLoading) fileTreeLoadingPaths.add(path);
 	const row = [...document.querySelectorAll<HTMLElement>('[data-file-tree-path]')].find(
 		(item) => item.dataset.fileTreePath === path,
 	);
-	if (row) {
+	if (row && showLoading) {
 		if (highlight) {
 			row.classList.remove('path-highlight');
 			void row.offsetWidth;
 			row.classList.add('path-highlight');
 		}
-		const icon = row.querySelector<HTMLElement>('svg, [data-lucide]');
-		const original = icon?.outerHTML ?? '';
-		if (icon) {
-			icon.outerHTML = '<i class="file-tree-loader" data-lucide="loader-circle"></i>';
+		const leading = row.querySelector<HTMLElement>('.note-tree-leading');
+		const original = leading?.innerHTML ?? '';
+		if (leading) {
+			leading.innerHTML = '<i class="note-tree-loader" data-lucide="loader-circle"></i>';
 			row.classList.add('loading');
 			refreshIcons();
 		}
 		directoryLoadCleanup = () => {
+			fileTreeLoadingPaths.delete(path);
 			if (row.isConnected && original) {
-				row.querySelector('svg, [data-lucide]')?.remove();
-				row.insertAdjacentHTML('afterbegin', original);
+				const currentLeading = row.querySelector<HTMLElement>('.note-tree-leading');
+				if (currentLeading) currentLeading.innerHTML = original;
 				row.classList.remove('loading');
+				refreshIcons();
 			}
 		};
-	} else directoryLoadCleanup = null;
+	} else if (showLoading)
+		directoryLoadCleanup = () => {
+			fileTreeLoadingPaths.delete(path);
+		};
+	else directoryLoadCleanup = null;
 	currentPath = path;
 	filePathHighlight = highlight ? path : null;
 	void renderFiles();
@@ -303,14 +335,24 @@ export function paintFiles(listing: FileListing): void {
 			<button type="button" class="row-action" data-files-mkdir title="${mkdirLabel}" aria-label="${mkdirLabel}"><i data-lucide="folder-plus"></i></button>
 			<button type="button" class="row-action" data-files-refresh title="${syncLabel}" aria-label="${syncLabel}"><i data-lucide="refresh-cw"></i></button>
 		</div>`;
-	content.innerHTML = `<div class="toolbar"><div class="breadcrumbs">${breadcrumbMarkup(listing.path)}</div>
+	content.innerHTML = `<div class="file-layout"><div class="toolbar"><div class="breadcrumbs">${breadcrumbMarkup(listing.path)}</div>
 			${mobileTools}
 			<input type="file" id="file-input" hidden multiple>
 		</div><div id="upload-status"></div>
-		${rows ? `<div class="file-grid">${rows}</div>` : `<div class="empty-state"><div><i data-lucide="folder-open"></i><div>${locale === 'zh' ? '此文件夹为空' : 'This folder is empty'}</div></div></div>`}`;
+		<div class="file-browser-body">${rows ? `<div class="file-grid">${rows}</div>` : `<div class="notes-empty large file-empty"><i data-lucide="folder-open"></i><span>${locale === 'zh' ? '此文件夹为空' : 'This folder is empty'}</span></div>`}</div></div>`;
 	const context = sidebarContext();
 	if (context) context.innerHTML = fileSidebarMarkup(listing);
 	refreshIcons();
+	if (fileTreeExpansionPending !== null && context) {
+		const pendingPath = fileTreeExpansionPending;
+		const host = [...context.querySelectorAll<HTMLElement>('[data-file-tree-path]')]
+			.find((item) => item.dataset.fileTreePath === pendingPath)
+			?.closest('.file-tree-node');
+		if (host?.querySelector(':scope > .notes-tree-children')) {
+			fileTreeExpansionPending = null;
+			requestAnimationFrame(() => expandTreeBranch(host, '.notes-tree-children'));
+		}
+	}
 	const highlightedPath = filePathHighlight;
 	if (highlightedPath !== null)
 		window.setTimeout(() => {
@@ -321,7 +363,24 @@ export function paintFiles(listing: FileListing): void {
 		.forEach((item) => item.addEventListener('click', () => openFileDirectory(item.dataset.path!, true)));
 	context
 		?.querySelectorAll<HTMLElement>('[data-file-tree-path]')
-		.forEach((item) => item.addEventListener('click', () => openFileDirectory(item.dataset.fileTreePath!, true)));
+		.forEach((item) =>
+			item.addEventListener('click', () => {
+				const path = item.dataset.fileTreePath ?? '';
+				const host = item.closest('.file-tree-node');
+				if (path && fileExpandedPaths.has(path)) {
+					collapseTreeBranch(host, '.notes-tree-children', () => {
+						fileExpandedPaths.delete(path);
+						openFileDirectory(path, true, false);
+					});
+					return;
+				}
+				if (path) {
+					fileExpandedPaths.add(path);
+					fileTreeExpansionPending = path;
+				}
+				openFileDirectory(path, true, false);
+			}),
+		);
 	content.querySelectorAll<HTMLElement>('[data-open]').forEach((item) =>
 		item.addEventListener('click', async () => {
 			if (item.dataset.type === 'directory') {
@@ -420,7 +479,21 @@ export function paintFiles(listing: FileListing): void {
 		status.innerHTML = '';
 		await renderFiles(true);
 	});
-	bindAll('[data-files-refresh]', () => void renderFiles(true));
+	bindAll('[data-files-refresh]', () => {
+		const buttons = roots.flatMap((root) => [...root.querySelectorAll<HTMLButtonElement>('[data-files-refresh]')]);
+		buttons.forEach((button) => {
+			button.disabled = true;
+			button.classList.add('is-syncing');
+			button.setAttribute('aria-busy', 'true');
+		});
+		void renderFiles(true).finally(() =>
+			buttons.forEach((button) => {
+				button.disabled = false;
+				button.classList.remove('is-syncing');
+				button.removeAttribute('aria-busy');
+			}),
+		);
+	});
 }
 
 export async function renderFiles(forceSync = false): Promise<void> {
@@ -429,25 +502,31 @@ export async function renderFiles(forceSync = false): Promise<void> {
 	const content = document.querySelector<HTMLDivElement>('#page-content')!;
 	const cached = cachedFiles(currentPath);
 	if (cached) paintFiles(cached);
-	if (!forceSync && validatedFilePaths.has(currentPath)) {
+	const stopDirectoryLoading = directoryLoadCleanup;
+	const finishDirectoryLoading = () => {
+		if (directoryLoadCleanup !== stopDirectoryLoading) return;
 		directoryLoadCleanup?.();
 		directoryLoadCleanup = null;
+	};
+	if (!forceSync && validatedFilePaths.has(currentPath)) {
+		finishDirectoryLoading();
 		return;
 	}
 	const requestedPath = currentPath;
-	const stopDirectoryLoading = directoryLoadCleanup;
 	validatedFilePaths.add(requestedPath);
 	try {
 		const listing = await api.listFiles(requestedPath);
 		cacheFiles(listing);
+		finishDirectoryLoading();
 		paintFiles(listing);
 	} catch (error) {
+		finishDirectoryLoading();
 		if (!cached) content.innerHTML = `<div class="error-banner">${html(errorMessage(error))}</div>`;
-		else toast(errorMessage(error));
-	} finally {
-		if (directoryLoadCleanup === stopDirectoryLoading) {
-			directoryLoadCleanup?.();
-			directoryLoadCleanup = null;
+		else {
+			paintFiles(cached);
+			toast(errorMessage(error));
 		}
+	} finally {
+		finishDirectoryLoading();
 	}
 }

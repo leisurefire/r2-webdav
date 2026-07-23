@@ -144,13 +144,34 @@ export function replaceNotesSidebar(data: NotePage, selectedId?: string): void {
 		bindNoteSidebar(next, data, selected);
 		next.querySelectorAll('[data-notes-refresh]').forEach((node) =>
 			node.addEventListener('click', () => {
-				void flushAllNoteCommits().then(() => renderNotes(selectedId, true));
+				void refreshNotesView(selectedId, [next]);
 			}),
 		);
 		const list = next.querySelector<HTMLElement>('[data-notes-tree]');
 		if (list) list.scrollTop = scrollTop;
 	}
 	refreshIcons();
+}
+
+async function refreshNotesView(selectedId: string | undefined, roots: ParentNode[]): Promise<void> {
+	const buttons = roots.flatMap((root) => [
+		...root.querySelectorAll<HTMLButtonElement>('[data-notes-refresh], #notes-refresh'),
+	]);
+	buttons.forEach((button) => {
+		button.disabled = true;
+		button.classList.add('is-syncing');
+		button.setAttribute('aria-busy', 'true');
+	});
+	try {
+		await flushAllNoteCommits();
+		await renderNotes(selectedId, true);
+	} finally {
+		buttons.forEach((button) => {
+			button.disabled = false;
+			button.classList.remove('is-syncing');
+			button.removeAttribute('aria-busy');
+		});
+	}
 }
 
 export function paintNotes(data: NotePage, selectedId?: string, openMobile = false): void {
@@ -193,10 +214,7 @@ export function paintNotes(data: NotePage, selectedId?: string, openMobile = fal
 		bindNoteSidebar(mobileSidebar, data, selected);
 	}
 	restoreNotesTreeScroll();
-	const refreshNotes = async () => {
-		await flushAllNoteCommits();
-		await renderNotes(selected?.id, true);
-	};
+	const refreshNotes = () => refreshNotesView(selected?.id, context ? [content, context] : [content]);
 	content.querySelectorAll('[data-notes-refresh], #notes-refresh').forEach((node) =>
 		node.addEventListener('click', () => void refreshNotes()),
 	);
@@ -252,7 +270,7 @@ export async function loadMoreNotes(selectedId?: string, scrollTop = 0): Promise
 
 export async function renderNotes(selectedId?: string, forceSync = false, openMobile = false): Promise<void> {
 	selectedId ??= noteIdFromPath();
-	shell('notes', t('notes'));
+	if (!document.querySelector('.notes-layout')) shell('notes', t('notes'));
 	await loadNoteFolders(forceSync);
 	if (selectedId) {
 		try {

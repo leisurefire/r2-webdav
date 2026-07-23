@@ -11,7 +11,15 @@ import {
 	toast,
 } from '../shell';
 import { locale, t } from '../i18n';
-import { collapseTreeBranch, expandTreeBranch, openFolderDialog, openTextDialog, renderTreeNodes } from '../ui/helpers';
+import {
+	collapseTreeBranch,
+	expandTreeBranch,
+	openFolderDialog,
+	openTextDialog,
+	renderTreeNodes,
+	treeLeadingMarkup,
+	workspaceSidebarMarkup,
+} from '../ui/helpers';
 import { trackNoteNetworkOp } from './commits';
 import {
 	buildNoteFolderTree,
@@ -178,9 +186,7 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 				}
 				const folder = node.kind === 'folder';
 				const icon = folder
-					? node.loading
-						? '<span class="note-tree-leading" aria-hidden="true"><i class="note-tree-loader" data-lucide="loader-circle"></i></span>'
-						: `<span class="note-tree-leading" aria-hidden="true"><i class="tree-folder-icon" data-lucide="${node.expanded ? 'folder-open' : 'folder'}"></i>${caret(node.expanded)}</span>`
+					? treeLeadingMarkup(node.expanded ? 'folder-open' : 'folder', node.expanded, node.loading)
 					: caret(node.expanded);
 				const actions = folder
 					? `<div class="note-folder-actions action-menu" data-action-menu><button class="row-action" data-new-note="${html(node.key)}" title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button><button class="row-action" data-menu-toggle title="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-label="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button><div class="action-menu-popover" data-menu-popover role="menu"><button data-move-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="folder-input"></i><span>${locale === 'zh' ? '移动目录' : 'Move folder'}</span></button><button data-rename-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="pencil"></i><span>${locale === 'zh' ? '重命名' : 'Rename'}</span></button><button class="danger" data-delete-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="folder-minus"></i><span>${locale === 'zh' ? '解散' : 'Dissolve'}</span></button></div></div>`
@@ -202,13 +208,13 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 	const unpinnedRootMarkup = `<div class="notes-tree-children notes-tree-root notes-tree-root-unpinned" data-note-folder-drop="root">${unpinnedRootNotes.map((note) => noteCardMarkup(note, selected)).join('')}${rootStatus}</div>`;
 	const folderMarkup = renderFolderish(folderTree);
 	const archiveMarkup = renderFolderish(archiveTree);
-	return `<aside class="notes-folders" aria-label="${locale === 'zh' ? '便签目录' : 'Note folders'}">
-		<div class="notes-folders-head sidebar-context-head"><strong>${locale === 'zh' ? '便签目录' : 'Note folders'}</strong><div class="notes-folder-tools sidebar-context-tools"><button class="row-action" data-new-note title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button><button class="row-action" data-new-note-folder title="${locale === 'zh' ? '新建目录' : 'New folder'}" aria-label="${locale === 'zh' ? '新建目录' : 'New folder'}"><i data-lucide="folder-plus"></i></button>${noteSortMenuMarkup()}<button type="button" class="row-action" data-notes-refresh title="${locale === 'zh' ? '同步便签' : 'Sync notes'}" aria-label="${locale === 'zh' ? '同步便签' : 'Sync notes'}"><i data-lucide="refresh-cw"></i></button></div></div>
-		<div class="notes-tree" data-notes-tree>
-			${pinnedRootMarkup}${folderMarkup}${unpinnedRootMarkup}${archiveMarkup}
-		</div>
-		<div class="notes-load-status" aria-live="polite">${notesLoadingMore ? loadingMarkup(true) : ''}</div>
-	</aside>`;
+	return workspaceSidebarMarkup({
+		label: locale === 'zh' ? '便签目录' : 'Note folders',
+		tools: `<div class="notes-folder-tools sidebar-context-tools"><button class="row-action" data-new-note title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button><button class="row-action" data-new-note-folder title="${locale === 'zh' ? '新建目录' : 'New folder'}" aria-label="${locale === 'zh' ? '新建目录' : 'New folder'}"><i data-lucide="folder-plus"></i></button>${noteSortMenuMarkup()}<button type="button" class="row-action" data-notes-refresh title="${locale === 'zh' ? '同步便签' : 'Sync notes'}" aria-label="${locale === 'zh' ? '同步便签' : 'Sync notes'}"><i data-lucide="refresh-cw"></i></button></div>`,
+		body: `${pinnedRootMarkup}${folderMarkup}${unpinnedRootMarkup}${archiveMarkup}`,
+		treeAttributes: 'data-notes-tree',
+		footer: `<div class="notes-load-status" aria-live="polite">${notesLoadingMore ? loadingMarkup(true) : ''}</div>`,
+	});
 }
 
 export function bindNotesFolders(content: HTMLElement, data: NotePage): void {

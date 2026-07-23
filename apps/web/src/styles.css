@@ -3243,10 +3243,50 @@ body:has(.app-shell) {
 }
 
 .content:has(#calendar-view),
-.content:has(.notes-layout) {
+.content:has(.notes-layout),
+.content:has(.file-layout) {
 	display: flex;
 	flex-direction: column;
+	overflow: hidden;
+}
+
+.file-layout {
+	min-height: 0;
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+}
+
+.content:has(.file-layout) {
+	width: 100%;
+	max-width: none;
+	padding: 0;
+}
+
+.file-layout > .toolbar {
+	min-height: 44px;
+	margin: 0;
+	padding: 0 12px;
+}
+
+.file-layout > #upload-status:not(:empty) {
+	padding: 0 12px;
+}
+
+.file-browser-body {
+	min-height: 0;
+	flex: 1;
 	overflow: auto;
+	overscroll-behavior: contain;
+}
+
+.file-browser-body > .file-empty {
+	height: 100%;
+	min-height: 0;
+}
+
+.file-browser-body > .file-grid {
+	padding: 0 12px 24px;
 }
 
 .calendar {

@@ -135,11 +135,11 @@
 	width: 100%;
 	max-width: 100%;
 	align-self: flex-start;
-	min-height: 32px;
+	min-height: var(--toolbar-height);
 	display: inline-flex;
 	align-items: center;
 	gap: 0;
-	margin: 4px 0 8px;
+	margin: 0 0 var(--toolbar-spacing);
 	padding: 4px;
 	border: 0;
 	border-radius: 0;
@@ -356,6 +356,22 @@
 	border: 0;
 	border-radius: 0;
 	background: transparent;
+}
+
+.content:has(.links-layout) {
+	width: 100%;
+	max-width: none;
+	padding: 0;
+}
+
+.links-layout .bookmark-path {
+	min-height: 44px;
+	margin: 0;
+	padding: 0 12px;
+}
+
+.links-layout .bookmarks-grid {
+	padding: 0 12px 24px;
 }
 
 .bookmark-card {

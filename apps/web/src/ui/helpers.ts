@@ -61,6 +61,30 @@ export function renderTreeNodes<T>(
 		.join('');
 }
 
+export interface WorkspaceSidebarOptions {
+	label: string;
+	ariaLabel?: string;
+	tools?: string;
+	body: string;
+	treeClass?: string;
+	treeAttributes?: string;
+	footer?: string;
+}
+
+export function workspaceSidebarMarkup(options: WorkspaceSidebarOptions): string {
+	return `<aside class="notes-folders workspace-context-panel" aria-label="${html(options.ariaLabel ?? options.label)}">
+		<div class="notes-folders-head sidebar-context-head"><strong>${html(options.label)}</strong>${options.tools ?? ''}</div>
+		<div class="notes-tree ${options.treeClass ?? ''}" ${options.treeAttributes ?? ''}>${options.body}</div>
+		${options.footer ?? ''}
+	</aside>`;
+}
+
+export function treeLeadingMarkup(icon: string, expanded: boolean, loading = false): string {
+	if (loading)
+		return '<span class="note-tree-leading" aria-hidden="true"><i class="note-tree-loader" data-lucide="loader-circle"></i></span>';
+	return `<span class="note-tree-leading" aria-hidden="true"><i class="tree-folder-icon" data-lucide="${html(icon)}"></i><i class="tree-caret-icon" data-lucide="${expanded ? 'chevron-down' : 'chevron-right'}"></i></span>`;
+}
+
 
 /** Animate a tree branch closed before the caller re-renders and removes it. */
 export function collapseTreeBranch(
