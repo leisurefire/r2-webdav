@@ -137,10 +137,6 @@ export function paintBookmarkView(): void {
 	let folder = root;
 	for (const name of bookmarkFolderPath) folder = folder.folders.find((item) => item.name === name) ?? root;
 	if (folder === root && bookmarkFolderPath.length) bookmarkFolderPath = [];
-	while (folder.links.length === 0 && folder.folders.length === 1) {
-		folder = folder.folders[0];
-		bookmarkFolderPath = folder.path;
-	}
 	const cards = folder.links;
 	const selectedFolderKey = bookmarkFolderPath.join('\u001f');
 	if (selectedFolderKey) expandBookmarkAncestors(selectedFolderKey);

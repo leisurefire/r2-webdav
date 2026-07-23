@@ -53,12 +53,12 @@ export function fileIcon(entry: FileEntry): string {
 export function breadcrumbMarkup(path: string): string {
 	const parts = path ? path.split('/') : [];
 	let built = '';
-	const crumbs = parts.length
-		? []
-		: [`<button class="crumb current" data-path="">${locale === 'zh' ? '我的文件' : 'My files'}</button>`];
+	const crumbs = [
+		`<button class="crumb ${parts.length ? '' : 'current'}" data-path="">${locale === 'zh' ? '我的文件' : 'My files'}</button>`,
+	];
 	parts.forEach((part, index) => {
 		built = built ? `${built}/${part}` : part;
-		if (index > 0) crumbs.push('<span class="crumb-separator">/</span>');
+		crumbs.push('<span class="crumb-separator">/</span>');
 		crumbs.push(
 			`<button class="crumb ${index === parts.length - 1 ? 'current' : ''}" data-path="${html(built)}">${html(part)}</button>`,
 		);

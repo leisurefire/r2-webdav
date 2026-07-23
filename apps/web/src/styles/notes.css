@@ -718,7 +718,7 @@
 
 .note-source {
 	position: relative;
-	--note-content-inset: max(0px, calc((100% - 920px) / 2));
+	--note-content-inset: max(0px, calc((100cqw - 920px) / 2));
 	--note-gutter-width: 38px;
 	--note-heading-space: 118px;
 	--note-title-size: 40px;
@@ -769,6 +769,9 @@
 
 .note-source .cm-gutters {
 	display: flex;
+	width: var(--note-gutter-width);
+	min-width: var(--note-gutter-width);
+	box-sizing: border-box;
 	border-right: 0;
 	background: transparent;
 	color: var(--quiet);
@@ -2063,6 +2066,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 .note-document {
 	display: flex;
 	flex-direction: column;
+	container-type: inline-size;
 }
 
 .note-editor.note-font-serif .note-document {
