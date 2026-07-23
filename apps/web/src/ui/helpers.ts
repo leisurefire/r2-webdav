@@ -60,3 +60,46 @@ export function renderTreeNodes<T>(
 		.map((node) => renderNode(node, depth, renderTreeNodes(childrenOf(node), childrenOf, renderNode, depth + 1)))
 		.join('');
 }
+
+
+/** Animate a tree branch closed before the caller re-renders and removes it. */
+export function collapseTreeBranch(
+	host: Element | null | undefined,
+	branchSelector: string,
+	done: () => void,
+): void {
+	const branch = host?.querySelector<HTMLElement>(`:scope > ${branchSelector}`);
+	if (!branch || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+		done();
+		return;
+	}
+	branch.style.setProperty('--tree-branch-height', `${Math.max(branch.scrollHeight, 1)}px`);
+	branch.classList.add('is-collapsing');
+	let finished = false;
+	const finish = () => {
+		if (finished) return;
+		finished = true;
+		branch.removeEventListener('animationend', onEnd);
+		done();
+	};
+	const onEnd = (event: AnimationEvent) => {
+		if (event.target === branch) finish();
+	};
+	branch.addEventListener('animationend', onEnd);
+	window.setTimeout(finish, 220);
+}
+
+
+/** Mark a freshly mounted tree branch so CSS can run the open animation once. */
+export function expandTreeBranch(host: Element | null | undefined, branchSelector: string): void {
+	const branch = host?.querySelector<HTMLElement>(`:scope > ${branchSelector}`);
+	if (!branch || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+	branch.classList.add('is-expanding');
+	const clear = (event?: AnimationEvent) => {
+		if (event && event.target !== branch) return;
+		branch.classList.remove('is-expanding');
+		branch.removeEventListener('animationend', clear);
+	};
+	branch.addEventListener('animationend', clear);
+	window.setTimeout(() => clear(), 220);
+}

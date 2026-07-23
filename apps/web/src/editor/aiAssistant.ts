@@ -31,6 +31,7 @@ import {
 import {
 	aiChatMode,
 	aiModelForAction,
+	aiModelProvider,
 	api,
 	availableAiModels,
 	saveAiChatMode,
@@ -83,23 +84,32 @@ function paintIcons(root: ParentNode): void {
 	});
 }
 
+const PROVIDER_LOGOS: Record<string, string> = {
+	anthropic: '/ai-providers/claude.svg',
+	google: '/ai-providers/gemini.svg',
+	moonshot: '/ai-providers/kimi.svg',
+	openai: '/ai-providers/openai.svg',
+	deepseek: '/ai-providers/deepseek.svg',
+	xai: '/ai-providers/xai.svg',
+	meta: '/ai-providers/meta.svg',
+	mistral: '/ai-providers/mistral.svg',
+	qwen: '/ai-providers/qwen.svg',
+	cohere: '/ai-providers/cohere.svg',
+	perplexity: '/ai-providers/perplexity.svg',
+	microsoft: '/ai-providers/microsoft.svg',
+	amazon: '/ai-providers/amazon.svg',
+	zhipu: '/ai-providers/zhipu.svg',
+	minimax: '/ai-providers/minimax.svg',
+	yi: '/ai-providers/yi.svg',
+	baichuan: '/ai-providers/baichuan.svg',
+};
+
 function providerClass(model: string): string {
-	const value = model.toLowerCase();
-	if (value.includes('deepseek')) return 'deepseek';
-	if (value.includes('kimi') || value.includes('moonshot')) return 'moonshot';
-	if (value.includes('gpt') || value.includes('openai')) return 'openai';
-	if (value.includes('claude') || value.includes('anthropic')) return 'anthropic';
-	if (value.includes('gemini') || value.includes('google')) return 'google';
-	return 'generic';
+	return aiModelProvider(model);
 }
 
 function providerLogo(model: string): string | null {
-	const provider = providerClass(model);
-	if (provider === 'anthropic') return '/ai-providers/claude.svg';
-	if (provider === 'google') return '/ai-providers/gemini.svg';
-	if (provider === 'moonshot') return '/ai-providers/kimi.svg';
-	if (provider === 'generic') return null;
-	return `/ai-providers/${provider}.svg`;
+	return PROVIDER_LOGOS[providerClass(model)] ?? null;
 }
 
 function providerLogoElement(model: string): HTMLElement | undefined {
@@ -315,7 +325,6 @@ function bindNoteContextChat(
 	const t = (zhText: string, enText: string): string => (zh ? zhText : enText);
 	let panel: HTMLElement | null = null;
 	let controller: AbortController | null = null;
-	let activeSelectionKey = '';
 	/** Freeze the exact submitted context so edits never leak into a wider live range. */
 	let chatRange: AiRange = { from: 0, to: 0 };
 	interface ChatReview {
@@ -364,7 +373,6 @@ function bindNoteContextChat(
 			else window.setTimeout(removeClosingPanel, 220);
 		} else root.classList.remove('note-ai-sidebar-open');
 		panel = null;
-		activeSelectionKey = '';
 		trigger.classList.remove('active');
 		trigger.setAttribute('aria-expanded', 'false');
 		if (activeNoteChatClose === close) activeNoteChatClose = null;
@@ -375,7 +383,6 @@ function bindNoteContextChat(
 		activeNoteChatClose = close;
 		const documentText = view.state.doc.toString();
 		const selection = view.state.selection.main;
-		activeSelectionKey = `${selection.from}:${selection.to}`;
 		const hasSelection = !selection.empty;
 		let contextText = hasSelection ? view.state.sliceDoc(selection.from, selection.to) : documentText;
 		const startLine = hasSelection ? view.state.doc.lineAt(selection.from).number : 1;
@@ -476,7 +483,11 @@ function bindNoteContextChat(
 				modelSelect.value = selectedModel;
 				modelSelect.dispatchEvent(new Event('change', { bubbles: true }));
 			}
-			if (!conversation.length) messagesNode.innerHTML = welcomeHtml();
+			if (!conversation.length && !input.value.trim()) {
+				messagesNode.innerHTML = welcomeHtml();
+				paintIcons(messagesNode);
+				bindWelcomeActions();
+			}
 		});
 		settingsButton.addEventListener('click', () => modeDropdown.open());
 		send.disabled = true;
@@ -564,9 +575,12 @@ function bindNoteContextChat(
 		const renderConversation = () => {
 			messagesNode.innerHTML = '';
 			if (!conversation.length) {
-				messagesNode.innerHTML = welcomeHtml();
-				paintIcons(messagesNode);
-				bindWelcomeActions();
+				// Keep the empty-state prompts only when there is no draft text either.
+				if (!input.value.trim()) {
+					messagesNode.innerHTML = welcomeHtml();
+					paintIcons(messagesNode);
+					bindWelcomeActions();
+				}
 				return;
 			}
 			for (const message of conversation) {
@@ -734,6 +748,8 @@ function bindNoteContextChat(
 			if (requestMode === 'edit') refreshEditContext();
 			input.value = '';
 			input.style.height = '';
+			// Drop the empty-state prompts as soon as a real turn starts.
+			messagesNode.querySelector('.note-ai-chat-welcome')?.remove();
 			conversation.push({ role: 'user', content: question });
 			if (conversation.length === 1) session.title = question.replace(/\s+/g, ' ').slice(0, 36);
 			paintHistory();
@@ -815,6 +831,7 @@ function bindNoteContextChat(
 		};
 		historyDropdown = enhanceSelect(historySelect, {
 			className: 'note-ai-history-select',
+			menuMinWidth: 280,
 			getActions: (option) =>
 				option.value === newChatValue
 					? []
@@ -887,6 +904,17 @@ function bindNoteContextChat(
 		input.addEventListener('input', () => {
 			input.style.height = 'auto';
 			input.style.height = `${Math.min(120, input.scrollHeight)}px`;
+			// Hide welcome prompts while the user is drafting, restore if they clear it.
+			if (conversation.length) return;
+			if (input.value.trim()) {
+				messagesNode.querySelector('.note-ai-chat-welcome')?.remove();
+				return;
+			}
+			if (!messagesNode.querySelector('.note-ai-chat-welcome')) {
+				messagesNode.innerHTML = welcomeHtml();
+				paintIcons(messagesNode);
+				bindWelcomeActions();
+			}
 		});
 		input.addEventListener('keydown', (event) => {
 			if (event.key === 'Enter' && !event.shiftKey) {
@@ -913,19 +941,13 @@ function bindNoteContextChat(
 	};
 	const handleOpen = () => void open();
 	trigger.addEventListener('click', handleOpen);
-	const onSelectionChange = () => {
-		if (!panel) return;
-		const current = view.state.selection.main;
-		if (`${current.from}:${current.to}` !== activeSelectionKey) close();
-	};
-	document.addEventListener('selectionchange', onSelectionChange);
+	// Keep the AI rail open while editing; only the collapse control (or unmount) closes it.
 	const disconnectObserver = new MutationObserver(() => {
 		if (!root.isConnected) close();
 	});
 	disconnectObserver.observe(document.body, { childList: true, subtree: true });
 	return () => {
 		trigger.removeEventListener('click', handleOpen);
-		document.removeEventListener('selectionchange', onSelectionChange);
 		disconnectObserver.disconnect();
 		close();
 	};

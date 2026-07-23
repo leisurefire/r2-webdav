@@ -39,14 +39,25 @@ export const AI_MODEL_FALLBACK: AiModel[] = ['deepseek-v4-flash', 'deepseek-v4-p
 const AI_MODELS_KEY = 'r2_ai_models';
 const AI_MODEL_ACTION_PREFIX = 'r2_ai_model_';
 
-function aiModelProvider(model: string): string {
+export function aiModelProvider(model: string): string {
 	const value = model.trim().toLowerCase();
 	if (/claude|anthropic/.test(value)) return 'anthropic';
 	if (/deepseek/.test(value)) return 'deepseek';
 	if (/gemini|google/.test(value)) return 'google';
 	if (/kimi|moonshot/.test(value)) return 'moonshot';
-	if (/gpt|openai|codex/.test(value)) return 'openai';
-	if (/grok|xai/.test(value)) return 'xai';
+	if (/gpt|openai|o[1-9]|codex|chatgpt/.test(value)) return 'openai';
+	if (/grok|xai|x-ai/.test(value)) return 'xai';
+	if (/llama|meta-llama|\bmeta\b/.test(value)) return 'meta';
+	if (/mistral|mixtral|codestral|pixtral|ministral/.test(value)) return 'mistral';
+	if (/qwen|qwq|tongyi|dashscope/.test(value)) return 'qwen';
+	if (/command-r|cohere|c4ai/.test(value)) return 'cohere';
+	if (/sonar|perplexity/.test(value)) return 'perplexity';
+	if (/phi-|wizardlm|microsoft|azure/.test(value)) return 'microsoft';
+	if (/nova|amazon|bedrock|titan/.test(value)) return 'amazon';
+	if (/glm|zhipu|chatglm/.test(value)) return 'zhipu';
+	if (/minimax|abab|m1-/.test(value)) return 'minimax';
+	if (/\byi-|01-ai|yi-lightning|yi-large/.test(value)) return 'yi';
+	if (/baichuan/.test(value)) return 'baichuan';
 	return value.split(/[\/:._-]/, 1)[0] || 'other';
 }
 

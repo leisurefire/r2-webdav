@@ -52,7 +52,7 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 
 	const menu = document.createElement('div');
 	menu.id = id;
-	menu.className = 'ui-menu-popover custom-select-menu';
+	menu.className = `ui-menu-popover custom-select-menu${options.className ? ` ${options.className}-menu` : ''}`;
 	menu.setAttribute('role', 'listbox');
 	menu.setAttribute('aria-label', select.getAttribute('aria-label') ?? '');
 	menu.setAttribute('popover', 'manual');

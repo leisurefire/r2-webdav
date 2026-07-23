@@ -426,6 +426,15 @@
 	max-width: 142px;
 	flex: 0 1 142px;
 	display: block !important;
+	overflow: hidden;
+}
+
+.note-ai-history-select .custom-select-value,
+.note-ai-history-select .custom-select-value > span {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .note-ai-history-select .custom-select-trigger {
@@ -434,6 +443,7 @@
 	padding: 0 6px 0 8px;
 	border-color: transparent;
 	background: transparent;
+	box-shadow: none;
 	color: var(--muted);
 	font-size: 11px;
 	transition:
@@ -445,6 +455,7 @@
 .note-ai-history-select.open .custom-select-trigger {
 	border-color: var(--line);
 	background-color: var(--surface);
+	box-shadow: none;
 }
 
 .note-ai-chat-title {
@@ -559,7 +570,12 @@
 }
 
 .ai-provider-logo-openai,
-.ai-provider-logo-moonshot {
+.ai-provider-logo-moonshot,
+.ai-provider-logo-xai,
+.ai-provider-logo-meta,
+.ai-provider-logo-microsoft,
+.ai-provider-logo-amazon,
+.ai-provider-logo-yi {
 	color: #111111;
 }
 .ai-provider-logo-anthropic {
@@ -570,6 +586,27 @@
 }
 .ai-provider-logo-deepseek {
 	color: #2563eb;
+}
+.ai-provider-logo-mistral {
+	color: #f54e00;
+}
+.ai-provider-logo-qwen {
+	color: #615ced;
+}
+.ai-provider-logo-cohere {
+	color: #39594d;
+}
+.ai-provider-logo-perplexity {
+	color: #20808d;
+}
+.ai-provider-logo-zhipu {
+	color: #0f62fe;
+}
+.ai-provider-logo-minimax {
+	color: #e11d48;
+}
+.ai-provider-logo-baichuan {
+	color: #ff6a00;
 }
 
 .note-ai-mode-select {
@@ -601,7 +638,12 @@
 
 @media (prefers-color-scheme: dark) {
 	.ai-provider-logo-openai,
-	.ai-provider-logo-moonshot {
+	.ai-provider-logo-moonshot,
+	.ai-provider-logo-xai,
+	.ai-provider-logo-meta,
+	.ai-provider-logo-microsoft,
+	.ai-provider-logo-amazon,
+	.ai-provider-logo-yi {
 		color: #ffffff;
 	}
 }
@@ -983,17 +1025,31 @@
 }
 
 .note-ai-history-select {
-	max-width: min(210px, calc(100% - 76px));
-	flex-basis: 210px;
+	min-width: 0;
+	max-width: min(180px, calc(100% - 76px));
+	flex: 1 1 180px;
 }
 
 .note-ai-history-select .custom-select-trigger {
 	height: 32px;
 	min-height: 32px;
+	max-width: 100%;
 	padding: 0 5px 0 7px;
+	border-color: transparent;
+	background: transparent;
+	box-shadow: none;
 	color: var(--ink);
 	font-size: 13px;
 	font-weight: 600;
+	overflow: hidden;
+}
+
+.note-ai-history-select .custom-select-value,
+.note-ai-history-select .custom-select-value > span {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .note-ai-history-select:hover .custom-select-trigger,
@@ -1001,6 +1057,16 @@
 	border-color: transparent;
 	background: var(--hover-bg);
 	box-shadow: none;
+}
+
+.note-ai-history-select-menu .custom-select-row {
+	gap: 2px;
+}
+
+.note-ai-history-select-menu .custom-select-action {
+	flex: none;
+	width: 28px;
+	min-width: 28px;
 }
 
 .note-ai-chat-messages {

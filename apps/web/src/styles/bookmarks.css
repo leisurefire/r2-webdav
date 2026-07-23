@@ -59,6 +59,7 @@
 .bookmark-tree-children {
 	padding-top: 0;
 	padding-bottom: 0;
+	transform-origin: top;
 }
 
 .bookmark-tree-node .tree-caret-icon,

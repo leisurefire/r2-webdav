@@ -221,6 +221,56 @@
 	gap: 0;
 	margin-left: 16px;
 	padding: 1px 0 3px 12px;
+	transform-origin: top;
+}
+
+.notes-tree-children.is-expanding,
+.bookmark-tree-children.is-expanding {
+	animation: tree-branch-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.notes-tree-children.is-collapsing,
+.bookmark-tree-children.is-collapsing {
+	overflow: hidden;
+	animation: tree-branch-out 170ms cubic-bezier(0.4, 0, 0.2, 1) both;
+	pointer-events: none;
+}
+
+@keyframes tree-branch-in {
+	from {
+		opacity: 0;
+		transform: translateY(-4px);
+		clip-path: inset(0 0 100% 0);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+		clip-path: inset(0 0 0 0);
+	}
+}
+
+@keyframes tree-branch-out {
+	from {
+		opacity: 1;
+		max-height: var(--tree-branch-height, 240px);
+		transform: translateY(0);
+	}
+	to {
+		opacity: 0;
+		max-height: 0;
+		transform: translateY(-4px);
+		padding-top: 0;
+		padding-bottom: 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.notes-tree-children,
+	.bookmark-tree-children,
+	.notes-tree-children.is-collapsing,
+	.bookmark-tree-children.is-collapsing {
+		animation: none;
+	}
 }
 
 .note-tree-node {

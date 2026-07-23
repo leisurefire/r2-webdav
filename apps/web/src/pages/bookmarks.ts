@@ -2,7 +2,7 @@ import type { BookmarkHub } from '@r2-webdav/shared-types';
 import { api } from '../api/client';
 import { errorMessage, html, refreshIcons, shell, sidebarContext, toast } from '../shell';
 import { locale, t } from '../i18n';
-import { renderTreeNodes } from '../ui/helpers';
+import { collapseTreeBranch, expandTreeBranch, renderTreeNodes } from '../ui/helpers';
 import { enhanceSelect } from '../ui/dropdown';
 import { bindBookmarkPreviews } from '../bookmarks/previews';
 import { bookmarkHub, pullBookmarks } from '../bookmarks/store';
@@ -149,7 +149,7 @@ export function paintBookmarkView(): void {
 	const folderTree = bookmarkFolderTreeMarkup(root, selectedFolderKey);
 	const refreshLabel = locale === 'zh' ? '拉取链接' : 'Refresh links';
 	content.innerHTML = `<div class="links-layout">
-		<div class="notes-inner-toolbar mobile-only-tools"><div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择链接目录' : 'Choose link folder'}">${folderOptions}</select></div><button type="button" class="row-action" data-links-refresh title="${refreshLabel}" aria-label="${refreshLabel}"><i data-lucide="refresh-cw"></i></button></div>
+		<div class="notes-inner-toolbar mobile-only-tools"><div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择链接目录' : 'Choose link folder'}">${folderOptions}</select></div></div>
 		<div class="bookmarks-main">${bookmarkPathMarkup(bookmarkFolderPath)}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无保存链接' : 'No saved links'}</span></div>`}</div></div>
 	</div>`;
 	const context = sidebarContext();
@@ -164,13 +164,29 @@ export function paintBookmarkView(): void {
 	context?.querySelectorAll<HTMLElement>('[data-bookmark-folder]').forEach((button) =>
 		button.addEventListener('click', () => {
 			const key = button.dataset.bookmarkFolder ?? '';
-			if (key && button.dataset.bookmarkHasChildren === 'true') {
-				if (button.closest('.bookmark-tree-node')?.classList.contains('expanded')) bookmarkExpandedFolders.delete(key);
-				else bookmarkExpandedFolders.add(key);
+			const node = button.closest('.bookmark-tree-node');
+			const wasExpanded = Boolean(node?.classList.contains('expanded'));
+			const apply = () => {
+				const expanding = key && button.dataset.bookmarkHasChildren === 'true' && !wasExpanded;
+				if (key && button.dataset.bookmarkHasChildren === 'true') {
+					if (wasExpanded) bookmarkExpandedFolders.delete(key);
+					else bookmarkExpandedFolders.add(key);
+				}
+				if (key) expandBookmarkAncestors(key);
+				bookmarkFolderPath = key ? key.split('\u001f') : [];
+				paintBookmarkView();
+				if (expanding) {
+					const nextHost = [...(sidebarContext()?.querySelectorAll<HTMLElement>('[data-bookmark-folder]') ?? [])].find(
+						(item) => item.dataset.bookmarkFolder === key,
+					)?.closest('.bookmark-tree-node');
+					expandTreeBranch(nextHost, '.bookmark-tree-children');
+				}
+			};
+			if (key && button.dataset.bookmarkHasChildren === 'true' && wasExpanded) {
+				collapseTreeBranch(node, '.bookmark-tree-children', apply);
+				return;
 			}
-			if (key) expandBookmarkAncestors(key);
-			bookmarkFolderPath = key ? key.split('\u001f') : [];
-			paintBookmarkView();
+			apply();
 		}),
 	);
 	content.querySelectorAll<HTMLElement>('[data-bookmark-path]').forEach((button) =>

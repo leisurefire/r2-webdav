@@ -11,7 +11,7 @@ import {
 	toast,
 } from '../shell';
 import { locale, t } from '../i18n';
-import { openFolderDialog, openTextDialog, renderTreeNodes } from '../ui/helpers';
+import { collapseTreeBranch, expandTreeBranch, openFolderDialog, openTextDialog, renderTreeNodes } from '../ui/helpers';
 import { trackNoteNetworkOp } from './commits';
 import {
 	buildNoteFolderTree,
@@ -212,7 +212,7 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 }
 
 export function bindNotesFolders(content: HTMLElement, data: NotePage): void {
-	const toggleFolder = (value: string) => {
+	const toggleFolder = (value: string, host?: Element | null) => {
 		if (value === 'all' || value === 'root') {
 			// Root is always visible; only clear the create-target marker.
 			setSelectedNoteFolderId(value === 'root' ? null : undefined);
@@ -222,11 +222,14 @@ export function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 		}
 		// Obsidian behavior: click expands a closed folder, click again collapses it.
 		// Never auto-switch the open note when toggling folders.
-		if (noteExpandedFolders.has(value)) {
+		const collapse = () => {
 			noteExpandedFolders.delete(value);
 			if (selectedNoteFolderId === value) setSelectedNoteFolderId(undefined);
 			if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
 			else void renderNotes(currentSelectedNoteId(), false);
+		};
+		if (noteExpandedFolders.has(value)) {
+			collapseTreeBranch(host, '.notes-tree-children', collapse);
 			return;
 		}
 		noteExpandedFolders.add(value);
@@ -234,13 +237,17 @@ export function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 		setSelectedNoteFolderId(value);
 		if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
 		else void renderNotes(currentSelectedNoteId(), false);
+		const nextHost = document.querySelector(`.note-tree-node[data-note-folder-drop="${CSS.escape(value)}"]`);
+		expandTreeBranch(nextHost, '.notes-tree-children');
 		// Intent: expanding a folder loads that folder's note index (not global recency).
 		void ensureFolderNotesLoaded(value);
 	};
 	content
 		.querySelectorAll<HTMLElement>('[data-note-folder-filter]')
 		.forEach((button) =>
-			button.addEventListener('click', () => toggleFolder(button.dataset.noteFolderFilter ?? 'all')),
+			button.addEventListener('click', () =>
+				toggleFolder(button.dataset.noteFolderFilter ?? 'all', button.closest('.note-tree-node')),
+			),
 		);
 	content.querySelector('[data-new-note-folder]')?.addEventListener('click', async () => {
 		const name = await openTextDialog(
@@ -451,9 +458,21 @@ export function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 export function bindNotesNavigation(content: HTMLElement): void {
 	content.querySelectorAll<HTMLElement>('[data-note-archived]').forEach((node) =>
 		node.addEventListener('click', () => {
-			setArchiveExpanded(!archiveExpanded);
-			if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
-			if (archiveExpanded) void loadArchivedNotes();
+			const host = node.closest('.note-tree-node');
+			const nextExpanded = !archiveExpanded;
+			const apply = () => {
+				setArchiveExpanded(nextExpanded);
+				if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
+				if (nextExpanded) {
+					void loadArchivedNotes();
+					expandTreeBranch(document.querySelector('.archive-tree-item'), '.notes-tree-children');
+				}
+			};
+			if (archiveExpanded) {
+				collapseTreeBranch(host, '.notes-tree-children', apply);
+				return;
+			}
+			apply();
 		}),
 	);
 }
