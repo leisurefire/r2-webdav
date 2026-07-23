@@ -85,13 +85,8 @@ export function treeLeadingMarkup(icon: string, expanded: boolean, loading = fal
 	return `<span class="note-tree-leading" aria-hidden="true"><i class="tree-folder-icon" data-lucide="${html(icon)}"></i><i class="tree-caret-icon" data-lucide="${expanded ? 'chevron-down' : 'chevron-right'}"></i></span>`;
 }
 
-
 /** Animate a tree branch closed before the caller re-renders and removes it. */
-export function collapseTreeBranch(
-	host: Element | null | undefined,
-	branchSelector: string,
-	done: () => void,
-): void {
+export function collapseTreeBranch(host: Element | null | undefined, branchSelector: string, done: () => void): void {
 	const branch = host?.querySelector<HTMLElement>(`:scope > ${branchSelector}`);
 	if (!branch || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
 		done();
@@ -112,7 +107,6 @@ export function collapseTreeBranch(
 	branch.addEventListener('animationend', onEnd);
 	window.setTimeout(finish, 220);
 }
-
 
 /** Mark a freshly mounted tree branch so CSS can run the open animation once. */
 export function expandTreeBranch(host: Element | null | undefined, branchSelector: string): void {

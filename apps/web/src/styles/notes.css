@@ -735,6 +735,10 @@
 	padding: var(--note-heading-padding);
 }
 
+.note-source-pending {
+	visibility: hidden;
+}
+
 .note-editor.note-width-full .note-source {
 	--note-content-inset: 0px;
 }

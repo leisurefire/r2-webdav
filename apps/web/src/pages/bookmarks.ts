@@ -185,9 +185,9 @@ export function paintBookmarkView(): void {
 				bookmarkFolderPath = key ? key.split('\u001f') : [];
 				paintBookmarkView();
 				if (expanding) {
-					const nextHost = [...(sidebarContext()?.querySelectorAll<HTMLElement>('[data-bookmark-folder]') ?? [])].find(
-						(item) => item.dataset.bookmarkFolder === key,
-					)?.closest('.bookmark-tree-node');
+					const nextHost = [...(sidebarContext()?.querySelectorAll<HTMLElement>('[data-bookmark-folder]') ?? [])]
+						.find((item) => item.dataset.bookmarkFolder === key)
+						?.closest('.bookmark-tree-node');
 					expandTreeBranch(nextHost, '.bookmark-tree-children');
 				}
 			};

@@ -58,10 +58,6 @@ export let selectedNoteFolderId: string | null | undefined;
 export function setSelectedNoteFolderId(next: string | null | undefined): void {
 	selectedNoteFolderId = next;
 }
-export let highlightedNoteFolderId: string | null | undefined;
-export function setHighlightedNoteFolderId(next: string | null | undefined): void {
-	highlightedNoteFolderId = next;
-}
 /** Obsidian-style folder expand state; folders start collapsed and only open on user click. */
 export const noteExpandedFolders = new Set<string>();
 /** Folder scopes whose note index pages are fully loaded ('root' | folder id | 'archive'). */

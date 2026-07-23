@@ -32,7 +32,6 @@ import {
 	archivedNotesData,
 	archiveExpanded,
 	draggingNoteFolderId,
-	highlightedNoteFolderId,
 	mobileNoteDialogOpen,
 	noteContentLoaded,
 	noteExpandedFolders,
@@ -160,7 +159,7 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 			name: node.folder.name,
 			expanded,
 			loading: expanded && noteScopesLoading.has(scope),
-			active: false,
+			active: selectedNoteFolderId === node.folder.id,
 			children: [...node.children.map(folderNode), ...noteNodes(folderNotes)],
 		};
 	};
@@ -194,8 +193,7 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 				const filter = node.kind === 'archive' ? 'data-note-archived' : `data-note-folder-filter="${html(node.key)}"`;
 				const drop = node.kind === 'archive' ? 'archive' : node.key;
 				const draggable = folder ? ` draggable="true" data-note-folder-id="${html(node.key)}"` : '';
-				const highlighted = folder && highlightedNoteFolderId === node.key ? 'path-highlight' : '';
-				return `<div class="note-tree-node ${folder ? 'note-folder-card' : 'note-tree-special'} ${node.kind === 'archive' ? 'archive-tree-item' : ''} ${node.active ? 'active' : ''} ${node.expanded ? 'expanded' : ''}" data-note-folder-drop="${html(drop)}" style="--tree-depth:${depth}"${draggable}><button type="button" class="collection-tree-row ${highlighted}" ${filter}>${icon}<span>${html(node.name)}</span></button>${actions}${node.expanded && children ? `<div class="notes-tree-children">${children}</div>` : ''}</div>`;
+				return `<div class="note-tree-node ${folder ? 'note-folder-card' : 'note-tree-special'} ${node.kind === 'archive' ? 'archive-tree-item' : ''} ${node.active ? 'active' : ''} ${node.expanded ? 'expanded' : ''}" data-note-folder-drop="${html(drop)}" style="--tree-depth:${depth}"${draggable}><button type="button" class="collection-tree-row" ${filter}>${icon}<span>${html(node.name)}</span></button>${actions}${node.expanded && children ? `<div class="notes-tree-children">${children}</div>` : ''}</div>`;
 			},
 		);
 	const rootStatus =
@@ -230,7 +228,6 @@ export function bindNotesFolders(content: HTMLElement, data: NotePage): void {
 		// Never auto-switch the open note when toggling folders.
 		const collapse = () => {
 			noteExpandedFolders.delete(value);
-			if (selectedNoteFolderId === value) setSelectedNoteFolderId(undefined);
 			if (notesData) replaceNotesSidebar(notesData, currentSelectedNoteId());
 			else void renderNotes(currentSelectedNoteId(), false);
 		};

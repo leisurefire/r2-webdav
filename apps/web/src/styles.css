@@ -2589,19 +2589,6 @@ dialog::backdrop {
 	z-index: 20;
 }
 
-.path-highlight {
-	animation: path-highlight 900ms ease both;
-}
-
-@keyframes path-highlight {
-	0% {
-		background: color-mix(in srgb, #60a5fa 34%, transparent);
-	}
-	100% {
-		background: transparent;
-	}
-}
-
 dialog {
 	border: 0;
 	border-radius: 10px;

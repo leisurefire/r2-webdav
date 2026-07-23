@@ -23,7 +23,6 @@ import {
 import { renderMarkdown } from '../editor/markdownRenderer';
 
 export let currentPath = '';
-export let filePathHighlight: string | null = null;
 const fileCache = new Map<string, FileListing>();
 const validatedFilePaths = new Set<string>();
 const fileExpandedPaths = new Set<string>(['']);
@@ -56,14 +55,12 @@ export function breadcrumbMarkup(path: string): string {
 	let built = '';
 	const crumbs = parts.length
 		? []
-		: [
-				`<button class="crumb current ${filePathHighlight === '' ? 'path-highlight' : ''}" data-path="">${locale === 'zh' ? '我的文件' : 'My files'}</button>`,
-			];
+		: [`<button class="crumb current" data-path="">${locale === 'zh' ? '我的文件' : 'My files'}</button>`];
 	parts.forEach((part, index) => {
 		built = built ? `${built}/${part}` : part;
 		if (index > 0) crumbs.push('<span class="crumb-separator">/</span>');
 		crumbs.push(
-			`<button class="crumb ${index === parts.length - 1 ? 'current' : ''} ${filePathHighlight === built ? 'path-highlight' : ''}" data-path="${html(built)}">${html(part)}</button>`,
+			`<button class="crumb ${index === parts.length - 1 ? 'current' : ''}" data-path="${html(built)}">${html(part)}</button>`,
 		);
 	});
 	return crumbs.join('');
@@ -88,7 +85,7 @@ export function fileSidebarMarkup(listing: FileListing): string {
 		const expanded = fileExpandedPaths.has(path);
 		const children = expanded ? childFolders(path) : [];
 		const loading = fileTreeLoadingPaths.has(path);
-		return `<div class="file-tree-node note-tree-node note-folder-card ${path === currentPath ? 'active' : ''} ${expanded ? 'expanded' : ''}" style="--tree-depth:${depth}"><button type="button" class="collection-tree-row ${filePathHighlight === path ? 'path-highlight' : ''}" data-file-tree-path="${html(path)}">${treeLeadingMarkup(path === '' ? 'database' : expanded ? 'folder-open' : 'folder', expanded, loading)}<span>${html(name)}</span></button>${expanded && children.length ? `<div class="notes-tree-children">${children.map((child) => renderFolder(child.path, child.name, depth + 1)).join('')}</div>` : ''}</div>`;
+		return `<div class="file-tree-node note-tree-node note-folder-card ${path === currentPath ? 'active' : ''} ${expanded ? 'expanded' : ''}" style="--tree-depth:${depth}"><button type="button" class="collection-tree-row" data-file-tree-path="${html(path)}">${treeLeadingMarkup(path === '' ? 'database' : expanded ? 'folder-open' : 'folder', expanded, loading)}<span>${html(name)}</span></button>${expanded && children.length ? `<div class="notes-tree-children">${children.map((child) => renderFolder(child.path, child.name, depth + 1)).join('')}</div>` : ''}</div>`;
 	};
 	const uploadLabel = locale === 'zh' ? '上传' : 'Upload';
 	const mkdirLabel = locale === 'zh' ? '新建文件夹' : 'New folder';
@@ -116,7 +113,7 @@ function expandFilePath(path: string): void {
 	}
 }
 
-export function openFileDirectory(path: string, highlight = false, expand = true): void {
+export function openFileDirectory(path: string, expand = true): void {
 	directoryLoadCleanup?.();
 	if (expand) expandFilePath(path);
 	const showLoading = !validatedFilePaths.has(path);
@@ -125,11 +122,6 @@ export function openFileDirectory(path: string, highlight = false, expand = true
 		(item) => item.dataset.fileTreePath === path,
 	);
 	if (row && showLoading) {
-		if (highlight) {
-			row.classList.remove('path-highlight');
-			void row.offsetWidth;
-			row.classList.add('path-highlight');
-		}
 		const leading = row.querySelector<HTMLElement>('.note-tree-leading');
 		const original = leading?.innerHTML ?? '';
 		if (leading) {
@@ -152,7 +144,6 @@ export function openFileDirectory(path: string, highlight = false, expand = true
 		};
 	else directoryLoadCleanup = null;
 	currentPath = path;
-	filePathHighlight = highlight ? path : null;
 	void renderFiles();
 }
 
@@ -353,34 +344,27 @@ export function paintFiles(listing: FileListing): void {
 			requestAnimationFrame(() => expandTreeBranch(host, '.notes-tree-children'));
 		}
 	}
-	const highlightedPath = filePathHighlight;
-	if (highlightedPath !== null)
-		window.setTimeout(() => {
-			if (filePathHighlight === highlightedPath) filePathHighlight = null;
-		}, 950);
 	content
 		.querySelectorAll<HTMLElement>('[data-path]')
-		.forEach((item) => item.addEventListener('click', () => openFileDirectory(item.dataset.path!, true)));
-	context
-		?.querySelectorAll<HTMLElement>('[data-file-tree-path]')
-		.forEach((item) =>
-			item.addEventListener('click', () => {
-				const path = item.dataset.fileTreePath ?? '';
-				const host = item.closest('.file-tree-node');
-				if (path && fileExpandedPaths.has(path)) {
-					collapseTreeBranch(host, '.notes-tree-children', () => {
-						fileExpandedPaths.delete(path);
-						openFileDirectory(path, true, false);
-					});
-					return;
-				}
-				if (path) {
-					fileExpandedPaths.add(path);
-					fileTreeExpansionPending = path;
-				}
-				openFileDirectory(path, true, false);
-			}),
-		);
+		.forEach((item) => item.addEventListener('click', () => openFileDirectory(item.dataset.path!)));
+	context?.querySelectorAll<HTMLElement>('[data-file-tree-path]').forEach((item) =>
+		item.addEventListener('click', () => {
+			const path = item.dataset.fileTreePath ?? '';
+			const host = item.closest('.file-tree-node');
+			if (path && fileExpandedPaths.has(path)) {
+				collapseTreeBranch(host, '.notes-tree-children', () => {
+					fileExpandedPaths.delete(path);
+					openFileDirectory(path, false);
+				});
+				return;
+			}
+			if (path) {
+				fileExpandedPaths.add(path);
+				fileTreeExpansionPending = path;
+			}
+			openFileDirectory(path, false);
+		}),
+	);
 	content.querySelectorAll<HTMLElement>('[data-open]').forEach((item) =>
 		item.addEventListener('click', async () => {
 			if (item.dataset.type === 'directory') {

@@ -14,10 +14,6 @@
 	display: none;
 }
 
-.bookmark-folder-tree {
-	padding: 0 2px;
-}
-
 .bookmark-folder-select-wrap {
 	display: none;
 	min-width: 0;
@@ -33,57 +29,10 @@
 	width: 100%;
 }
 
-.bookmark-folder {
-	position: relative;
-	text-overflow: ellipsis;
-}
-
-.bookmark-folder:hover,
-.bookmark-folder.active {
-	background: var(--hover-bg);
-	color: var(--ink);
-}
-
-.bookmark-folder.collection-tree-row {
-	padding-left: calc(8px + var(--tree-depth, 0) * 16px);
-}
-
 .bookmark-tree-node {
 	position: relative;
 }
 
-.bookmark-tree-node .bookmark-folder {
-	padding-left: calc(8px + var(--tree-depth, 0) * 16px);
-}
-
-.bookmark-tree-children {
-	padding-top: 0;
-	padding-bottom: 0;
-	transform-origin: top;
-}
-
-.bookmark-tree-node .tree-caret-icon,
-.bookmark-folder-root .tree-caret-icon {
-	width: 15px;
-	height: 15px;
-	color: var(--quiet);
-	stroke-width: 1.8;
-}
-
-.bookmark-tree-node .bookmark-folder::before {
-	content: '';
-	position: absolute;
-	left: -12px;
-	top: 17px;
-	width: 12px;
-	border-top: 1px solid var(--line);
-}
-
-.bookmark-folder-tree > .bookmark-tree-node > .bookmark-folder::before {
-	display: none;
-}
-
-.bookmark-folder span,
 .bookmark-card-body h3,
 .bookmark-link p,
 .bookmark-card-meta small {
@@ -92,24 +41,10 @@
 	white-space: nowrap;
 }
 
-.bookmark-folder span {
-	min-width: 0;
-}
-
-.bookmark-folder svg {
-	width: 15px;
-	height: 15px;
-}
-
-.bookmark-folder small,
 .bookmark-card-meta,
 .bookmark-card-meta time {
 	color: var(--quiet);
 	font-size: 10px;
-}
-
-.bookmark-folder small {
-	flex: none;
 }
 
 .bookmark-folder-empty {

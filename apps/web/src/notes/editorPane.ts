@@ -13,15 +13,11 @@ import {
 	noteFolders,
 	notesData,
 	mobileNoteDialogOpen,
-	highlightedNoteFolderId,
 	setFlushMobileNote,
 	setMobileNoteId,
-	setHighlightedNoteFolderId,
 	setSelectedNoteFolderId,
 } from './store';
 import type { NoteSaveState } from './commits';
-
-let noteFolderHighlightTimer: ReturnType<typeof setTimeout> | undefined;
 
 export function notePathMarkup(note: Note): string {
 	const title = note.title.trim() || (locale === 'zh' ? '无标题便签' : 'Untitled note');
@@ -44,8 +40,6 @@ export function revealNoteFolderInTree(folderId: string | null): void {
 	} else {
 		setSelectedNoteFolderId(null);
 	}
-	setHighlightedNoteFolderId(folderId);
-	if (noteFolderHighlightTimer) clearTimeout(noteFolderHighlightTimer);
 	const selectedId = currentSelectedNoteId();
 	if (notesData) replaceNotesSidebar(notesData, selectedId);
 	if (folderId) void ensureFolderNotesLoaded(folderId);
@@ -60,14 +54,8 @@ export function revealNoteFolderInTree(folderId: string | null): void {
 		const row = target?.matches('.collection-tree-row')
 			? target
 			: target?.querySelector<HTMLElement>(':scope > .collection-tree-row');
-		row?.classList.add('path-highlight');
 		row?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 	});
-	noteFolderHighlightTimer = setTimeout(() => {
-		if (highlightedNoteFolderId !== folderId) return;
-		setHighlightedNoteFolderId(undefined);
-		document.querySelectorAll('.notes-tree .path-highlight').forEach((row) => row.classList.remove('path-highlight'));
-	}, 900);
 }
 
 export type NoteFont = 'sans' | 'serif';
@@ -174,7 +162,7 @@ export function noteEditorMarkup(selected: Note, mobile = false): string {
 		${!mobile ? noteToolbarMarkup(selected) : ''}
 		<form data-note-form>
 			${mobile ? `<div class="note-editor-head"><button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>${notePathMarkup(selected)}${noteActionControlsMarkup(selected)}</div>` : ''}
-			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-source note-source-pending" data-note-source aria-label="${t('markdown')}"><div class="note-heading"><input data-note-title value="${html(selected.title)}" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}"></div></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
+			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-source note-source-pending" data-note-source aria-label="${t('markdown')}" aria-busy="true"><div class="note-heading"><input data-note-title value="${html(selected.title)}" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}"></div></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
 			${
 				mobile
 					? `<div class="note-mobile-edit-tools" data-mobile-editor-tools aria-label="${locale === 'zh' ? '编辑工具' : 'Editing tools'}">
@@ -527,7 +515,16 @@ export function bindNoteEditor(
 			});
 			const heading = source.querySelector<HTMLElement>('.note-heading');
 			if (heading) view.scrollDOM.insertBefore(heading, view.contentDOM);
-			source.classList.remove('note-source-pending');
+			view.requestMeasure();
+			requestAnimationFrame(() => {
+				if (!source.isConnected) return;
+				view.requestMeasure();
+				requestAnimationFrame(() => {
+					if (!source.isConnected) return;
+					source.classList.remove('note-source-pending');
+					source.removeAttribute('aria-busy');
+				});
+			});
 			let syncAiEmptyPrompt: (() => void) | undefined;
 			void import('../editor/aiAssistant').then(({ bindMarkdownAiAssistant }) => {
 				if (!source.isConnected) return;
@@ -548,6 +545,8 @@ export function bindNoteEditor(
 		})
 		.catch((error) => {
 			console.error('Markdown editor failed to load', error);
+			source.classList.remove('note-source-pending');
+			source.removeAttribute('aria-busy');
 			for (const host of actionHosts) {
 				const status = host.querySelector<HTMLElement>('[data-note-save-status]');
 				if (!status) continue;

@@ -1,9 +1,25 @@
 import type { Note, NotePage } from '@r2-webdav/shared-types';
 import { api } from '../api/client';
-import { confirmAction, errorMessage, html, loadingMarkup, pageFromPath, refreshIcons, shell, sidebarContext, toast } from '../shell';
+import {
+	confirmAction,
+	errorMessage,
+	html,
+	loadingMarkup,
+	pageFromPath,
+	refreshIcons,
+	shell,
+	sidebarContext,
+	toast,
+} from '../shell';
 import { locale, t } from '../i18n';
 import { cacheNotes, cachedNotes, invalidateNoteCaches, noteCacheKey } from './cache';
-import { discardNoteCommit, flushAllNoteCommits, flushNoteCommit, noteCommitStates, trackNoteNetworkOp } from './commits';
+import {
+	discardNoteCommit,
+	flushAllNoteCommits,
+	flushNoteCommit,
+	noteCommitStates,
+	trackNoteNetworkOp,
+} from './commits';
 import { bindNoteEditor, noteEditorMarkup, paintNoteSaveStatus } from './editorPane';
 import { noteFolderPath } from './folderTree';
 import { bindNoteSidebar, bindNotesFolders, bindNotesNavigation, notesFolderSidebarMarkup } from './sidebar';
@@ -215,12 +231,12 @@ export function paintNotes(data: NotePage, selectedId?: string, openMobile = fal
 	}
 	restoreNotesTreeScroll();
 	const refreshNotes = () => refreshNotesView(selected?.id, context ? [content, context] : [content]);
-	content.querySelectorAll('[data-notes-refresh], #notes-refresh').forEach((node) =>
-		node.addEventListener('click', () => void refreshNotes()),
-	);
-	context?.querySelectorAll('[data-notes-refresh], #notes-refresh').forEach((node) =>
-		node.addEventListener('click', () => void refreshNotes()),
-	);
+	content
+		.querySelectorAll('[data-notes-refresh], #notes-refresh')
+		.forEach((node) => node.addEventListener('click', () => void refreshNotes()));
+	context
+		?.querySelectorAll('[data-notes-refresh], #notes-refresh')
+		.forEach((node) => node.addEventListener('click', () => void refreshNotes()));
 	if (!selected) return;
 	const desktopEditor = content.querySelector<HTMLElement>('.note-editor-desktop');
 	if (desktopEditor) bindNoteEditor(desktopEditor, selectedData, selected, false, content);
@@ -353,7 +369,7 @@ export async function renderNotes(selectedId?: string, forceSync = false, openMo
 		if (archiveExpanded) await loadArchivedNotes(forceSync);
 	} catch (error) {
 		validatedNotePages.delete(cacheKey);
-		if (!cached && !(notesData?.items.length))
+		if (!cached && !notesData?.items.length)
 			document.querySelector('#page-content')!.innerHTML =
 				`<div class="error-banner">${html(errorMessage(error))}</div>`;
 		else toast(errorMessage(error));
