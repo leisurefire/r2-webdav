@@ -9,13 +9,18 @@
 }
 
 @media (max-width: 760px) {
+	.app-shell,
+	.app-shell.sidebar-collapsed {
+		padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+	}
+
 	.sidebar-toggle {
 		display: none;
 	}
 
 	.workspace,
 	.sidebar-collapsed + .workspace {
-		height: calc(100dvh - 122px);
+		height: calc(100dvh - 122px - env(safe-area-inset-bottom, 0px));
 	}
 
 	.sidebar-context {
@@ -23,8 +28,9 @@
 	}
 
 	.sidebar .nav {
+		height: calc(64px + env(safe-area-inset-bottom, 0px));
 		margin: 0;
-		padding: 6px 8px;
+		padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
 		border-top: 1px solid var(--line);
 		border-bottom: 0;
 		grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -42,7 +48,7 @@
 	}
 
 	.sidebar-collapsed .sidebar-head .brand {
-		display: block;
+		display: flex;
 	}
 
 	.sidebar-collapsed .sidebar .nav {
@@ -83,9 +89,113 @@
 		margin-bottom: 10px;
 	}
 
+	.settings-dialog,
+	.note-dialog[open] {
+		width: 100vw;
+		height: 100dvh;
+		max-width: none;
+		max-height: none;
+		border-width: 0;
+		border-radius: 0;
+	}
+
+	.settings-tabs {
+		scrollbar-width: none;
+	}
+
+	.settings-tabs::-webkit-scrollbar {
+		display: none;
+	}
+
+	.file-card-open {
+		padding-right: 48px;
+	}
+
+	.floating-primary-action {
+		bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+	}
+
+	.file-card-copy small {
+		max-width: 100%;
+	}
+
+	.calendar-toolbar {
+		gap: 4px;
+	}
+
+	.calendar-toolbar h2 {
+		min-width: 0;
+		flex: 1 1 auto;
+		font-size: 15px;
+	}
+
+	.calendar-toolbar .button {
+		min-width: 32px;
+		padding-inline: 9px;
+	}
+
+	.weekday {
+		justify-content: center;
+		padding-inline: 0;
+	}
+
+	.day-cell {
+		padding: 3px;
+	}
+
+	.day-meta {
+		align-items: center;
+		flex-direction: row;
+	}
+
+	.lunar-day {
+		display: none;
+	}
+
+	.event-chip {
+		height: 20px;
+		padding-inline: 4px;
+		font-size: 10px;
+		line-height: 20px;
+	}
+
 	.desktop-only-toolbar,
 	.desktop-only-action {
 		display: none !important;
 	}
 }
 
+@media (max-width: 420px) {
+	:root {
+		--page-gutter-x: 8px;
+	}
+
+	.nav-button,
+	.sidebar-collapsed .nav-button {
+		font-size: 9px;
+	}
+
+	.calendar-toolbar .sync-status {
+		display: none;
+	}
+
+	.calendar-toolbar #cal-today {
+		padding-inline: 7px;
+	}
+
+	.day-number {
+		width: 21px;
+		height: 21px;
+		font-size: 10px;
+	}
+
+	.event-chip {
+		height: 18px;
+		font-size: 9px;
+		line-height: 18px;
+	}
+
+	.note-ai-chat-panel {
+		height: min(64dvh, 560px);
+	}
+}

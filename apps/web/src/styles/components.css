@@ -7,27 +7,28 @@
  */
 
 :root {
-	--ink: #f1f1ef;
-	--input-caret: #ffffff;
-	--muted: #a8a8a5;
-	--quiet: #7f7f7b;
+	--ink: #37352f;
+	--input-caret: #37352f;
+	--muted: #787774;
+	--quiet: #9b9a97;
 	--accent: #2383e2;
 	--accent-hover: #1f75cc;
-	--accent-text: #6aabeb;
+	--accent-text: #0b6bcb;
 	--danger: #eb5757;
-	--danger-soft: rgb(235 87 87 / 0.12);
-	--line: #30302f;
-	--soft-line: #292928;
-	--line-strong: #464644;
-	--app-bg: #191919;
-	--sidebar-bg: #202020;
-	--panel-bg: #191919;
-	--surface: #242424;
-	--surface-strong: #2c2c2b;
-	--elevated-bg: #252524;
-	--hover-bg: #2c2c2b;
-	--active-bg: #343434;
-	--control-border: #3a3a39;
+	--danger-soft: rgb(235 87 87 / 0.1);
+	--line: #e9e9e7;
+	--soft-line: #f1f1ef;
+	--line-strong: #d3d1cb;
+	--app-bg: #ffffff;
+	--sidebar-bg: #f7f7f5;
+	--panel-bg: #ffffff;
+	--surface: #f7f7f5;
+	--surface-strong: #efefed;
+	--elevated-bg: #ffffff;
+	--hover-bg: rgb(55 53 47 / 0.08);
+	--active-bg: rgb(55 53 47 / 0.12);
+	--control-border: #deddd9;
+	--login-intro-bg: #f7f7f5;
 	--control-radius: 6px;
 	--overlay-radius: 8px;
 	--card-radius: 6px;
@@ -43,8 +44,8 @@
 	--toolbar-spacing: 10px;
 	--sidebar-width: 252px;
 	--sidebar-collapsed-width: 56px;
-	--overlay-shadow: 0 18px 48px rgb(0 0 0 / 0.44), 0 2px 8px rgb(0 0 0 / 0.28);
-	--control-shadow: 0 1px 2px rgb(0 0 0 / 0.22);
+	--overlay-shadow: 0 16px 36px rgb(15 15 15 / 0.14), 0 2px 8px rgb(15 15 15 / 0.08);
+	--control-shadow: 0 1px 2px rgb(15 15 15 / 0.08);
 	--focus-ring: 0 0 0 2px rgb(35 131 226 / 0.42);
 	--motion-fast: 120ms ease;
 	--motion-base: 180ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -52,7 +53,7 @@
 
 html {
 	background: var(--app-bg);
-	color-scheme: dark;
+	color-scheme: light dark;
 }
 
 body {
@@ -314,7 +315,7 @@ dialog {
 }
 
 dialog::backdrop {
-	background: rgb(0 0 0 / 0.72);
+	background: rgb(15 15 15 / 0.5);
 	backdrop-filter: blur(1px);
 }
 
@@ -341,9 +342,48 @@ dialog::backdrop {
 .toast {
 	border: 1px solid var(--line-strong);
 	border-radius: var(--overlay-radius);
-	background: #f1f1ef;
-	color: #191919;
+	background: #37352f;
+	color: #ffffff;
 	box-shadow: var(--overlay-shadow);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--ink: #f1f1ef;
+		--input-caret: #ffffff;
+		--muted: #a8a8a5;
+		--quiet: #7f7f7b;
+		--accent-text: #6aabeb;
+		--danger-soft: rgb(235 87 87 / 0.12);
+		--line: #30302f;
+		--soft-line: #292928;
+		--line-strong: #464644;
+		--app-bg: #191919;
+		--sidebar-bg: #202020;
+		--panel-bg: #191919;
+		--surface: #242424;
+		--surface-strong: #2c2c2b;
+		--elevated-bg: #252524;
+		--hover-bg: #2c2c2b;
+		--active-bg: #343434;
+		--control-border: #3a3a39;
+		--login-intro-bg: #151515;
+		--overlay-shadow: 0 18px 48px rgb(0 0 0 / 0.44), 0 2px 8px rgb(0 0 0 / 0.28);
+		--control-shadow: 0 1px 2px rgb(0 0 0 / 0.22);
+	}
+
+	html {
+		color-scheme: dark;
+	}
+
+	dialog::backdrop {
+		background: rgb(0 0 0 / 0.72);
+	}
+
+	.toast {
+		background: #f1f1ef;
+		color: #191919;
+	}
 }
 
 @media (max-width: 760px) {

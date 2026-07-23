@@ -668,7 +668,7 @@
 
 .note-source {
 	--note-content-inset: max(0px, calc((100% - 920px) / 2));
-	--note-gutter-width: 0px;
+	--note-gutter-width: 38px;
 	--note-heading-space: 118px;
 	--note-title-size: 40px;
 	--note-heading-padding: 42px 24px 14px;
@@ -703,7 +703,12 @@
 }
 
 .note-source .cm-gutters {
-	display: none;
+	display: flex;
+	border-right: 0;
+	background: transparent;
+	color: var(--quiet);
+	font-size: 11px;
+	user-select: none;
 }
 
 .cm-live-heading {
@@ -1507,6 +1512,20 @@ details.markdown-callout > .markdown-callout-title::marker {
 }
 
 @media (max-width: 760px) {
+	.note-source {
+		--note-content-inset: 0px;
+		--note-gutter-width: 32px;
+		--note-heading-space: 92px;
+		--note-title-size: 28px;
+		--note-heading-padding: 26px 14px 12px;
+	}
+
+	.note-source .cm-lineNumbers .cm-gutterElement {
+		min-width: 30px;
+		padding-inline: 4px 6px;
+		font-size: 10px;
+	}
+
 	.note-editor.note-ai-sidebar-open .note-compose {
 		grid-template-columns: 1fr;
 	}
@@ -1558,7 +1577,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 	}
 
 	.note-heading > input {
-		font-size: 24px;
+		font-size: var(--note-title-size);
 	}
 
 	.note-mobile-back {
