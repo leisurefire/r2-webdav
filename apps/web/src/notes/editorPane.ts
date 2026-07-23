@@ -182,14 +182,14 @@ export function noteEditorMarkup(selected: Note, mobile = false): string {
 				<button type="button" data-mobile-format="italic" data-marker="*" title="${locale === 'zh' ? '斜体' : 'Italic'}"><i data-lucide="italic"></i></button>
 				<button type="button" data-mobile-format="code" data-marker="\u0060" title="${locale === 'zh' ? '行内代码' : 'Inline code'}"><i data-lucide="code"></i></button>
 				<span class="note-mobile-tool-divider"></span>
-				<button type="button" data-mobile-ai-action="summarize"><i data-lucide="list-collapse"></i><span>${locale === 'zh' ? '总结' : 'Summarize'}</span></button>
-				<button type="button" data-mobile-ai-action="polish"><i data-lucide="wand-sparkles"></i><span>${locale === 'zh' ? '润色' : 'Polish'}</span></button>
-				<button type="button" data-mobile-ai-action="rewrite"><i data-lucide="pencil-line"></i><span>${locale === 'zh' ? '修改' : 'Edit'}</span></button>
+				<button type="button" data-mobile-ai-action="summarize"><i data-lucide="sparkles"></i><span>${locale === 'zh' ? '总结' : 'Summarize'}</span></button>
+				<button type="button" data-mobile-ai-action="polish"><i data-lucide="sparkles"></i><span>${locale === 'zh' ? '润色' : 'Polish'}</span></button>
+				<button type="button" data-mobile-ai-action="rewrite"><i data-lucide="sparkles"></i><span>${locale === 'zh' ? '修改' : 'Edit'}</span></button>
 			</div>`
 					: ''
 			}
 		</form>
-		<button type="button" class="note-ai-chat-trigger" data-note-ai-chat title="${locale === 'zh' ? '询问 AI' : 'Ask AI'}" aria-label="${locale === 'zh' ? '询问 AI' : 'Ask AI'}"><i data-lucide="message-circle"></i><i class="note-ai-chat-spark" data-lucide="sparkles"></i></button>
+		<button type="button" class="note-ai-chat-trigger" data-note-ai-chat title="${locale === 'zh' ? '询问 AI' : 'Ask AI'}" aria-label="${locale === 'zh' ? '询问 AI' : 'Ask AI'}"><i data-lucide="sparkles"></i></button>
 	</section>`;
 }
 

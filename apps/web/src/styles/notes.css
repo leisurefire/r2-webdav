@@ -415,7 +415,7 @@
 	min-height: 0;
 }
 
-.note-editor.note-ai-sidebar-open .note-ai-chat-panel {
+.note-editor .note-ai-chat-panel.workspace-rail {
 	--note-ai-panel-width: min(360px, 32vw);
 	position: absolute;
 	top: 0;
@@ -436,7 +436,7 @@
 
 .note-editor > .notes-inner-toolbar,
 .note-editor > form {
-	transition: margin-right 240ms cubic-bezier(0.22, 1, 0.36, 1);
+	transition: margin-right var(--motion-base);
 }
 
 .note-editor.note-ai-sidebar-open .note-ai-chat-trigger {

@@ -8,7 +8,6 @@ import {
 	Code,
 	FileText,
 	Italic,
-	Languages,
 	MessageCircle,
 	MessageCirclePlus,
 	PanelRightClose,
@@ -20,13 +19,11 @@ import {
 	Plus,
 	Quote,
 	RotateCcw,
-	Search,
 	Sigma,
 	Sparkles,
 	Square,
 	TextSelect,
 	Trash2,
-	WandSparkles,
 	X,
 	createElement,
 	type IconNode,
@@ -63,8 +60,6 @@ const AI_ICONS: Record<string, IconNode> = {
 	'panel-right-close': PanelRightClose,
 	'settings-2': Settings2,
 	'sliders-horizontal': SlidersHorizontal,
-	languages: Languages,
-	search: Search,
 	'chevron-up': ChevronUp,
 	diff: Diff,
 	'eye-off': EyeOff,
@@ -75,7 +70,6 @@ const AI_ICONS: Record<string, IconNode> = {
 	sparkles: Sparkles,
 	square: Square,
 	'text-select': TextSelect,
-	'wand-sparkles': WandSparkles,
 	x: X,
 };
 
@@ -335,7 +329,7 @@ function bindNoteContextChat(
 	}
 	let review: ChatReview | null = null;
 	const reviewBarId = 'chat-review';
-	const removeReviewBar = () => compose.querySelector(`[data-chat-review="${reviewBarId}"]`)?.remove();
+	const removeReviewBar = () => root.querySelector(`[data-chat-review="${reviewBarId}"]`)?.remove();
 	const discardChatReview = () => {
 		removeReviewBar();
 		if (!review) return;
@@ -354,9 +348,20 @@ function bindNoteContextChat(
 			panel.classList.add('is-closing');
 			const closing = panel;
 			root.classList.remove('note-ai-sidebar-open');
-			window.setTimeout(() => {
+			let removed = false;
+			const removeClosingPanel = () => {
+				if (removed) return;
+				removed = true;
 				closing.remove();
-			}, 240);
+			};
+			const onAnimationEnd = (event: AnimationEvent) => {
+				if (event.target !== closing) return;
+				closing.removeEventListener('animationend', onAnimationEnd);
+				removeClosingPanel();
+			};
+			closing.addEventListener('animationend', onAnimationEnd);
+			if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) removeClosingPanel();
+			else window.setTimeout(removeClosingPanel, 220);
 		} else root.classList.remove('note-ai-sidebar-open');
 		panel = null;
 		activeSelectionKey = '';
@@ -387,13 +392,12 @@ function bindNoteContextChat(
 		const contextKey = `${selection.from}:${selection.to}:${documentText.length}:${contextText.slice(0, 80)}`;
 		chatRange = hasSelection ? { from: selection.from, to: selection.to } : { from: 0, to: documentText.length };
 		const welcomeHtml = () => `<section class="note-ai-chat-welcome">
-			<span class="note-ai-welcome-mark"><i data-lucide="wand-sparkles"></i></span>
-			<h2>${t('今天事，我来帮。', 'What can I help with?')}</h2>
+			<span class="note-ai-welcome-mark"><i data-lucide="sparkles"></i></span>
+			<h2>${t('听候差遣', 'At your service')}</h2>
 			<div class="note-ai-quick-actions">
-				<button type="button" data-chat-quick="${t('总结当前便签，提炼重点与后续行动。', 'Summarize this note with key points and next actions.')}" data-chat-quick-mode="ask"><i data-lucide="file-text"></i><span>${t('总结当前便签', 'Summarize note')}</span></button>
-				<button type="button" data-chat-quick="${t('基于当前内容补全结构并继续写作。', 'Continue writing and improve the structure from the current content.')}" data-chat-quick-mode="edit"><i data-lucide="pencil"></i><span>${t('继续创作', 'Continue writing')}</span></button>
-				<button type="button" data-chat-quick="${t('将当前便签翻译为英文，保持 Markdown 结构。', 'Translate this note into Chinese and preserve its Markdown structure.')}" data-chat-quick-mode="edit"><i data-lucide="languages"></i><span>${t('翻译此页', 'Translate page')}</span></button>
-				<button type="button" data-chat-quick="${t('深入分析当前内容，指出关键结论、假设和风险。', 'Analyze this note for conclusions, assumptions, and risks.')}" data-chat-quick-mode="ask"><i data-lucide="search"></i><span>${t('深度分析', 'Deep analysis')}</span></button>
+				<button type="button" data-chat-quick="${t('请总结当前便签，提炼核心内容、关键信息和待办事项。', 'Summarize this note, extracting its main ideas, key information, and action items.')}" data-chat-quick-mode="ask"><i data-lucide="sparkles"></i><span>${t('总结便签', 'Summarize note')}</span></button>
+				<button type="button" data-chat-quick="${t('请沿着当前便签的行文脉络继续创作，保持现有语气、结构与 Markdown 格式。', 'Continue writing from the current note while preserving its tone, structure, and Markdown formatting.')}" data-chat-quick-mode="edit"><i data-lucide="sparkles"></i><span>${t('继续创作', 'Continue writing')}</span></button>
+				<button type="button" data-chat-quick="${t('请分析当前文本的语法、用词和句式，修正发现的问题；不要改动没有问题的内容，并保持 Markdown 结构。', 'Analyze the text for grammar, wording, and sentence structure. Correct only the issues you find and preserve the Markdown structure.')}" data-chat-quick-mode="edit"><i data-lucide="sparkles"></i><span>${t('语法分析', 'Grammar analysis')}</span></button>
 			</div>
 		</section>`;
 		let sessions: NoteChatSession[] = [];
@@ -436,6 +440,13 @@ function bindNoteContextChat(
 		const send = panel.querySelector<HTMLButtonElement>('[data-chat-send]')!;
 		const modeSelect = panel.querySelector<HTMLSelectElement>('[data-chat-mode]')!;
 		const modelSelect = panel.querySelector<HTMLSelectElement>('[data-chat-model]')!;
+		const setGenerating = (generating: boolean) => {
+			send.disabled = false;
+			send.title = generating ? t('停止生成', 'Stop generating') : t('提交', 'Submit');
+			send.setAttribute('aria-label', send.title);
+			send.innerHTML = `<i data-lucide="${generating ? 'square' : 'arrow-up'}"></i>`;
+			paintIcons(send);
+		};
 		modeSelect.value = chatMode;
 		populateModelSelect(modelSelect, availableAiModels(), selectedModel, t);
 		enhanceSelect(modelSelect, {
@@ -585,7 +596,7 @@ function bindNoteContextChat(
 			renderConversation();
 			input.focus();
 		};
-		/** Toggle diff decorations: hiding them leaves the accepted text, showing restores the preview. */
+		/** Toggle diff decorations: hiding them leaves clean generated text; showing restores the inline preview. */
 		const toggleChatDiff = () => {
 			if (!review) return;
 			review.diffVisible = !review.diffVisible;
@@ -604,7 +615,6 @@ function bindNoteContextChat(
 					annotations: Transaction.userEvent.of('input'),
 				});
 				review.undoTo = review.undoFrom + review.generated.length;
-				markNewContent(view, review.undoFrom, review.undoTo);
 			}
 			if (review.button) {
 				const label = review.diffVisible ? t('隐藏差异', 'Hide diff') : t('查看差异', 'Show diff');
@@ -628,7 +638,7 @@ function bindNoteContextChat(
 				});
 			}
 			chatRange = { from: acceptedFrom, to: acceptedFrom + acceptedText.length };
-			markNewContent(view, chatRange.from, chatRange.to);
+			clearAiReview(view);
 			review = null;
 			removeReviewBar();
 		};
@@ -652,7 +662,7 @@ function bindNoteContextChat(
 			removeReviewBar();
 		};
 		/**
-		 * Edit mode: default to accepted text, then offer a fixed review bar
+		 * Edit mode: default to an inline diff, then offer a fixed review bar
 		 * (show/hide diff, revert, insert below, done) above the composer.
 		 */
 		const addReviewActions = (answerNode: HTMLElement, rawAnswer: string) => {
@@ -673,26 +683,26 @@ function bindNoteContextChat(
 				answerNode.innerHTML = `<div class="ai-review-note">${t('AI 没有生成实际改动。', 'AI did not produce any changes.')}</div>`;
 				return;
 			}
-			view.dispatch({
-				changes: { from: chatRange.from, to: chatRange.to, insert: generated },
-				annotations: Transaction.userEvent.of('input'),
-			});
 			const preview = buildAiReviewPreview(original, generated);
 			const segments = mapChatSegments(preview.segments, chatRange.from);
+			view.dispatch({
+				changes: { from: chatRange.from, to: chatRange.to, insert: preview.text },
+				annotations: Transaction.userEvent.of('input'),
+			});
 			review = {
 				undoFrom: chatRange.from,
-				undoTo: chatRange.from + generated.length,
+				undoTo: chatRange.from + preview.text.length,
 				original,
 				generated,
 				segments,
-				diffVisible: false,
+				diffVisible: true,
 			};
-			markNewContent(view, chatRange.from, chatRange.from + generated.length);
+			showAiReview(view, segments);
 			const bar = document.createElement('div');
 			bar.className = 'note-ai-chat-review';
 			bar.dataset.chatReview = reviewBarId;
 			bar.innerHTML = `<span class="note-ai-chat-review-label">${t('已更新', 'Updated')}</span>
-				<button type="button" class="row-action" data-review-diff title="${t('查看差异', 'Show diff')}" aria-label="${t('查看差异', 'Show diff')}" aria-pressed="false"><i data-lucide="diff"></i></button>
+				<button type="button" class="row-action" data-review-diff title="${t('隐藏差异', 'Hide diff')}" aria-label="${t('隐藏差异', 'Hide diff')}" aria-pressed="true"><i data-lucide="eye-off"></i></button>
 				<button type="button" class="row-action" data-review-revert title="${t('回撤改动', 'Revert changes')}" aria-label="${t('回撤改动', 'Revert changes')}"><i data-lucide="rotate-ccw"></i></button>
 				<button type="button" class="row-action" data-review-below title="${t('保留原文并在下方插入 AI 结果', 'Keep the original and insert the AI result below')}" aria-label="${t('在下面插入', 'Insert below')}"><i data-lucide="plus"></i></button>
 				<span class="toolbar-spacer"></span>
@@ -720,7 +730,8 @@ function bindNoteContextChat(
 		const submit = async () => {
 			const question = input.value.trim();
 			if (!question || controller) return;
-			if (chatMode === 'edit') refreshEditContext();
+			const requestMode = chatMode;
+			if (requestMode === 'edit') refreshEditContext();
 			input.value = '';
 			input.style.height = '';
 			conversation.push({ role: 'user', content: question });
@@ -731,18 +742,20 @@ function bindNoteContextChat(
 			userNode.textContent = question;
 			const answerNode = document.createElement('div');
 			answerNode.className = 'note-ai-chat-message assistant';
-			answerNode.innerHTML = `<div class="ai-thinking"><i data-lucide="sparkles"></i><span>${chatMode === 'edit' ? t('正在修改…', 'Editing…') : t('正在查找原文…', 'Reading the note…')}</span></div>`;
+			answerNode.innerHTML = `<div class="ai-thinking"><i data-lucide="sparkles"></i><span>${requestMode === 'edit' ? t('正在修改…', 'Editing…') : t('正在查找原文…', 'Reading the note…')}</span></div>`;
 			messagesNode.append(userNode, answerNode);
 			paintIcons(answerNode);
 			messagesNode.scrollTop = messagesNode.scrollHeight;
-			controller = new AbortController();
+			const requestController = new AbortController();
+			controller = requestController;
+			setGenerating(true);
 			let answer = '';
 			try {
 				await api.ai(
 					{
 						model: selectedModel,
 						action: 'chat',
-						mode: chatMode,
+						mode: requestMode,
 						text: question,
 						context: numberedContext,
 						editableContext: contextText,
@@ -756,16 +769,19 @@ function bindNoteContextChat(
 						renderAnswer(answerNode, answer);
 						messagesNode.scrollTop = messagesNode.scrollHeight;
 					},
-					controller.signal,
+					requestController.signal,
 				);
 				if (!answer.trim()) throw new Error(t('AI 没有返回内容', 'AI returned no content'));
 				conversation.push({ role: 'assistant', content: answer });
 				sessions = [session, ...sessions.filter((item) => item.id !== session.id)];
 				paintHistory();
 				renderAnswer(answerNode, answer);
-				if (chatMode === 'edit' && !controller.signal.aborted) addReviewActions(answerNode, answer);
+				if (requestMode === 'edit' && !requestController.signal.aborted) addReviewActions(answerNode, answer);
 			} catch (error) {
-				if (controller?.signal.aborted) return;
+				if (requestController.signal.aborted) {
+					answerNode.innerHTML = `<div class="ai-review-note">${t('已停止生成', 'Generation stopped')}</div>`;
+					return;
+				}
 				answerNode.innerHTML = `<div class="ai-error"><span>${t('回答失败', 'Could not answer.')}</span><button type="button" class="button" data-ai-retry><i data-lucide="rotate-ccw"></i><span>${t('重试', 'Retry')}</span></button></div>`;
 				paintIcons(answerNode);
 				answerNode.querySelector('[data-ai-retry]')?.addEventListener('click', () => {
@@ -778,7 +794,10 @@ function bindNoteContextChat(
 				});
 				options.onError(error);
 			} finally {
-				controller = null;
+				if (controller === requestController) {
+					controller = null;
+					setGenerating(false);
+				}
 			}
 		};
 		bindWelcomeActions = () => {
@@ -861,7 +880,10 @@ function bindNoteContextChat(
 		});
 		panel.querySelector('[data-chat-new]')?.addEventListener('click', createSession);
 		panel.querySelector('[data-chat-close]')?.addEventListener('click', close);
-		send.addEventListener('click', () => void submit());
+		send.addEventListener('click', () => {
+			if (controller) controller.abort();
+			else void submit();
+		});
 		input.addEventListener('input', () => {
 			input.style.height = 'auto';
 			input.style.height = `${Math.min(120, input.scrollHeight)}px`;
@@ -1243,7 +1265,6 @@ export function bindMarkdownAiAssistant(
 					annotations: Transaction.userEvent.of('input'),
 				});
 				clearAiReview(view);
-				markNewContent(view, review.undoFrom, review.undoFrom + acceptedText.length);
 				review = null;
 				close();
 				return;
@@ -1511,7 +1532,7 @@ export function bindMarkdownAiAssistant(
 	const emptyPrompt = document.createElement('button');
 	emptyPrompt.type = 'button';
 	emptyPrompt.className = 'ai-empty-prompt';
-	emptyPrompt.innerHTML = `<i data-lucide="wand-sparkles"></i><span>${t('开始创作，或者按下空格来唤起AI输入框', 'Start writing, or press Space to ask AI')}</span>`;
+	emptyPrompt.innerHTML = `<i data-lucide="sparkles"></i><span>${t('开始创作，或者按下空格来唤起AI输入框', 'Start writing, or press Space to ask AI')}</span>`;
 	host.append(emptyPrompt);
 	paintIcons(emptyPrompt);
 	syncEmptyPrompt = () => emptyPrompt.classList.toggle('visible', view.state.doc.length === 0 && !panel);

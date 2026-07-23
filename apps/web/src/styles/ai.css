@@ -120,6 +120,7 @@
 
 .ai-instruction:focus {
 	outline: none;
+	box-shadow: none;
 }
 
 .ai-instruction::placeholder {
@@ -506,15 +507,6 @@
 .note-ai-chat-trigger > svg:first-child {
 	width: 20px;
 	height: 20px;
-}
-
-.note-ai-chat-trigger .note-ai-chat-spark {
-	position: absolute;
-	top: 6px;
-	right: 5px;
-	width: 10px;
-	height: 10px;
-	fill: var(--panel-bg);
 }
 
 .note-ai-chat-panel {
@@ -950,24 +942,33 @@
 	}
 }
 
+@keyframes note-ai-rail-out {
+	from {
+		opacity: 1;
+		transform: translateX(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateX(100%);
+	}
+}
+
 .note-ai-chat-panel.workspace-rail {
 	background: var(--workspace-rail-bg);
 	box-shadow: none;
 	animation: note-ai-rail-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
-	transition:
-		opacity var(--motion-base),
-		transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+	will-change: opacity, transform;
 }
 
-.note-editor.note-ai-sidebar-open .note-ai-chat-panel.workspace-rail {
+.note-editor .note-ai-chat-panel.workspace-rail {
 	border-width: 0 0 0 1px;
 	border-radius: 0;
 }
 
 .note-ai-chat-panel.workspace-rail.is-closing {
 	width: var(--note-ai-panel-width);
-	opacity: 0;
-	transform: translateX(12px);
+	animation: note-ai-rail-out var(--motion-base) both;
+	pointer-events: none;
 }
 
 .note-ai-chat-head.workspace-rail-head {
@@ -1109,9 +1110,9 @@
 		box-shadow var(--motion-fast);
 }
 
-.note-ai-chat-composer:focus-within {
-	border-color: color-mix(in srgb, var(--ink) 32%, var(--line));
-	box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 9%, transparent);
+.note-ai-chat-composer:has(.note-ai-chat-input-row textarea:focus) {
+	border-color: color-mix(in srgb, var(--accent) 70%, var(--line));
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .note-ai-context-chip {
@@ -1132,6 +1133,12 @@
 	min-height: 44px;
 	padding: 7px 5px 5px;
 	font-size: 13px;
+}
+
+.note-ai-chat-input-row textarea:focus,
+.note-ai-chat-input-row textarea:focus-visible {
+	outline: 0;
+	box-shadow: none;
 }
 
 .note-ai-chat-footer {
@@ -1188,6 +1195,10 @@
 		animation-name: note-ai-sheet-in;
 	}
 
+	.note-ai-chat-panel.workspace-rail.is-closing {
+		animation-name: note-ai-sheet-out;
+	}
+
 	.note-ai-chat-messages {
 		padding-inline: 18px;
 	}
@@ -1206,6 +1217,17 @@
 	to {
 		opacity: 1;
 		transform: translateY(0);
+	}
+}
+
+@keyframes note-ai-sheet-out {
+	from {
+		opacity: 1;
+		transform: translateY(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateY(100%);
 	}
 }
 
