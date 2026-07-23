@@ -1814,7 +1814,6 @@ details.markdown-callout > .markdown-callout-title::marker {
 	min-height: 44px;
 	margin-bottom: 0;
 	padding: 0 12px;
-	border-bottom: 1px solid var(--line);
 	min-width: 0;
 	flex-wrap: nowrap;
 	gap: var(--toolbar-gap, 8px);

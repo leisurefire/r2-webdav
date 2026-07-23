@@ -43,7 +43,6 @@
 
 	.sidebar-collapsed .sidebar {
 		padding: 8px 12px;
-		border-bottom: 1px solid var(--line);
 		background: var(--sidebar-bg);
 	}
 
