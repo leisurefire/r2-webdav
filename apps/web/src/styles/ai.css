@@ -458,31 +458,6 @@
 	box-shadow: none;
 }
 
-/* Mirror the sidebar tree: header controls reveal on hover/focus. */
-.note-ai-history-select .custom-select-chevron,
-.note-ai-chat-head > .row-action {
-	opacity: 0;
-	pointer-events: none;
-	transition: opacity 120ms ease;
-}
-
-.note-ai-chat-head:hover .custom-select-chevron,
-.note-ai-chat-head:hover > .row-action,
-.note-ai-chat-head:focus-within .custom-select-chevron,
-.note-ai-chat-head:focus-within > .row-action,
-.note-ai-history-select.open .custom-select-chevron {
-	opacity: 1;
-	pointer-events: auto;
-}
-
-@media (hover: none) {
-	.note-ai-history-select .custom-select-chevron,
-	.note-ai-chat-head > .row-action {
-		opacity: 1;
-		pointer-events: auto;
-	}
-}
-
 .note-ai-chat-title {
 	flex: 1;
 }
