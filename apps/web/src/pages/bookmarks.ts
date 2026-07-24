@@ -97,7 +97,7 @@ export function bookmarkPathMarkup(path: string[]): string {
 			`<button class="bookmark-path-item ${index === path.length - 1 ? 'current' : ''}" data-bookmark-path="${html(target)}">${html(name)}</button>`,
 		);
 	});
-	return `<nav class="collection-path bookmark-path" aria-label="${locale === 'zh' ? '当前收藏路径' : 'Current collection path'}">${crumbs.join('')}</nav>`;
+	return `<nav class="collection-path bookmark-path workspace-top-row" aria-label="${locale === 'zh' ? '当前收藏路径' : 'Current collection path'}">${crumbs.join('')}</nav>`;
 }
 
 export function bookmarkFolderOptions(root: BookmarkFolder): BookmarkFolder[] {

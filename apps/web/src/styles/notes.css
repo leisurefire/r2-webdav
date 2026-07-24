@@ -1388,27 +1388,26 @@ details.markdown-callout > .markdown-callout-title::marker {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	padding: 4px 6px;
+	padding: 5px 6px;
 	border: 0;
 	border-radius: 6px;
 	background: transparent;
 	color: inherit;
 	font: inherit;
 	font-size: inherit;
-	line-height: 1.2;
+	line-height: inherit;
 	text-align: left;
 	cursor: pointer;
 }
 
-.note-path-item:hover {
+.note-path-item:hover,
+.note-path-item.current {
 	background: var(--hover-bg);
 	color: var(--ink);
 }
 
 .note-path-item.current {
 	max-width: min(280px, 42vw);
-	background: transparent;
-	color: var(--ink);
 	font-weight: 600;
 	cursor: default;
 }
@@ -1500,9 +1499,9 @@ details.markdown-callout > .markdown-callout-title::marker {
 	display: flex;
 	align-items: center;
 	gap: 0;
-	color: var(--quiet);
-	font-size: 10px;
-	line-height: 1.2;
+	color: var(--muted);
+	font-size: 12px;
+	line-height: normal;
 	white-space: nowrap;
 	overflow-x: auto;
 	overflow-y: hidden;

@@ -8,6 +8,20 @@
 	width: 100%;
 }
 
+.mobile-only-tools {
+	display: none;
+}
+
+@media (min-width: 761px) {
+	.workspace .workspace-top-row {
+		min-height: var(--workspace-top-row-height);
+	}
+
+	.content:has(#calendar-view) {
+		padding-top: 0;
+	}
+}
+
 @media (max-width: 760px) {
 	.app-shell,
 	.app-shell.sidebar-collapsed {

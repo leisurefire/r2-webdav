@@ -154,7 +154,7 @@ export function noteActionControlsMarkup(selected: Note, includeRefresh = false)
 }
 
 export function noteToolbarMarkup(selected: Note): string {
-	return `<div class="notes-inner-toolbar desktop-only-toolbar">${notePathMarkup(selected)}${noteActionControlsMarkup(selected, false)}</div>`;
+	return `<div class="notes-inner-toolbar desktop-only-toolbar workspace-top-row">${notePathMarkup(selected)}${noteActionControlsMarkup(selected, false)}</div>`;
 }
 
 export function noteEditorMarkup(selected: Note, mobile = false): string {

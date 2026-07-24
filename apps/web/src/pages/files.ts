@@ -328,7 +328,7 @@ export function paintFiles(listing: FileListing): void {
 			<button type="button" class="row-action" data-files-mkdir title="${mkdirLabel}" aria-label="${mkdirLabel}"><i data-lucide="folder-plus"></i></button>
 			<button type="button" class="row-action" data-files-refresh title="${syncLabel}" aria-label="${syncLabel}"><i data-lucide="refresh-cw"></i></button>
 		</div>`;
-	content.innerHTML = `<div class="file-layout"><div class="toolbar"><div class="breadcrumbs">${breadcrumbMarkup(listing.path)}</div>
+	content.innerHTML = `<div class="file-layout"><div class="toolbar workspace-top-row"><div class="breadcrumbs">${breadcrumbMarkup(listing.path)}</div>
 			${mobileTools}
 			<input type="file" id="file-input" hidden multiple>
 		</div><div id="upload-status"></div>
