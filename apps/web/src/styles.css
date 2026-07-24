@@ -2247,6 +2247,7 @@ dialog::backdrop {
 	flex: 1;
 	overflow: auto;
 	padding: 0;
+	scrollbar-gutter: stable;
 	scrollbar-width: thin;
 }
 

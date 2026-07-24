@@ -322,4 +322,5 @@
 
 .sidebar-context .bookmark-folder-tree {
 	padding: 0;
+	scrollbar-gutter: stable;
 }

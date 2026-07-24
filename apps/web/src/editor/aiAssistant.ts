@@ -455,7 +455,7 @@ function bindNoteContextChat(
 			<button type="button" class="row-action" data-chat-new title="${t('新建对话', 'New chat')}" aria-label="${t('新建对话', 'New chat')}"><i data-lucide="message-circle-plus"></i></button>
 			<button type="button" class="row-action" data-chat-close title="${t('关闭 AI', 'Close AI')}" aria-label="${t('关闭 AI', 'Close AI')}"><i data-lucide="x"></i></button>
 		</header>
-		<div class="note-ai-chat-messages" data-chat-messages>${welcomeHtml()}</div>
+		<div class="note-ai-chat-messages" data-chat-messages data-bottom-sheet-scroll>${welcomeHtml()}</div>
 		<div class="note-ai-chat-composer">
 			<div class="note-ai-context-chip"><i data-lucide="${hasSelection ? 'text-select' : 'file-text'}"></i><span>${contextLabel}</span></div>
 			<div class="note-ai-chat-input-row"><textarea rows="1" data-chat-input placeholder="${t('使用 AI 处理当前内容…', 'Ask AI about this content…')}" aria-label="${t('向 AI 提问', 'Ask AI')}"></textarea></div>

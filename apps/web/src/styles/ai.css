@@ -590,6 +590,53 @@
 	}
 }
 
+@media (max-width: 760px) {
+	.note-editor .note-ai-chat-panel.workspace-rail.bottom-sheet {
+		bottom: var(--bottom-sheet-keyboard-offset, 0px);
+		height: min(78dvh, 680px, calc(var(--bottom-sheet-viewport-height, 100dvh) - 12px));
+		max-height: calc(var(--bottom-sheet-viewport-height, 100dvh) - 8px);
+	}
+
+	.note-editor .note-ai-chat-panel.workspace-rail.bottom-sheet.is-keyboard-open {
+		height: calc(var(--bottom-sheet-viewport-height, 100dvh) - 8px);
+		border-radius: 12px 12px 0 0;
+	}
+
+	.note-ai-chat-panel.bottom-sheet .note-ai-chat-composer {
+		flex: none;
+		margin-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+	}
+
+	.note-ai-chat-panel.bottom-sheet.is-keyboard-open .note-ai-chat-composer {
+		margin: 0 8px 6px;
+		padding: 7px 8px 6px;
+	}
+
+	.note-ai-chat-panel.bottom-sheet.is-keyboard-open .note-ai-chat-messages {
+		padding: 8px 14px 6px;
+	}
+
+	.note-ai-chat-panel.bottom-sheet .note-ai-chat-messages {
+		overscroll-behavior: contain;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	.note-ai-chat-panel.bottom-sheet.is-keyboard-open .note-ai-chat-welcome {
+		min-height: auto;
+		justify-content: flex-start;
+		padding-block: 2px;
+	}
+
+	.note-ai-chat-panel.bottom-sheet.is-keyboard-open .note-ai-welcome-mark {
+		display: none;
+	}
+
+	.note-ai-chat-panel.bottom-sheet.is-keyboard-open .note-ai-chat-welcome h2 {
+		margin-bottom: 8px;
+		font-size: 16px;
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.ai-thinking svg {
 		animation: none;
