@@ -2574,11 +2574,28 @@ dialog::backdrop {
 	opacity: 1;
 }
 
+/* Match the sidebar tree: row actions appear only on hover/focus. */
 .custom-select-action {
 	width: 30px;
 	justify-content: center;
 	padding: 5px !important;
 	color: var(--quiet) !important;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 120ms ease;
+}
+
+.custom-select-row:hover .custom-select-action,
+.custom-select-row:focus-within .custom-select-action {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+@media (hover: none) {
+	.custom-select-action {
+		opacity: 1;
+		pointer-events: auto;
+	}
 }
 
 .custom-select-action.danger:hover {

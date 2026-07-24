@@ -1443,13 +1443,23 @@ details.markdown-callout > .markdown-callout-title::marker {
 .cm-editor-highlight {
 	--editor-highlight-color: color-mix(in srgb, var(--accent) 24%, transparent);
 	background: var(--editor-highlight-color);
-	border-radius: 2px;
+	border-radius: 3px;
+	/* Native-selection-like padding without shifting the text layout. */
+	padding: 2px 1px;
+	margin: 0 -1px;
 	box-decoration-break: clone;
 	-webkit-box-decoration-break: clone;
 }
 
 .cm-editor-highlight-content {
 	color: var(--accent-text);
+}
+
+/* The selection hold is the single visible highlight; keep the native one quiet. */
+.cm-editor:has(.cm-editor-highlight-selection) .cm-content::selection,
+.cm-editor:has(.cm-editor-highlight-selection) .cm-line::selection,
+.cm-editor:has(.cm-editor-highlight-selection) .cm-line *::selection {
+	background: transparent;
 }
 
 .cm-editor:not(.cm-focused) .cm-editor-highlight-content,
@@ -2223,17 +2233,12 @@ details.markdown-callout > .markdown-callout-title::marker {
 	}
 }
 
-.note-tree-leading .tree-caret-icon {
+/* Folder rows always show the caret; swapping icons on state change flickered. */
+.note-folder-card > .collection-tree-row .tree-folder-icon {
 	display: none;
 }
 
-.note-folder-card:hover > .collection-tree-row .tree-folder-icon,
-.note-folder-card:focus-within > .collection-tree-row .tree-folder-icon {
-	display: none;
-}
-
-.note-folder-card:hover > .collection-tree-row .tree-caret-icon,
-.note-folder-card:focus-within > .collection-tree-row .tree-caret-icon {
+.note-folder-card > .collection-tree-row .tree-caret-icon {
 	display: block;
 }
 
