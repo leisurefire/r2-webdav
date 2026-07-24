@@ -2310,6 +2310,10 @@ details.markdown-callout > .markdown-callout-title::marker {
 		display: none;
 	}
 
+	.note-editor-mobile .note-actions-meta .note-last-modified {
+		display: none;
+	}
+
 	.note-more-popover .mobile-note-meta {
 		display: block;
 		padding: 5px 8px 8px;

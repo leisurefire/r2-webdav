@@ -133,7 +133,6 @@ export function noteActionControlsMarkup(selected: Note, includeRefresh = false)
 				<button type="button" class="row-action" data-menu-toggle title="${moreLabel}" aria-label="${moreLabel}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
 				<div class="action-menu-popover note-more-popover" data-menu-popover role="menu">
 					<div class="mobile-note-meta"><time class="note-last-modified" data-note-last-modified datetime="${html(selected.updatedAt)}">${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time></div>
-					<button type="button" class="mobile-note-export" data-note-export role="menuitem"><i data-lucide="file-down"></i><span>${exportLabel}</span></button>
 					<div class="note-font-card" role="group" aria-label="${fontLabel}">
 						<button type="button" class="note-font-choice" data-note-font="sans" role="menuitemradio" aria-checked="${preferences.font === 'sans'}" title="${sansLabel}" aria-label="${sansLabel}">
 							<span class="note-font-preview note-font-preview-sans">Aa</span>
@@ -144,6 +143,7 @@ export function noteActionControlsMarkup(selected: Note, includeRefresh = false)
 							<span class="note-font-choice-label">${serifLabel}</span>
 						</button>
 					</div>
+					<button type="button" class="mobile-note-export" data-note-export role="menuitem"><i data-lucide="file-down"></i><span>${exportLabel}</span></button>
 					<button type="button" class="desktop-only-action" data-note-full-width role="menuitemcheckbox" aria-checked="${preferences.fullWidth}"><i data-lucide="maximize-2"></i><span>${fullWidthLabel}</span><i class="note-menu-check" data-lucide="check" aria-hidden="true"></i></button>
 					<button type="button" data-note-move role="menuitem"><i data-lucide="folder-input"></i><span>${moveLabel}</span></button>
 					<button type="button" data-note-archive role="menuitem"><i data-lucide="archive"></i><span>${selected.archived ? t('restore') : t('archive')}</span></button>

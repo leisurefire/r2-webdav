@@ -3916,10 +3916,16 @@ body:has(.app-shell) {
 		pointer-events: none;
 	}
 
+	.brand-menu-button .brand-chevron {
+		display: none;
+	}
+
 	.brand-menu-wrap .account-popover {
-		top: calc(100% + 8px);
+		position: fixed;
+		top: 58px;
 		left: auto;
-		right: 0;
+		right: 12px;
+		bottom: auto;
 	}
 
 	.sidebar-collapsed .sidebar-head .brand {

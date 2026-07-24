@@ -211,7 +211,9 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 		tools: `<div class="notes-folder-tools sidebar-context-tools"><button class="row-action" data-new-note title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button><button class="row-action" data-new-note-folder title="${locale === 'zh' ? '新建目录' : 'New folder'}" aria-label="${locale === 'zh' ? '新建目录' : 'New folder'}"><i data-lucide="folder-plus"></i></button>${noteSortMenuMarkup()}<button type="button" class="row-action" data-notes-refresh title="${locale === 'zh' ? '同步便签' : 'Sync notes'}" aria-label="${locale === 'zh' ? '同步便签' : 'Sync notes'}"><i data-lucide="refresh-cw"></i></button></div>`,
 		body: `${pinnedRootMarkup}${folderMarkup}${unpinnedRootMarkup}${archiveMarkup}`,
 		treeAttributes: 'data-notes-tree',
-		footer: `<div class="notes-load-status" aria-live="polite">${notesLoadingMore ? loadingMarkup(true) : ''}</div>`,
+		footer: notesLoadingMore
+			? `<div class="notes-load-status" aria-live="polite">${loadingMarkup(true)}</div>`
+			: '',
 	});
 }
 

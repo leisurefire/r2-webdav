@@ -994,7 +994,10 @@ function bindNoteContextChat(
 			renderConversation();
 		});
 		panel.querySelector('[data-chat-new]')?.addEventListener('click', createSession);
-		panel.querySelector('[data-chat-close]')?.addEventListener('click', () => sheet?.requestClose() ?? close());
+		panel.querySelector('[data-chat-close]')?.addEventListener('click', () => {
+			if (sheet) sheet.requestClose();
+			else close();
+		});
 		send.addEventListener('click', () => {
 			if (controller) controller.abort();
 			else void submit();
