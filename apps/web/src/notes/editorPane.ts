@@ -435,17 +435,37 @@ export function bindNoteEditor(
 							centerInScrollable(panel, activeItem);
 						};
 
+						// Clicking an outline entry pins that section as active until the user
+						// actually scrolls, so short trailing sections still highlight after a jump.
+						let pinnedId: string | null = null;
+						let settleTimer: number | null = null;
+						let programmaticTop = 0;
+						let scrollSettled = true;
+						const pinSection = (id: string) => {
+							pinnedId = id;
+							programmaticTop = scroller.scrollTop;
+							scrollSettled = false;
+							if (settleTimer !== null) window.clearTimeout(settleTimer);
+							settleTimer = window.setTimeout(() => {
+								scrollSettled = true;
+							}, 140);
+						};
+
 						const refreshActive = () => {
 							if (!anchors.length) {
 								setActive(null);
 								return;
 							}
-							const viewportBottom = scroller.scrollTop + scroller.clientHeight;
+							if (pinnedId !== null) {
+								setActive(pinnedId);
+								return;
+							}
+							const viewportTop = scroller.scrollTop + 36;
 							let activeId = anchors[0]!.id;
 							for (const anchor of anchors) {
 								// lineBlockAt is document-relative and stays valid while off-screen.
 								const offset = view.lineBlockAt(anchor.from).top;
-								if (offset <= viewportBottom) activeId = anchor.id;
+								if (offset <= viewportTop) activeId = anchor.id;
 								else break;
 							}
 							setActive(activeId);
@@ -462,6 +482,7 @@ export function bindNoteEditor(
 							mark.addEventListener('click', (event) => {
 								event.stopPropagation();
 								scrollToMarkdownHeading(view, heading.id);
+								pinSection(heading.id);
 								const headingFrom = markdownHeadingPosition(view, heading.id);
 								if (headingFrom !== null) {
 									const line = view.state.doc.lineAt(headingFrom);
@@ -489,6 +510,7 @@ export function bindNoteEditor(
 							item.addEventListener('click', (event) => {
 								event.stopPropagation();
 								scrollToMarkdownHeading(view, heading.id);
+								pinSection(heading.id);
 								const headingFrom = markdownHeadingPosition(view, heading.id);
 								if (headingFrom !== null) {
 									const line = view.state.doc.lineAt(headingFrom);
@@ -535,20 +557,46 @@ export function bindNoteEditor(
 						});
 
 						const previous = outline as HTMLElement & {
-							_outlineScroll?: () => void;
-							_outlineOutside?: (event: Event) => void;
+							_outlineCleanup?: () => void;
 						};
-						if (previous._outlineScroll) scroller.removeEventListener('scroll', previous._outlineScroll);
-						if (previous._outlineOutside) document.removeEventListener('pointerdown', previous._outlineOutside);
-						const onScroll = () => refreshActive();
+						previous._outlineCleanup?.();
+						const onScroll = () => {
+							if (pinnedId !== null && scroller.scrollTop !== programmaticTop) {
+								if (scrollSettled) {
+									// The jump finished and the user moved the page: release the pin.
+									pinnedId = null;
+								} else {
+									programmaticTop = scroller.scrollTop;
+									if (settleTimer !== null) window.clearTimeout(settleTimer);
+									settleTimer = window.setTimeout(() => {
+										scrollSettled = true;
+									}, 140);
+								}
+							}
+							refreshActive();
+						};
+						// Wheel or touch input counts as an intentional scroll even when the page
+						// cannot move further, so drop the pin immediately.
+						const onUserScrollInput = () => {
+							if (pinnedId === null) return;
+							pinnedId = null;
+							refreshActive();
+						};
 						const onOutside = (event: Event) => {
 							if (!(event.target instanceof Node) || outline.contains(event.target)) return;
 							outline.classList.remove('open');
 						};
-						previous._outlineScroll = onScroll;
-						previous._outlineOutside = onOutside;
 						scroller.addEventListener('scroll', onScroll, { passive: true });
+						scroller.addEventListener('wheel', onUserScrollInput, { passive: true });
+						scroller.addEventListener('touchmove', onUserScrollInput, { passive: true });
 						document.addEventListener('pointerdown', onOutside);
+						previous._outlineCleanup = () => {
+							scroller.removeEventListener('scroll', onScroll);
+							scroller.removeEventListener('wheel', onUserScrollInput);
+							scroller.removeEventListener('touchmove', onUserScrollInput);
+							document.removeEventListener('pointerdown', onOutside);
+							if (settleTimer !== null) window.clearTimeout(settleTimer);
+						};
 						refreshActive();
 					} catch (error) {
 						console.error('Note outline failed', error);
