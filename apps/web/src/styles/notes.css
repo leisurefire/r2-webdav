@@ -522,7 +522,7 @@
 .note-outline {
 	position: absolute;
 	top: 28px;
-	right: 14px;
+	right: 24px;
 	z-index: 4;
 	display: block;
 	width: auto;
@@ -557,7 +557,7 @@
 
 .note-outline-mark {
 	display: block;
-	width: calc(14px - (var(--outline-level, 1) - 1) * 1.6px);
+	width: clamp(7px, calc(22px - (var(--outline-level, 1) - 1) * 3px), 22px);
 	min-width: 7px;
 	height: 2px;
 	padding: 0;
@@ -574,7 +574,7 @@
 
 .note-outline-mark.active {
 	/* Color only — keep the same width as inactive marks. */
-	background: var(--accent);
+	background: var(--ink);
 }
 
 .note-outline-mark.section-pulse,
@@ -602,6 +602,7 @@
 	z-index: 2;
 	opacity: 0;
 	visibility: hidden;
+	transform: translateX(12px);
 	display: flex;
 	flex-direction: column;
 	gap: 1px;
@@ -619,6 +620,7 @@
 	box-shadow: var(--overlay-shadow);
 	transition:
 		opacity 120ms ease,
+		transform 160ms ease,
 		visibility 120ms ease;
 }
 
@@ -628,15 +630,28 @@
 	pointer-events: auto;
 	opacity: 1;
 	visibility: visible;
+	transform: translateX(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.note-outline-panel {
+		transition: none;
+	}
+
+	.note-outline-mark.section-pulse,
+	.note-outline-item.section-pulse {
+		animation: none;
+	}
 }
 
 .note-outline-item {
+	--outline-indent: calc((var(--outline-level, 1) - 1) * 12px);
 	display: block;
 	width: 100%;
 	min-width: 0;
 	min-height: 28px;
 	margin: 0;
-	padding: 5px 8px 5px calc(8px + (var(--outline-level, 1) - 1) * 10px);
+	padding: 5px 8px;
 	border: 0;
 	border-radius: 6px;
 	background: transparent;
@@ -650,7 +665,8 @@
 .note-outline-item > span {
 	display: block;
 	min-width: 0;
-	width: 100%;
+	width: calc(100% - var(--outline-indent));
+	margin-left: var(--outline-indent);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -741,6 +757,8 @@
 	--note-heading-space: 118px;
 	--note-title-size: 40px;
 	--note-heading-padding: 42px 24px 14px;
+	--note-heading-edit-margin: 28px 10px 0;
+	--note-heading-edit-padding: 14px;
 }
 
 /* Keep the title on its final gutter-aligned track while CodeMirror loads. */
@@ -1561,6 +1579,9 @@ details.markdown-callout > .markdown-callout-title::marker {
 
 .note-source .note-heading.is-editing {
 	z-index: 4;
+	margin: var(--note-heading-edit-margin);
+	padding: var(--note-heading-edit-padding);
+	border-radius: 8px;
 	background: var(--panel-bg);
 	box-shadow: 0 12px 20px rgb(0 0 0 / 0.1);
 }
@@ -1639,6 +1660,8 @@ details.markdown-callout > .markdown-callout-title::marker {
 		--note-heading-space: 92px;
 		--note-title-size: 28px;
 		--note-heading-padding: 26px 14px 12px;
+		--note-heading-edit-margin: 16px 4px 2px;
+		--note-heading-edit-padding: 10px;
 	}
 
 	.note-source .cm-lineNumbers .cm-gutterElement {
@@ -1887,7 +1910,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 }
 
 .note-outline {
-	right: 8px;
+	right: 24px;
 	width: 22px;
 	max-height: min(56vh, 460px);
 }
@@ -1899,14 +1922,14 @@ details.markdown-callout > .markdown-callout-title::marker {
 }
 
 .note-outline-mark {
-	width: calc(20px - (var(--outline-level, 1) - 1) * 2px);
-	min-width: 8px;
+	width: clamp(7px, calc(22px - (var(--outline-level, 1) - 1) * 3px), 22px);
+	min-width: 7px;
 	height: 3px;
 }
 
 .note-outline-panel {
 	top: -6px;
-	right: -6px;
+	right: 0;
 	width: min(246px, 54vw);
 	max-width: min(246px, 54vw);
 	max-height: min(56vh, 460px);

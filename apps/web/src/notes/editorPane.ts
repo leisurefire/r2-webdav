@@ -440,12 +440,12 @@ export function bindNoteEditor(
 								setActive(null);
 								return;
 							}
-							const top = scroller.scrollTop + 36;
+							const viewportBottom = scroller.scrollTop + scroller.clientHeight;
 							let activeId = anchors[0]!.id;
 							for (const anchor of anchors) {
 								// lineBlockAt is document-relative and stays valid while off-screen.
 								const offset = view.lineBlockAt(anchor.from).top;
-								if (offset <= top) activeId = anchor.id;
+								if (offset <= viewportBottom) activeId = anchor.id;
 								else break;
 							}
 							setActive(activeId);
