@@ -176,7 +176,7 @@ export function navigate(path: string): void {
 }
 
 export function shell(page: Page, _title: string, content = loadingMarkup()): void {
-	app.innerHTML = `<div class="app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}">
+	app.innerHTML = `<div class="app-shell page-entering ${sidebarCollapsed ? 'sidebar-collapsed' : ''}" data-page="${page}">
 		<aside class="sidebar workspace-rail workspace-rail-left">
 			<div class="sidebar-head">
 				<div class="brand" aria-label="TrueSpace"><span class="brand-full">TrueSpace</span></div>

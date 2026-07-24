@@ -121,3 +121,28 @@ export function expandTreeBranch(host: Element | null | undefined, branchSelecto
 	branch.addEventListener('animationend', clear);
 	window.setTimeout(() => clear(), 220);
 }
+
+/** Bring a path target into view and reuse the workspace's temporary accent highlight. */
+export function showTreePathHighlight(target: HTMLElement | null | undefined): void {
+	if (!target) return;
+	const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	target.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'auto' : 'smooth' });
+	const className = reducedMotion ? 'tree-path-highlight-reduced' : 'tree-path-highlight';
+	target.classList.remove('tree-path-highlight', 'tree-path-highlight-reduced');
+	void target.offsetWidth;
+	target.classList.add(className);
+	const clear = () => target.classList.remove(className);
+	if (reducedMotion) window.setTimeout(clear, 700);
+	else {
+		const onEnd = (event: AnimationEvent) => {
+			if (event.target !== target) return;
+			target.removeEventListener('animationend', onEnd);
+			clear();
+		};
+		target.addEventListener('animationend', onEnd);
+		window.setTimeout(() => {
+			target.removeEventListener('animationend', onEnd);
+			clear();
+		}, 1300);
+	}
+}

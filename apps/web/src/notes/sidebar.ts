@@ -486,11 +486,12 @@ export function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?:
 	content.querySelectorAll<HTMLElement>('[data-note]').forEach((node) => {
 		node.addEventListener('click', () => {
 			const noteId = node.dataset.note;
+			const requestedPath = noteId ? `/notes/${encodeURIComponent(noteId)}` : '';
 			const note =
 				data.items.find((item) => item.id === noteId) ?? archivedNotesData?.items.find((item) => item.id === noteId);
 			// Only a note click switches the open document; also reveal its folder.
 			if (note) {
-				history.pushState({}, '', `/notes/${encodeURIComponent(note.id)}`);
+				history.pushState({}, '', requestedPath);
 				if (note.folderId && knownNoteFolderIds().has(note.folderId)) {
 					for (const folder of noteFolderPath(noteFolders, note.folderId)) noteExpandedFolders.add(folder.id);
 					setSelectedNoteFolderId(note.folderId);
@@ -498,11 +499,15 @@ export function bindNoteSidebar(content: HTMLElement, data: NotePage, selected?:
 					setSelectedNoteFolderId(null);
 				}
 				if (note.archived) setArchiveExpanded(true);
-				// Paint immediately with cached meta, then hydrate body if needed.
-				paintNotes(note.archived ? (archivedNotesData ?? data) : (notesData ?? data), note.id, true);
+				if (noteContentLoaded.has(note.id)) {
+					paintNotes(note.archived ? (archivedNotesData ?? data) : (notesData ?? data), note.id, true);
+					return;
+				}
+				// Keep the current document visible while the selected note body is hydrated.
+				if (notesData) replaceNotesSidebar(notesData, note.id);
 				void ensureNoteContent(note).then((full) => {
-					if (currentSelectedNoteId() === full.id && pageFromPath() === 'notes') {
-						paintNotes(full.archived ? (archivedNotesData ?? data) : (notesData ?? data), full.id, false);
+					if (location.pathname === requestedPath && pageFromPath() === 'notes' && noteContentLoaded.has(full.id)) {
+						paintNotes(full.archived ? (archivedNotesData ?? data) : (notesData ?? data), full.id, true);
 					}
 				});
 				return;

@@ -6,6 +6,7 @@ import {
 	collapseTreeBranch,
 	expandTreeBranch,
 	renderTreeNodes,
+	showTreePathHighlight,
 	treeLeadingMarkup,
 	workspaceSidebarMarkup,
 } from '../ui/helpers';
@@ -30,6 +31,7 @@ interface BookmarkFolder {
 }
 
 let bookmarkFolderPath: string[] = [];
+let bookmarkTreeHighlightPending: string | undefined;
 export const bookmarkExpandedFolders = new Set<string>();
 
 export function bookmarkFolderTree(): BookmarkFolder {
@@ -166,6 +168,16 @@ export function paintBookmarkView(): void {
 	bindBookmarkPreviews(content);
 	const path = content.querySelector<HTMLElement>('.bookmark-path');
 	if (path) path.scrollLeft = path.scrollWidth;
+	if (bookmarkTreeHighlightPending !== undefined && context) {
+		const pendingKey = bookmarkTreeHighlightPending;
+		const target = [...context.querySelectorAll<HTMLElement>('[data-bookmark-folder]')].find(
+			(button) => button.dataset.bookmarkFolder === pendingKey,
+		);
+		if (target) {
+			bookmarkTreeHighlightPending = undefined;
+			requestAnimationFrame(() => showTreePathHighlight(target));
+		}
+	}
 	context?.querySelectorAll<HTMLElement>('[data-bookmark-folder]').forEach((button) =>
 		button.addEventListener('click', () => {
 			const key = button.dataset.bookmarkFolder ?? '';
@@ -197,6 +209,7 @@ export function paintBookmarkView(): void {
 	content.querySelectorAll<HTMLElement>('[data-bookmark-path]').forEach((button) =>
 		button.addEventListener('click', () => {
 			const key = button.dataset.bookmarkPath ?? '';
+			bookmarkTreeHighlightPending = key;
 			bookmarkFolderPath = key ? key.split('\u001f') : [];
 			paintBookmarkView();
 		}),

@@ -66,6 +66,8 @@ export function emptyNotePage(): NotePage {
 	return { items: [], page: 1, pageSize: 50, total: 0, hasMore: false };
 }
 
+const noteContentRequests = new Map<string, Promise<Note>>();
+
 export function mergeNotesIntoPage(page: NotePage, incoming: Note[], markContentLoaded: boolean): void {
 	const byId = new Map(page.items.map((note) => [note.id, note]));
 	for (const note of incoming) {
@@ -162,22 +164,30 @@ export async function hydrateExpandedNoteScopes(force = false): Promise<void> {
 }
 
 export async function ensureNoteContent(note: Note): Promise<Note> {
-	if (noteContentLoaded.has(note.id) || noteContentLoading.has(note.id)) return note;
+	if (noteContentLoaded.has(note.id)) return note;
+	const pending = noteContentRequests.get(note.id);
+	if (pending) return pending;
+
 	const syncSnapshot = captureNoteSyncSnapshot();
-	noteContentLoading.add(note.id);
-	try {
-		const full = await api.getNote(note.id);
-		mergeRemoteNote(note, full, protectedNoteFieldsSince(syncSnapshot).get(note.id));
-		noteContentLoaded.add(note.id);
-		if (!note.archived && notesData) cacheNotes(notesData, false);
-		if (note.archived && archivedNotesData) cacheNotes(archivedNotesData, true);
-		return note;
-	} catch (error) {
-		toast(errorMessage(error));
-		return note;
-	} finally {
-		noteContentLoading.delete(note.id);
-	}
+	const request = (async () => {
+		noteContentLoading.add(note.id);
+		try {
+			const full = await api.getNote(note.id);
+			mergeRemoteNote(note, full, protectedNoteFieldsSince(syncSnapshot).get(note.id));
+			noteContentLoaded.add(note.id);
+			if (!note.archived && notesData) cacheNotes(notesData, false);
+			if (note.archived && archivedNotesData) cacheNotes(archivedNotesData, true);
+			return note;
+		} catch (error) {
+			toast(errorMessage(error));
+			return note;
+		} finally {
+			noteContentLoading.delete(note.id);
+			noteContentRequests.delete(note.id);
+		}
+	})();
+	noteContentRequests.set(note.id, request);
+	return request;
 }
 
 export async function loadNoteFolders(force = false): Promise<void> {

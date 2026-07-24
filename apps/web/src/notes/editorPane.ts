@@ -1,7 +1,7 @@
 import type { Note, NotePage } from '@r2-webdav/shared-types';
 import { html, refreshIcons, toast, errorMessage } from '../shell';
 import { locale, t, type MessageKey } from '../i18n';
-import { openFolderDialog } from '../ui/helpers';
+import { openFolderDialog, showTreePathHighlight } from '../ui/helpers';
 import { flushNoteCommit, noteCommitStates } from './commits';
 import { ensureFolderNotesLoaded, optimisticallyUpdateNote } from './scope';
 import type { NoteChanges } from './outbox';
@@ -42,8 +42,7 @@ export function revealNoteFolderInTree(folderId: string | null): void {
 	}
 	const selectedId = currentSelectedNoteId();
 	if (notesData) replaceNotesSidebar(notesData, selectedId);
-	if (folderId) void ensureFolderNotesLoaded(folderId);
-	requestAnimationFrame(() => {
+	const highlightFolder = () => requestAnimationFrame(() => {
 		const tree = document.querySelector<HTMLElement>('[data-notes-tree]');
 		if (!tree) return;
 		const target = folderId
@@ -54,8 +53,10 @@ export function revealNoteFolderInTree(folderId: string | null): void {
 		const row = target?.matches('.collection-tree-row')
 			? target
 			: target?.querySelector<HTMLElement>(':scope > .collection-tree-row');
-		row?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+		showTreePathHighlight(row);
 	});
+	if (folderId) void ensureFolderNotesLoaded(folderId).then(highlightFolder);
+	else highlightFolder();
 }
 
 export type NoteFont = 'sans' | 'serif';
@@ -162,7 +163,7 @@ export function noteEditorMarkup(selected: Note, mobile = false): string {
 		${!mobile ? noteToolbarMarkup(selected) : ''}
 		<form data-note-form>
 			${mobile ? `<div class="note-editor-head"><button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>${notePathMarkup(selected)}${noteActionControlsMarkup(selected)}</div>` : ''}
-			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-source note-source-pending" data-note-source aria-label="${t('markdown')}" aria-busy="true"><div class="note-heading"><input data-note-title value="${html(selected.title)}" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}"></div></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
+			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-source note-source-pending" data-note-source aria-label="${t('markdown')}" aria-busy="true"><div class="note-heading"><button type="button" class="note-title-display" data-note-title-display title="${html(selected.title)}">${html(selected.title)}</button><textarea data-note-title rows="1" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}">${html(selected.title)}</textarea></div></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
 			${
 				mobile
 					? `<div class="note-mobile-edit-tools" data-mobile-editor-tools aria-label="${locale === 'zh' ? '编辑工具' : 'Editing tools'}">
@@ -199,7 +200,12 @@ export function paintNoteSaveStatus(noteId: string, state: NoteSaveState): void 
 	});
 }
 
-export function syncNoteTitle(note: Note, source?: HTMLInputElement): void {
+function resizeNoteTitle(control: HTMLTextAreaElement): void {
+	control.style.height = '0px';
+	control.style.height = `${control.scrollHeight}px`;
+}
+
+export function syncNoteTitle(note: Note, source?: HTMLTextAreaElement): void {
 	document.querySelectorAll<HTMLElement>('[data-note-card-id]').forEach((card) => {
 		if (card.dataset.noteCardId === note.id) {
 			const title = card.querySelector<HTMLElement>('.note-card-label');
@@ -208,8 +214,16 @@ export function syncNoteTitle(note: Note, source?: HTMLInputElement): void {
 	});
 	document.querySelectorAll<HTMLElement>('[data-note-editor-id]').forEach((editor) => {
 		if (editor.dataset.noteEditorId !== note.id) return;
-		const input = editor.querySelector<HTMLInputElement>('[data-note-title]');
-		if (input && input !== source && input !== document.activeElement) input.value = note.title;
+		const display = editor.querySelector<HTMLElement>('[data-note-title-display]');
+		if (display) {
+			display.textContent = note.title;
+			display.title = note.title;
+		}
+		const input = editor.querySelector<HTMLTextAreaElement>('[data-note-title]');
+		if (input && input !== source && input !== document.activeElement) {
+			input.value = note.title;
+			resizeNoteTitle(input);
+		}
 	});
 	document
 		.querySelectorAll<HTMLElement>(`.note-location[data-note-path-id="${CSS.escape(note.id)}"]`)
@@ -266,7 +280,6 @@ export function bindNotePath(root: HTMLElement, _note: Note): void {
 	root.querySelectorAll<HTMLElement>('[data-note-path-folder]').forEach((button) =>
 		button.addEventListener('click', (event) => {
 			event.preventDefault();
-			history.pushState({}, '', '/notes');
 			const value = button.dataset.notePathFolder ?? 'root';
 			// Keep the open note; path clicks only navigate the tree.
 			revealNoteFolderInTree(value === 'root' ? null : value);
@@ -300,7 +313,20 @@ export function bindNoteEditor(
 ): void {
 	const source = root.querySelector<HTMLElement>('[data-note-source]')!;
 	let draftContent = selected.content.replaceAll('\r', '');
-	const title = root.querySelector<HTMLInputElement>('[data-note-title]')!;
+	const title = root.querySelector<HTMLTextAreaElement>('[data-note-title]')!;
+	const titleDisplay = root.querySelector<HTMLButtonElement>('[data-note-title-display]')!;
+	const heading = title.closest<HTMLElement>('.note-heading')!;
+	const resizeTitle = () => resizeNoteTitle(title);
+	const openTitleEditor = () => {
+		heading.classList.add('is-editing');
+		resizeTitle();
+		requestAnimationFrame(() => {
+			if (!title.isConnected) return;
+			resizeTitle();
+			title.focus();
+			title.setSelectionRange(title.value.length, title.value.length);
+		});
+	};
 	const actionHosts = mobile
 		? [...root.querySelectorAll<HTMLElement>('[data-note-toolbar-id]')]
 		: [...actionRoot.querySelectorAll<HTMLElement>('.notes-inner-toolbar [data-note-toolbar-id]')];
@@ -309,6 +335,9 @@ export function bindNoteEditor(
 	const pendingState = noteCommitStates.get(selected.id);
 	if (pendingState) paintNoteSaveStatus(selected.id, pendingState.status);
 	title.addEventListener('input', () => {
+		const normalized = title.value.replace(/[\r\n]+/g, ' ');
+		if (normalized !== title.value) title.value = normalized;
+		resizeTitle();
 		const nextTitle = title.value.trim() || (locale === 'zh' ? '无标题便签' : 'Untitled note');
 		optimisticallyUpdateNote(data, selected, { title: nextTitle });
 		syncNoteTitle(selected, title);
@@ -316,7 +345,23 @@ export function bindNoteEditor(
 	});
 	title.addEventListener('blur', () => {
 		title.value = selected.title;
+		resizeTitle();
+		heading.classList.remove('is-editing');
 	});
+	titleDisplay.addEventListener('click', openTitleEditor);
+	title.addEventListener('keydown', (event) => {
+		if (event.key !== 'Enter') return;
+		event.preventDefault();
+		title.blur();
+	});
+	const titleResizeObserver = new ResizeObserver(() => {
+		if (!source.isConnected) {
+			titleResizeObserver.disconnect();
+			return;
+		}
+		if (heading.classList.contains('is-editing')) resizeTitle();
+	});
+	titleResizeObserver.observe(source);
 	const compose = root.querySelector<HTMLElement>('[data-note-compose]');
 	const outline = root.querySelector<HTMLElement>('[data-note-outline]');
 	void import('../editor/markdownLivePreview')
@@ -513,7 +558,6 @@ export function bindNoteEditor(
 					toast(locale === 'zh' ? '图片超过 256 KB，暂不允许粘贴' : 'Images over 256 KB cannot be pasted yet'),
 				onImageReadError: () => toast(locale === 'zh' ? '无法读取粘贴的图片' : 'Could not read the pasted image'),
 			});
-			const heading = source.querySelector<HTMLElement>('.note-heading');
 			if (heading) view.scrollDOM.insertBefore(heading, view.contentDOM);
 			view.requestMeasure();
 			requestAnimationFrame(() => {
@@ -535,6 +579,7 @@ export function bindNoteEditor(
 					onTitleChange: (nextTitle) => {
 						optimisticallyUpdateNote(data, selected, { title: nextTitle });
 						title.value = nextTitle;
+						resizeTitle();
 						syncNoteTitle(selected, title);
 						reorderVisibleNoteCards(data);
 					},

@@ -17,6 +17,7 @@ import {
 	collapseTreeBranch,
 	expandTreeBranch,
 	openTextDialog,
+	showTreePathHighlight,
 	treeLeadingMarkup,
 	workspaceSidebarMarkup,
 } from '../ui/helpers';
@@ -29,6 +30,7 @@ const fileExpandedPaths = new Set<string>(['']);
 const fileTreeLoadingPaths = new Set<string>();
 let directoryLoadCleanup: (() => void) | null = null;
 let fileTreeExpansionPending: string | null = null;
+let fileTreeHighlightPending: string | null = null;
 
 export function formatBytes(size: number): string {
 	if (size < 1024) return `${size} B`;
@@ -344,9 +346,25 @@ export function paintFiles(listing: FileListing): void {
 			requestAnimationFrame(() => expandTreeBranch(host, '.notes-tree-children'));
 		}
 	}
+	if (fileTreeHighlightPending !== null && context) {
+		const pendingPath = fileTreeHighlightPending;
+		const target = [...context.querySelectorAll<HTMLElement>('[data-file-tree-path]')].find(
+			(item) => item.dataset.fileTreePath === pendingPath,
+		);
+		if (target && validatedFilePaths.has(pendingPath)) {
+			fileTreeHighlightPending = null;
+			requestAnimationFrame(() => showTreePathHighlight(target));
+		}
+	}
 	content
 		.querySelectorAll<HTMLElement>('[data-path]')
-		.forEach((item) => item.addEventListener('click', () => openFileDirectory(item.dataset.path!)));
+		.forEach((item) =>
+			item.addEventListener('click', () => {
+				const path = item.dataset.path ?? '';
+				fileTreeHighlightPending = path;
+				openFileDirectory(path);
+			}),
+		);
 	context?.querySelectorAll<HTMLElement>('[data-file-tree-path]').forEach((item) =>
 		item.addEventListener('click', () => {
 			const path = item.dataset.fileTreePath ?? '';
