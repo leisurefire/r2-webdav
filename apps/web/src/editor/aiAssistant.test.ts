@@ -5,6 +5,7 @@ import {
 	normalizeAiMarkdown,
 	parseAiCitations,
 	parseChatAiEnvelope,
+	canSafelyRevert,
 	splitAiTitle,
 	splitRewriteSummary,
 } from './aiAssistant';
@@ -179,6 +180,23 @@ describe('mapChatSegments', () => {
 		expect(mapChatSegments([{ from: 0, to: 7, kind: 'inserted' as const }], 0)).toEqual([
 			{ from: 0, to: 7, kind: 'inserted' },
 		]);
+	});
+});
+
+describe('safe AI change revert', () => {
+	const change = {
+		from: 7,
+		to: 14,
+		original: 'before',
+		generated: 'updated',
+		updatedAt: '2026-07-25T00:00:00.000Z',
+	};
+	it('allows only an exact current AI result', () => {
+		expect(canSafelyRevert('header updated footer', change)).toBe(true);
+		expect(canSafelyRevert('header changed footer', change)).toBe(false);
+	});
+	it('does not allow a reverted change to be applied twice', () => {
+		expect(canSafelyRevert('header updated footer', { ...change, status: 'reverted' })).toBe(false);
 	});
 });
 

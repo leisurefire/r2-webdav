@@ -37,6 +37,7 @@ import {
 	saveAiChatMode,
 	saveAiModelForAction,
 	type AiAction,
+	type NoteChatChange,
 	type NoteChatSession,
 } from '../api/client';
 import { clearAiReview, showAiReview, toggleMarkdownWrap, type AiReviewSegment } from './markdownLivePreview';
@@ -308,6 +309,12 @@ export function mapChatSegments(
 	return segments.map((segment) => ({ from: segment.from + offset, to: segment.to + offset, kind: segment.kind }));
 }
 
+/** A persisted change can only be reverted while its exact AI result is still in the document. */
+export function canSafelyRevert(currentDocument: string, change: NoteChatChange): boolean {
+	if (change.status === 'reverted' || change.from < 0 || change.to < change.from || change.to > currentDocument.length) return false;
+	return currentDocument.slice(change.from, change.to) === change.generated;
+}
+
 let activeNoteChatClose: (() => void) | null = null;
 
 function bindNoteContextChat(
@@ -342,6 +349,14 @@ function bindNoteContextChat(
 	const discardChatReview = () => {
 		removeReviewBar();
 		if (!review) return;
+		const previewText = buildAiReviewPreview(review.original, review.generated).text;
+		const current = review.undoTo <= view.state.doc.length ? view.state.sliceDoc(review.undoFrom, review.undoTo) : '';
+		if (current !== previewText && current !== review.generated) {
+			// Never overwrite a manual edit made while the review was open.
+			review = null;
+			clearAiReview(view);
+			return;
+		}
 		clearAiReview(view);
 		view.dispatch({
 			changes: { from: review.undoFrom, to: review.undoTo, insert: review.original },
@@ -377,8 +392,11 @@ function bindNoteContextChat(
 		trigger.setAttribute('aria-expanded', 'false');
 		if (activeNoteChatClose === close) activeNoteChatClose = null;
 	};
-	const open = async () => {
-		if (panel) return close();
+	const open = async (requestedSessionId?: string) => {
+		if (panel) {
+			close();
+			if (!requestedSessionId) return;
+		}
 		activeNoteChatClose?.();
 		activeNoteChatClose = close;
 		const documentText = view.state.doc.toString();
@@ -419,6 +437,12 @@ function bindNoteContextChat(
 			contextKey,
 			contextLabel,
 			messages: [],
+		};
+		const saveLatestChange = (change: NoteChatChange | null) => {
+			session.latestChange = change ?? undefined;
+			if (!sessions.some((item) => item.id === session.id)) return;
+			session.updatedAt = new Date().toISOString();
+			return api.saveNoteAiChat(noteId, session);
 		};
 		panel = document.createElement('aside');
 		panel.className = 'note-ai-chat-panel workspace-rail workspace-rail-right';
@@ -571,6 +595,38 @@ function bindNoteContextChat(
 			node.append(trigger);
 			paintIcons(trigger);
 		};
+		const renderLatestChange = (node: HTMLElement) => {
+			const change = session.latestChange;
+			if (!change) return;
+			const status = document.createElement('div');
+			status.className = 'note-ai-change-status';
+			if (change.status === 'reverted') {
+				status.textContent = t('更改已回撤', 'Change reverted');
+				node.append(status);
+				return;
+			}
+			const button = document.createElement('button');
+			button.type = 'button';
+			button.className = 'note-ai-change-revert';
+			button.innerHTML = `<i data-lucide="rotate-ccw"></i><span>${t('撤销更改', 'Revert change')}</span>`;
+			button.title = t('撤销最近一条更改', 'Revert the latest change');
+			button.addEventListener('click', () => {
+				if (!canSafelyRevert(view.state.doc.toString(), change)) {
+					options.onError(new Error(t('当前内容已被手动修改，无法安全回撤。', 'The note changed after this edit, so it cannot be safely reverted.')));
+					return;
+				}
+				view.dispatch({
+					changes: { from: change.from, to: change.to, insert: change.original },
+					annotations: Transaction.userEvent.of('input'),
+				});
+				change.status = 'reverted';
+				change.updatedAt = new Date().toISOString();
+				void Promise.resolve(saveLatestChange(change)).catch(options.onError);
+				renderConversation();
+			});
+			node.append(button);
+			paintIcons(button);
+		};
 		let bindWelcomeActions = () => {};
 		const renderConversation = () => {
 			messagesNode.innerHTML = '';
@@ -583,11 +639,20 @@ function bindNoteContextChat(
 				}
 				return;
 			}
-			for (const message of conversation) {
+			for (const [index, message] of conversation.entries()) {
 				const node = document.createElement('div');
 				node.className = `note-ai-chat-message ${message.role}`;
 				if (message.role === 'user') node.textContent = message.content;
-				else renderAnswer(node, message.content);
+				else {
+					renderAnswer(node, message.content);
+					if (message.thinking) {
+						const thinking = document.createElement('div');
+						thinking.className = 'note-ai-thinking-detail';
+						thinking.textContent = message.thinking;
+						node.append(thinking);
+					}
+					if (index === conversation.length - 1) renderLatestChange(node);
+				}
 				messagesNode.append(node);
 			}
 			messagesNode.scrollTop = messagesNode.scrollHeight;
@@ -711,6 +776,14 @@ function bindNoteContextChat(
 				segments,
 				diffVisible: true,
 			};
+			void Promise.resolve(saveLatestChange({
+				from: chatRange.from,
+				to: chatRange.from + generated.length,
+				original,
+				generated,
+				status: 'active',
+				updatedAt: new Date().toISOString(),
+			})).catch(options.onError);
 			showAiReview(view, segments);
 			const bar = document.createElement('div');
 			bar.className = 'note-ai-chat-review';
@@ -726,7 +799,21 @@ function bindNoteContextChat(
 			review.button = bar.querySelector<HTMLButtonElement>('[data-review-diff]')!;
 			review.button.addEventListener('click', toggleChatDiff);
 			bar.querySelector('[data-review-revert]')?.addEventListener('click', () => {
+				if (!review) return;
+				const previewText = buildAiReviewPreview(review.original, review.generated).text;
+				const current = review.undoTo <= view.state.doc.length ? view.state.sliceDoc(review.undoFrom, review.undoTo) : '';
+				if (current !== previewText && current !== review.generated) {
+					options.onError(new Error(t('当前内容已被手动修改，无法安全回撤。', 'The note changed after this edit, so it cannot be safely reverted.')));
+					return;
+				}
+				const change = session.latestChange;
 				discardChatReview();
+				if (change) {
+					change.status = 'reverted';
+					change.updatedAt = new Date().toISOString();
+					void Promise.resolve(saveLatestChange(change)).catch(options.onError);
+					renderConversation();
+				}
 			});
 			bar.querySelector('[data-review-below]')?.addEventListener('click', insertChatBelow);
 			bar.querySelector('[data-review-accept]')?.addEventListener('click', acceptChatReview);
@@ -779,6 +866,10 @@ function bindNoteContextChat(
 						conversationId: session.id,
 						contextKey,
 						contextLabel,
+						thinking:
+							requestMode === 'edit'
+								? t('思考完毕，已生成可检查的修改。', 'Thinking complete. Edits are ready to review.')
+								: t('已完成内容分析。', 'Content analysis complete.'),
 					},
 					(token) => {
 						answer += token;
@@ -788,7 +879,11 @@ function bindNoteContextChat(
 					requestController.signal,
 				);
 				if (!answer.trim()) throw new Error(t('AI 没有返回内容', 'AI returned no content'));
-				conversation.push({ role: 'assistant', content: answer });
+				conversation.push({
+					role: 'assistant',
+					content: answer,
+					thinking: requestMode === 'edit' ? t('思考完毕，已生成可检查的修改。', 'Thinking complete. Edits are ready to review.') : t('已完成内容分析。', 'Content analysis complete.'),
+				});
 				sessions = [session, ...sessions.filter((item) => item.id !== session.id)];
 				paintHistory();
 				renderAnswer(answerNode, answer);
@@ -926,7 +1021,8 @@ function bindNoteContextChat(
 		try {
 			sessions = await api.noteAiChats(noteId);
 			if (!panel?.isConnected) return;
-			const matching = sessions.find((item) => item.contextKey === contextKey);
+			const matching =
+				sessions.find((item) => item.id === requestedSessionId) ?? sessions.find((item) => item.contextKey === contextKey);
 			if (matching) {
 				session = matching;
 				conversation = session.messages;
@@ -940,7 +1036,13 @@ function bindNoteContextChat(
 		}
 	};
 	const handleOpen = () => void open();
+	const handleOpenRequested = (event: Event) => {
+		const detail = (event as CustomEvent<{ noteId?: string; conversationId?: string }>).detail;
+		if (detail?.noteId && detail.noteId !== noteId) return;
+		void open(detail?.conversationId);
+	};
 	trigger.addEventListener('click', handleOpen);
+	root.addEventListener('r2:open-ai-chat', handleOpenRequested);
 	// Keep the AI rail open while editing; only the collapse control (or unmount) closes it.
 	const disconnectObserver = new MutationObserver(() => {
 		if (!root.isConnected) close();
@@ -948,6 +1050,7 @@ function bindNoteContextChat(
 	disconnectObserver.observe(document.body, { childList: true, subtree: true });
 	return () => {
 		trigger.removeEventListener('click', handleOpen);
+		root.removeEventListener('r2:open-ai-chat', handleOpenRequested);
 		disconnectObserver.disconnect();
 		close();
 	};
@@ -1019,7 +1122,6 @@ export function bindMarkdownAiAssistant(
 			<header class="ai-panel-head">
 				<span class="ai-mark"><i data-lucide="sparkles"></i></span>
 				<span class="ai-panel-title">${actionLabel}</span>
-				<span class="ai-panel-model">${aiModelForAction(action)}</span>
 				<span class="toolbar-spacer"></span>
 				<button class="row-action" type="button" data-ai-close aria-label="${t('关闭', 'Close')}"><i data-lucide="x"></i></button>
 			</header>
@@ -1030,7 +1132,9 @@ export function bindMarkdownAiAssistant(
 			<div class="ai-result" data-ai-result hidden></div>
 			<footer class="ai-panel-actions" data-ai-actions hidden>
 				<button class="row-action" type="button" data-ai-edit title="${t('重新编辑要求', 'Edit request')}" aria-label="${t('重新编辑要求', 'Edit request')}"><i data-lucide="rotate-ccw"></i></button>
+				<button class="row-action" type="button" data-ai-revert title="${t('回撤更改', 'Revert change')}" aria-label="${t('回撤更改', 'Revert change')}" hidden><i data-lucide="rotate-ccw"></i></button>
 				<button class="button" type="button" data-ai-insert-below hidden title="${t('保留原文并在下方插入 AI 结果', 'Keep the selection and insert the AI result below')}">${t('在下面插入', 'Insert below')}</button>
+				<button class="row-action" type="button" data-ai-open-chat title="${t('在侧栏中打开对话', 'Open conversation in sidebar')}" aria-label="${t('在侧栏中打开对话', 'Open conversation in sidebar')}" hidden><i data-lucide="message-circle"></i></button>
 				<span class="toolbar-spacer"></span>
 				<button class="button primary" type="button" data-ai-main></button>
 			</footer>
@@ -1080,6 +1184,8 @@ export function bindMarkdownAiAssistant(
 		const actionsNode = panel.querySelector<HTMLElement>('[data-ai-actions]')!;
 		const mainButton = panel.querySelector<HTMLButtonElement>('[data-ai-main]')!;
 		const editButton = panel.querySelector<HTMLButtonElement>('[data-ai-edit]')!;
+		const revertButton = panel.querySelector<HTMLButtonElement>('[data-ai-revert]')!;
+		const openChatButton = panel.querySelector<HTMLButtonElement>('[data-ai-open-chat]')!;
 		const insertBelowButton = panel.querySelector<HTMLButtonElement>('[data-ai-insert-below]')!;
 		input.value = presetInstruction;
 
@@ -1089,6 +1195,45 @@ export function bindMarkdownAiAssistant(
 		let streamText = '';
 		let controller: AbortController | null = null;
 		let review: { undoFrom: number; undoTo: number; original: string; generated: string } | null = null;
+		let spaceSession: NoteChatSession | null = null;
+		let spaceChange: NoteChatChange | null = null;
+		let spaceSave: Promise<void> | null = null;
+		const saveSpaceSession = (assistant: string, original?: string, generated?: string, from?: number, to?: number) => {
+			if (!options.noteId) return;
+			const now = new Date().toISOString();
+			const userContent = input.value.trim() || requestText;
+			const messages = [
+				{ role: 'user' as const, content: userContent },
+				{ role: 'assistant' as const, content: assistant, thinking: t('思考完毕，已完成本次处理。', 'Thinking complete. This request has been processed.') },
+			];
+			spaceSession = spaceSession
+				? { ...spaceSession, title: userContent.replace(/\s+/g, ' ').slice(0, 36) || actionLabel, updatedAt: now, messages, latestChange: undefined }
+				: {
+						id: crypto.randomUUID(),
+						title: userContent.replace(/\s+/g, ' ').slice(0, 36) || actionLabel,
+						createdAt: now,
+						updatedAt: now,
+						contextKey: `space:${range.from}:${range.to}`,
+						contextLabel: actionLabel,
+						messages,
+					};
+			spaceChange = null;
+			if (original !== undefined && generated !== undefined && from !== undefined && to !== undefined) {
+				spaceChange = { from, to, original, generated, status: 'active', updatedAt: new Date().toISOString() };
+				spaceSession.latestChange = spaceChange;
+			}
+			spaceSave = api.saveNoteAiChat(options.noteId, spaceSession).then((saved) => {
+				spaceSession = saved;
+				spaceChange = saved.latestChange ?? spaceChange;
+			});
+		};
+		const updateSpaceChange = (change: NoteChatChange | null) => {
+			if (!spaceSession || !options.noteId) return;
+			spaceSession.latestChange = change ?? undefined;
+			spaceSave = (spaceSave ?? Promise.resolve()).then(() => api.updateNoteAiChat(options.noteId!, spaceSession!.id, { latestChange: change })).then((saved) => {
+				spaceSession = saved;
+			});
+		};
 
 		let hideInstruction = Boolean(panelOptions.hideInstruction);
 		const setStage = (next: Stage) => {
@@ -1097,6 +1242,8 @@ export function bindMarkdownAiAssistant(
 			resultNode.hidden = next === 'input';
 			actionsNode.hidden = next === 'input';
 			editButton.hidden = next !== 'done';
+			revertButton.hidden = !(next === 'done' && Boolean(review));
+			openChatButton.hidden = !(next === 'done' && Boolean(spaceSession));
 			// Polish/rewrite: accept replaces selection; insert-below keeps the selection and appends.
 			insertBelowButton.hidden = !(next === 'done' && (action === 'polish' || action === 'rewrite'));
 			panel?.classList.toggle('busy', next === 'busy');
@@ -1195,6 +1342,7 @@ export function bindMarkdownAiAssistant(
 					result = split.body || result;
 				}
 				if (!result) throw new Error(t('AI 没有返回内容', 'AI returned no content'));
+				saveSpaceSession(result);
 				if (action === 'polish' || action === 'rewrite') {
 					// Prefer the frozen selection snapshot so a wider live range cannot leak in.
 					const original = requestText || view.state.sliceDoc(range.from, range.to);
@@ -1287,6 +1435,15 @@ export function bindMarkdownAiAssistant(
 					annotations: Transaction.userEvent.of('input'),
 				});
 				clearAiReview(view);
+				spaceChange = {
+					from: review.undoFrom,
+					to: review.undoFrom + acceptedText.length,
+					original: review.original,
+					generated: acceptedText,
+					status: 'active',
+					updatedAt: new Date().toISOString(),
+				};
+				updateSpaceChange(spaceChange);
 				review = null;
 				close();
 				return;
@@ -1311,6 +1468,14 @@ export function bindMarkdownAiAssistant(
 				scrollIntoView: true,
 			});
 			markNewContent(view, insertAt, insertAt + inserted.length);
+			updateSpaceChange({
+				from: insertAt,
+				to: insertAt + inserted.length,
+				original: view.state.sliceDoc(insertAt, insertAt),
+				generated: inserted,
+				status: 'active',
+				updatedAt: new Date().toISOString(),
+			});
 			if (title) options.onTitleChange?.(title);
 			close();
 		});
@@ -1332,6 +1497,14 @@ export function bindMarkdownAiAssistant(
 					scrollIntoView: true,
 				});
 				markNewContent(view, insertedFrom, insertedFrom + generated.length);
+				updateSpaceChange({
+					from: insertedFrom,
+					to: insertedFrom + generated.length,
+					original: '',
+					generated,
+					status: 'active',
+					updatedAt: new Date().toISOString(),
+				});
 				review = null;
 				close();
 				return;
@@ -1355,6 +1528,35 @@ export function bindMarkdownAiAssistant(
 			close();
 		};
 		insertBelowButton.addEventListener('click', insertGeneratedBelow);
+		revertButton.addEventListener('click', () => {
+			if (!review) return;
+			const previewText = buildAiReviewPreview(review.original, review.generated).text;
+			const current = review.undoTo <= view.state.doc.length ? view.state.sliceDoc(review.undoFrom, review.undoTo) : '';
+			if (current !== previewText && current !== review.generated) {
+				onError(new Error(t('当前内容已被手动修改，无法安全回撤。', 'The note changed after this edit, so it cannot be safely reverted.')));
+				return;
+			}
+			clearAiReview(view);
+			view.dispatch({ changes: { from: review.undoFrom, to: review.undoTo, insert: review.original }, annotations: Transaction.userEvent.of('input') });
+			spaceChange = spaceSession?.latestChange ? { ...spaceSession.latestChange, status: 'reverted', updatedAt: new Date().toISOString() } : null;
+			updateSpaceChange(spaceChange);
+			resultNode.innerHTML = `<div class="ai-review-note">${t('更改已回撤', 'Change reverted')}</div>`;
+			review = null;
+			revertButton.hidden = true;
+			mainButton.disabled = true;
+		});
+		openChatButton.addEventListener('click', async () => {
+			if (!spaceSession || !options.noteId) return;
+			try {
+				await spaceSave;
+				host.closest<HTMLElement>('.note-editor')?.dispatchEvent(
+					new CustomEvent('r2:open-ai-chat', { detail: { noteId: options.noteId, conversationId: spaceSession.id } }),
+				);
+				close();
+			} catch (error) {
+				onError(error);
+			}
+		});
 
 		panel.querySelector('[data-ai-close]')?.addEventListener('click', (event) => {
 			event.preventDefault();

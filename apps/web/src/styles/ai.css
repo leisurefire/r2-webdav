@@ -86,6 +86,11 @@
 	white-space: nowrap;
 }
 
+/* The compact Space prompt intentionally keeps the model out of the first line. */
+.ai-panel .ai-panel-model {
+	display: none;
+}
+
 .ai-model:focus {
 	outline: 0;
 	box-shadow: var(--focus-ring);
@@ -108,7 +113,7 @@
 	line-height: 1.5;
 	color: var(--ink);
 	padding: 6px 2px;
-	min-height: 32px;
+	min-height: 30px;
 	max-height: 132px;
 	resize: none;
 	overflow-y: auto;
@@ -194,6 +199,8 @@
 	align-items: center;
 	gap: 8px;
 	padding: 8px 12px 12px;
+	min-height: 38px;
+	white-space: nowrap;
 }
 
 /* Selection floating menu */
@@ -301,6 +308,9 @@
 	padding: 10px 2px;
 	font-size: 13px;
 	color: var(--muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .ai-panel-actions .button {
@@ -498,8 +508,8 @@
 	place-items: center;
 	border: 1px solid var(--line-strong);
 	border-radius: 50%;
-	background: var(--panel-bg);
-	color: var(--accent);
+	background: #111111;
+	color: #a3a3a3;
 	box-shadow: var(--control-shadow);
 	cursor: pointer;
 	transition:
@@ -510,9 +520,19 @@
 
 .note-ai-chat-trigger:hover,
 .note-ai-chat-trigger.active {
-	background: color-mix(in srgb, var(--accent) 9%, var(--panel-bg));
+	background: #000000;
+	color: #d0d0d0;
 	transform: translateY(-1px);
 	box-shadow: var(--overlay-shadow);
+}
+
+@media (prefers-color-scheme: dark) {
+	.note-ai-chat-trigger,
+	.note-ai-chat-trigger:hover,
+	.note-ai-chat-trigger.active {
+		background: #626262;
+		color: #111111;
+	}
 }
 
 .note-ai-chat-trigger > svg:first-child {
@@ -712,6 +732,45 @@
 
 .note-ai-chat-message.assistant {
 	padding-inline: 3px;
+}
+
+.note-ai-thinking-detail {
+	margin-top: 7px;
+	color: var(--quiet);
+	font-size: 11px;
+}
+
+.note-ai-change-status,
+.note-ai-change-revert {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	margin-top: 8px;
+	padding: 4px 7px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--surface);
+	color: var(--muted);
+	font: inherit;
+	font-size: 11px;
+}
+
+.note-ai-change-revert {
+	cursor: pointer;
+}
+
+.note-ai-change-revert:hover {
+	background: var(--hover-bg);
+	color: var(--ink);
+}
+
+.note-ai-change-status {
+	border-style: dashed;
+}
+
+.note-ai-change-revert svg {
+	width: 12px;
+	height: 12px;
 }
 
 .ai-error {

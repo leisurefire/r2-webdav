@@ -127,11 +127,23 @@ export interface AiRequest {
 	conversationId?: string;
 	contextKey?: string;
 	contextLabel?: string;
+	thinking?: string;
 }
 
 export interface NoteChatMessage {
 	role: 'user' | 'assistant';
 	content: string;
+	/** Optional model trace/status captured with the assistant turn. */
+	thinking?: string;
+}
+
+export interface NoteChatChange {
+	from: number;
+	to: number;
+	original: string;
+	generated: string;
+	status?: 'active' | 'reverted';
+	updatedAt: string;
 }
 
 export interface NoteChatSession {
@@ -142,6 +154,8 @@ export interface NoteChatSession {
 	contextKey: string;
 	contextLabel: string;
 	messages: NoteChatMessage[];
+	/** Only the most recent AI change is retained for one-click safe revert. */
+	latestChange?: NoteChatChange;
 }
 
 function authHeaders(headers?: HeadersInit): Headers {
@@ -488,16 +502,38 @@ export const api = {
 		return payload.data.chats;
 	},
 	async renameNoteAiChat(noteId: string, chatId: string, title: string): Promise<NoteChatSession> {
+		return this.updateNoteAiChat(noteId, chatId, { title });
+	},
+	async updateNoteAiChat(
+		noteId: string,
+		chatId: string,
+		changes: Partial<Pick<NoteChatSession, 'title' | 'messages'>> & { latestChange?: NoteChatChange | null },
+	): Promise<NoteChatSession> {
 		const response = await fetch(
 			`${notesApiBase}/api/v1/ai?resource=chats&noteId=${encodeURIComponent(noteId)}&chatId=${encodeURIComponent(chatId)}`,
 			{
 				method: 'PATCH',
 				headers: authHeaders({ 'Content-Type': 'application/json' }),
 				credentials: 'include',
-				body: JSON.stringify({ title }),
+				body: JSON.stringify(changes),
 			},
 		);
-		if (!response.ok) throw new ApiError('Unable to rename AI chat', response.status);
+		if (!response.ok) throw new ApiError('Unable to update AI chat', response.status);
+		const payload = (await response.json()) as ApiResponse<{ chat: NoteChatSession }>;
+		if (!payload.ok) throw new ApiError(payload.error.message, response.status);
+		return payload.data.chat;
+	},
+	async saveNoteAiChat(noteId: string, chat: NoteChatSession): Promise<NoteChatSession> {
+		const response = await fetch(
+			`${notesApiBase}/api/v1/ai?resource=chats&noteId=${encodeURIComponent(noteId)}&chatId=${encodeURIComponent(chat.id)}`,
+			{
+				method: 'PUT',
+				headers: authHeaders({ 'Content-Type': 'application/json' }),
+				credentials: 'include',
+				body: JSON.stringify({ chat }),
+			},
+		);
+		if (!response.ok) throw new ApiError('Unable to save AI chat', response.status);
 		const payload = (await response.json()) as ApiResponse<{ chat: NoteChatSession }>;
 		if (!payload.ok) throw new ApiError(payload.error.message, response.status);
 		return payload.data.chat;

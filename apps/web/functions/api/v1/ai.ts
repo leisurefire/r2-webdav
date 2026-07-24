@@ -8,6 +8,16 @@ interface Env {
 interface StoredChatMessage {
 	role: 'user' | 'assistant';
 	content: string;
+	thinking?: string;
+}
+
+interface StoredChatChange {
+	from: number;
+	to: number;
+	original: string;
+	generated: string;
+	status?: 'active' | 'reverted';
+	updatedAt: string;
 }
 
 interface StoredChat {
@@ -18,6 +28,7 @@ interface StoredChat {
 	contextKey: string;
 	contextLabel: string;
 	messages: StoredChatMessage[];
+	latestChange?: StoredChatChange;
 }
 
 const UPSTREAM = 'https://newapi.127631.xyz/v1';
@@ -92,6 +103,7 @@ async function saveChatAnswer(
 		text: string;
 		contextKey?: string;
 		contextLabel?: string;
+		thinking?: string;
 	},
 	answer: string,
 ): Promise<void> {
@@ -116,7 +128,10 @@ async function saveChatAnswer(
 		chats.unshift(chat);
 	}
 	chat.updatedAt = now;
-	chat.messages.push({ role: 'user', content: input.text }, { role: 'assistant', content: answer });
+	chat.messages.push(
+		{ role: 'user', content: input.text },
+		{ role: 'assistant', content: answer, ...(input.thinking ? { thinking: input.thinking.slice(0, 4000) } : {}) },
+	);
 	const next = [chat, ...chats.filter((item) => item.id !== chat!.id)].slice(0, 12);
 	await env.NOTES_DB.prepare('UPDATE r2_webdav_notes SET ai_chats = ? WHERE id = ? AND user_id = ?')
 		.bind(JSON.stringify(next), input.noteId, owner)
@@ -155,7 +170,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
 			];
 			return json({ ok: true, data: { models } });
 		}
-		if (request.method === 'PATCH' || request.method === 'DELETE') {
+		if (request.method === 'PATCH' || request.method === 'PUT' || request.method === 'DELETE') {
 			const url = new URL(request.url);
 			if (url.searchParams.get('resource') !== 'chats') return fail('Unknown AI resource', 404);
 			const noteId = url.searchParams.get('noteId') ?? '';
@@ -167,13 +182,50 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
 			if (!row) return fail('Note not found', 404);
 			const chats = parseChats(row.ai_chats);
 			const index = chats.findIndex((chat) => chat.id === chatId);
+			if (request.method === 'PUT') {
+				const input = (await request.json()) as { chat?: StoredChat };
+				const chat = input.chat;
+				if (!chat || chat.id !== chatId || !Array.isArray(chat.messages) || typeof chat.title !== 'string')
+					return fail('Invalid chat', 400);
+				const normalized: StoredChat = {
+					id: chat.id,
+					title: chat.title.replace(/\s+/g, ' ').trim().slice(0, 80) || 'New chat',
+					createdAt: chat.createdAt || new Date().toISOString(),
+					updatedAt: new Date().toISOString(),
+					contextKey: String(chat.contextKey ?? '').slice(0, 200),
+					contextLabel: String(chat.contextLabel ?? '').slice(0, 200),
+					messages: chat.messages
+						.filter((message) => (message?.role === 'user' || message?.role === 'assistant') && typeof message.content === 'string')
+						.slice(-80)
+						.map((message) => ({
+							role: message.role,
+							content: message.content.slice(0, 120_000),
+							...(message.thinking ? { thinking: message.thinking.slice(0, 4000) } : {}),
+						})),
+					...(chat.latestChange ? { latestChange: chat.latestChange } : {}),
+				};
+				const next = [normalized, ...chats.filter((item) => item.id !== chatId)].slice(0, 12);
+				await env.NOTES_DB.prepare('UPDATE r2_webdav_notes SET ai_chats = ? WHERE id = ? AND user_id = ?')
+					.bind(JSON.stringify(next), noteId, owner)
+					.run();
+				return json({ ok: true, data: { chat: normalized } });
+			}
 			if (index < 0) return fail('Chat not found', 404);
 			if (request.method === 'DELETE') chats.splice(index, 1);
 			else {
-				const input = (await request.json()) as { title?: string };
-				const title = input.title?.replace(/\s+/g, ' ').trim().slice(0, 80) ?? '';
-				if (!title) return fail('Invalid chat title', 400);
-				chats[index].title = title;
+				const input = (await request.json()) as {
+					title?: string;
+					messages?: StoredChatMessage[];
+					latestChange?: StoredChatChange | null;
+				};
+				if (input.title !== undefined) {
+					const title = input.title.replace(/\s+/g, ' ').trim().slice(0, 80);
+					if (!title) return fail('Invalid chat title', 400);
+					chats[index].title = title;
+				}
+				if (Array.isArray(input.messages)) chats[index].messages = input.messages.slice(-80);
+				if (input.latestChange === null) delete chats[index].latestChange;
+				else if (input.latestChange) chats[index].latestChange = input.latestChange;
 				chats[index].updatedAt = new Date().toISOString();
 			}
 			await env.NOTES_DB.prepare('UPDATE r2_webdav_notes SET ai_chats = ? WHERE id = ? AND user_id = ?')
@@ -194,6 +246,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
 			conversationId?: string;
 			contextKey?: string;
 			contextLabel?: string;
+			thinking?: string;
 		};
 		if (!input.model?.trim() || input.model.length > 200 || !input.text?.trim() || input.text.length > 120_000)
 			return fail('Invalid AI request', 400);
@@ -303,6 +356,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, waitUntil })
 								text: input.text!,
 								contextKey: input.contextKey,
 								contextLabel: input.contextLabel,
+								thinking: input.thinking,
 							},
 							answer,
 						),
