@@ -1060,7 +1060,21 @@
 }
 
 .note-ai-history-select-menu .custom-select-row {
+	width: 100%;
+	min-width: 0;
 	gap: 2px;
+}
+
+.note-ai-history-select-menu .custom-select-option {
+	min-width: 0;
+	overflow: hidden;
+}
+
+.note-ai-history-select-menu .custom-select-option > span:not(.custom-select-check) {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .note-ai-history-select-menu .custom-select-action {
