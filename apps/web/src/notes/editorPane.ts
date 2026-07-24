@@ -127,11 +127,13 @@ export function noteActionControlsMarkup(selected: Note, includeRefresh = false)
 			<time class="note-last-modified" data-note-last-modified datetime="${html(selected.updatedAt)}">${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>
 		</div>
 		<div class="note-actions-tools">
-			<button type="button" class="row-action" data-note-export title="${exportLabel}" aria-label="${exportLabel}"><i data-lucide="file-down"></i></button>
+			<button type="button" class="row-action note-export-direct" data-note-export title="${exportLabel}" aria-label="${exportLabel}"><i data-lucide="file-down"></i></button>
 			<button type="button" class="row-action ${selected.pinned ? 'active' : ''}" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}" aria-label="${selected.pinned ? t('unpin') : t('pin')}" aria-pressed="${selected.pinned}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
 			<div class="action-menu note-action-more" data-action-menu>
 				<button type="button" class="row-action" data-menu-toggle title="${moreLabel}" aria-label="${moreLabel}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
 				<div class="action-menu-popover note-more-popover" data-menu-popover role="menu">
+					<div class="mobile-note-meta"><time class="note-last-modified" data-note-last-modified datetime="${html(selected.updatedAt)}">${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time></div>
+					<button type="button" class="mobile-note-export" data-note-export role="menuitem"><i data-lucide="file-down"></i><span>${exportLabel}</span></button>
 					<div class="note-font-card" role="group" aria-label="${fontLabel}">
 						<button type="button" class="note-font-choice" data-note-font="sans" role="menuitemradio" aria-checked="${preferences.font === 'sans'}" title="${sansLabel}" aria-label="${sansLabel}">
 							<span class="note-font-preview note-font-preview-sans">Aa</span>

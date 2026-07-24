@@ -179,8 +179,16 @@ export function shell(page: Page, _title: string, content = loadingMarkup()): vo
 	app.innerHTML = `<div class="app-shell page-entering ${sidebarCollapsed ? 'sidebar-collapsed' : ''}" data-page="${page}">
 		<aside class="sidebar workspace-rail workspace-rail-left">
 			<div class="sidebar-head">
-				<div class="brand" aria-label="TrueSpace"><span class="brand-full">TrueSpace</span></div>
+				<div class="account-menu-wrap brand-menu-wrap">
+					<div class="account-popover" id="account-popover" hidden>
+						<button data-settings-open><i data-lucide="settings"></i><span>${t('settings')}</span></button>
+						<div class="account-menu-separator"></div>
+						<button class="account-logout" id="account-logout"><i data-lucide="log-out"></i><span>${t('logout')}</span></button>
+					</div>
+					<button class="brand brand-menu-button" id="brand-menu-toggle" aria-label="TrueSpace" aria-expanded="false" aria-haspopup="menu"><span class="brand-full">TrueSpace</span><i class="brand-chevron" data-lucide="chevron-down"></i></button>
+				</div>
 				<button class="sidebar-toggle" id="sidebar-toggle" title="${sidebarCollapsed ? (locale === 'zh' ? '展开侧栏' : 'Expand sidebar') : locale === 'zh' ? '折叠侧栏' : 'Collapse sidebar'}" aria-label="${sidebarCollapsed ? (locale === 'zh' ? '展开侧栏' : 'Expand sidebar') : locale === 'zh' ? '折叠侧栏' : 'Collapse sidebar'}"><i data-lucide="${sidebarCollapsed ? 'panel-left-open' : 'panel-left-close'}"></i></button>
+				<button class="mobile-account-toggle" id="mobile-account-toggle" aria-label="${locale === 'zh' ? '账户菜单' : 'Account menu'}" aria-expanded="false" aria-haspopup="menu"><i data-lucide="more-horizontal"></i></button>
 			</div>
 			<nav class="nav" aria-label="Primary navigation">
 				<button class="nav-button ${page === 'files' ? 'active' : ''}" data-route="/files" title="${t('files')}"><i data-lucide="folder"></i><span>${t('files')}</span></button>
@@ -189,16 +197,6 @@ export function shell(page: Page, _title: string, content = loadingMarkup()): vo
 				<button class="nav-button ${page === 'links' ? 'active' : ''}" data-route="/links" title="${t('links')}"><i data-lucide="bookmark"></i><span>${t('links')}</span></button>
 			</nav>
 			<section class="sidebar-context" id="sidebar-context" aria-live="polite"></section>
-			<div class="sidebar-footer"><div class="account-menu-wrap">
-				<div class="account-popover" id="account-popover" hidden>
-					<button data-settings-open><i data-lucide="settings"></i><span>${t('settings')}</span></button>
-					<div class="account-menu-separator"></div>
-					<button class="account-logout" id="account-logout"><i data-lucide="log-out"></i><span>${t('logout')}</span></button>
-				</div>
-				<button class="user-menu-button" id="user-menu-toggle" aria-expanded="false" aria-haspopup="menu">
-					<span class="user-avatar"><i data-lucide="user"></i></span><span class="user-copy"><strong>leisurefire</strong></span><i class="user-chevron" data-lucide="chevron-up"></i>
-				</button>
-			</div></div>
 		</aside>
 		<main class="workspace"><div class="content" id="page-content">${content}</div></main>
 	</div>`;
@@ -209,21 +207,22 @@ export function shell(page: Page, _title: string, content = loadingMarkup()): vo
 		document.dispatchEvent(new CustomEvent('truespace:open-settings'));
 	});
 	const accountPopover = document.querySelector<HTMLElement>('#account-popover');
-	const accountToggle = document.querySelector<HTMLButtonElement>('#user-menu-toggle');
-	const accountWrap = document.querySelector<HTMLElement>('.account-menu-wrap');
+	const accountToggles = [...document.querySelectorAll<HTMLButtonElement>('#brand-menu-toggle, #mobile-account-toggle')];
+	const accountWrap = document.querySelector<HTMLElement>('.brand-menu-wrap');
 	const closeAccountMenu = () => {
 		if (accountPopover) accountPopover.hidden = true;
-		accountToggle?.setAttribute('aria-expanded', 'false');
+		accountToggles.forEach((toggle) => toggle.setAttribute('aria-expanded', 'false'));
 		accountWrap?.classList.remove('open');
 	};
-	accountToggle?.addEventListener('click', (event) => {
+	accountToggles.forEach((accountToggle) => accountToggle.addEventListener('click', (event) => {
+		if (accountToggle.id === 'brand-menu-toggle' && matchMedia('(max-width: 760px)').matches) return;
 		event.stopPropagation();
 		const opening = accountPopover?.hidden ?? false;
 		if (accountPopover) accountPopover.hidden = !opening;
-		accountToggle.setAttribute('aria-expanded', String(opening));
+		accountToggles.forEach((toggle) => toggle.setAttribute('aria-expanded', String(opening)));
 		accountWrap?.classList.toggle('open', opening);
 		if (opening) window.setTimeout(() => document.addEventListener('click', closeAccountMenu, { once: true }), 0);
-	});
+	}));
 	document.querySelector('#account-logout')?.addEventListener('click', () => void confirmLogout());
 	document.querySelector('#sidebar-toggle')?.addEventListener('click', () => {
 		sidebarCollapsed = !sidebarCollapsed;

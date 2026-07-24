@@ -2220,6 +2220,12 @@ dialog::backdrop {
 	overflow: hidden;
 }
 
+.sidebar-context:empty {
+	display: none;
+	flex: 0;
+	padding-top: 0;
+}
+
 .sidebar-context-head {
 	flex: none;
 	display: flex;
@@ -3004,6 +3010,66 @@ body:has(.app-shell) {
 		max-width 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.brand-menu-wrap {
+	position: relative;
+	min-width: 0;
+}
+
+.brand-menu-button {
+	width: auto;
+	max-width: 180px;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+	text-align: left;
+}
+
+.brand-menu-button .brand-chevron {
+	width: 13px;
+	height: 13px;
+	color: var(--quiet);
+	opacity: 0;
+	transition: opacity 140ms ease;
+}
+
+.brand-menu-button:hover .brand-chevron,
+.brand-menu-wrap.open .brand-chevron,
+.brand-menu-button:focus-visible .brand-chevron {
+	opacity: 1;
+}
+
+.brand-menu-wrap .account-popover {
+	top: calc(100% + 8px);
+	left: 0;
+	right: auto;
+	bottom: auto;
+	width: 210px;
+}
+
+.mobile-account-toggle {
+	display: none;
+	width: 36px;
+	height: 36px;
+	place-items: center;
+	padding: 0;
+	border: 0;
+	border-radius: var(--control-radius);
+	background: transparent;
+	color: var(--muted);
+}
+
+.mobile-account-toggle:hover,
+.mobile-account-toggle[aria-expanded='true'] {
+	background: var(--hover-bg);
+	color: var(--ink);
+}
+
 .sidebar-head .brand::before {
 	content: '';
 	width: 20px;
@@ -3121,8 +3187,7 @@ body:has(.app-shell) {
 }
 
 .sidebar-footer {
-	padding: 0;
-	border: 0;
+	display: none;
 }
 
 .user-menu-button {
@@ -3839,7 +3904,22 @@ body:has(.app-shell) {
 	.sidebar-head,
 	.sidebar-collapsed .sidebar-head {
 		height: 40px;
-		padding: 0 58px 0 4px;
+		padding: 0 0 0 4px;
+	}
+
+	.mobile-account-toggle {
+		display: grid;
+		margin-left: auto;
+	}
+
+	.brand-menu-button {
+		pointer-events: none;
+	}
+
+	.brand-menu-wrap .account-popover {
+		top: calc(100% + 8px);
+		left: auto;
+		right: 0;
 	}
 
 	.sidebar-collapsed .sidebar-head .brand {
@@ -3864,26 +3944,7 @@ body:has(.app-shell) {
 		transition: transform 180ms ease;
 	}
 
-	.sidebar-footer {
-		position: fixed;
-		z-index: 40;
-		top: 0;
-		right: 0;
-		bottom: auto;
-		width: 58px;
-		height: 58px;
-		padding: 4px 8px;
-		border-top: 0;
-		background: var(--sidebar-bg);
-		transition: transform 180ms ease;
-	}
-
-	.sidebar-footer:has(.account-menu-wrap.open) {
-		z-index: 50;
-	}
-
-	.sidebar-collapsed .sidebar .nav,
-	.sidebar-collapsed .sidebar-footer {
+	.sidebar-collapsed .sidebar .nav {
 		transform: none;
 	}
 
@@ -3899,29 +3960,6 @@ body:has(.app-shell) {
 
 	.sidebar-collapsed .nav-button span {
 		display: inline;
-	}
-
-	.user-menu-button,
-	.sidebar-collapsed .user-menu-button {
-		height: 50px;
-		min-height: 0;
-		grid-template-columns: 1fr;
-		place-items: center;
-		padding: 4px;
-	}
-
-	.user-copy,
-	.user-chevron {
-		display: none;
-	}
-
-	.account-popover,
-	.sidebar-collapsed .account-popover {
-		left: auto;
-		right: 0;
-		top: calc(100% + 8px);
-		bottom: auto;
-		width: 210px;
 	}
 
 	.floating-primary-action {

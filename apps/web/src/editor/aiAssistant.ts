@@ -10,7 +10,6 @@ import {
 	Italic,
 	MessageCircle,
 	MessageCirclePlus,
-	PanelRightClose,
 	Settings2,
 	SlidersHorizontal,
 	ChevronUp,
@@ -47,6 +46,7 @@ import { renderMarkdown } from './markdownRenderer';
 import { markdownMarkerCoverage } from './markdownFormatting';
 import { enhanceSelect, type CustomSelectHandle } from '../ui/dropdown';
 import { openConfirmDialog, openTextInputDialog } from '../ui/dialogs';
+import { mountBottomSheet, type BottomSheetHandle } from '../ui/bottomSheet';
 
 type Locale = 'en' | 'zh';
 
@@ -59,7 +59,6 @@ const AI_ICONS: Record<string, IconNode> = {
 	italic: Italic,
 	'message-circle': MessageCircle,
 	'message-circle-plus': MessageCirclePlus,
-	'panel-right-close': PanelRightClose,
 	'settings-2': Settings2,
 	'sliders-horizontal': SlidersHorizontal,
 	'chevron-up': ChevronUp,
@@ -331,6 +330,7 @@ function bindNoteContextChat(
 	const zh = locale === 'zh';
 	const t = (zhText: string, enText: string): string => (zh ? zhText : enText);
 	let panel: HTMLElement | null = null;
+	let sheet: BottomSheetHandle | null = null;
 	let controller: AbortController | null = null;
 	/** Freeze the exact submitted context so edits never leak into a wider live range. */
 	let chatRange: AiRange = { from: 0, to: 0 };
@@ -369,6 +369,8 @@ function bindNoteContextChat(
 		controller = null;
 		discardChatReview();
 		if (panel) {
+			sheet?.destroy();
+			sheet = null;
 			panel.classList.add('is-closing');
 			const closing = panel;
 			root.classList.remove('note-ai-sidebar-open');
@@ -392,7 +394,7 @@ function bindNoteContextChat(
 		trigger.setAttribute('aria-expanded', 'false');
 		if (activeNoteChatClose === close) activeNoteChatClose = null;
 	};
-	const open = async (requestedSessionId?: string) => {
+	const open = async (requestedSessionId?: string, initialPrompt = '', requestedMode?: 'edit' | 'ask') => {
 		if (panel) {
 			close();
 			if (!requestedSessionId) return;
@@ -427,7 +429,7 @@ function bindNoteContextChat(
 		</section>`;
 		let sessions: NoteChatSession[] = [];
 		/** Chat mode is a permission only: ask is read-only, edit may propose edits; both remember their model. */
-		let chatMode: 'edit' | 'ask' = aiChatMode();
+		let chatMode: 'edit' | 'ask' = requestedMode ?? aiChatMode();
 		let selectedModel = aiModelForAction(chatMode === 'edit' ? 'rewrite' : 'chat');
 		let session: NoteChatSession = {
 			id: crypto.randomUUID(),
@@ -451,7 +453,7 @@ function bindNoteContextChat(
 			<select data-chat-history title="${t('历史对话', 'Chat history')}" aria-label="${t('历史对话', 'Chat history')}"></select>
 			<span class="toolbar-spacer"></span>
 			<button type="button" class="row-action" data-chat-new title="${t('新建对话', 'New chat')}" aria-label="${t('新建对话', 'New chat')}"><i data-lucide="message-circle-plus"></i></button>
-			<button type="button" class="row-action" data-chat-close title="${t('收起 AI 侧栏', 'Collapse AI sidebar')}" aria-label="${t('收起 AI 侧栏', 'Collapse AI sidebar')}"><i data-lucide="panel-right-close"></i></button>
+			<button type="button" class="row-action" data-chat-close title="${t('关闭 AI', 'Close AI')}" aria-label="${t('关闭 AI', 'Close AI')}"><i data-lucide="x"></i></button>
 		</header>
 		<div class="note-ai-chat-messages" data-chat-messages>${welcomeHtml()}</div>
 		<div class="note-ai-chat-composer">
@@ -461,6 +463,7 @@ function bindNoteContextChat(
 		</div>`;
 		compose.querySelector(`[data-chat-review="${reviewBarId}"]`)?.remove();
 		root.append(panel);
+		sheet = mountBottomSheet(panel, close);
 		root.classList.add('note-ai-sidebar-open');
 		paintIcons(panel);
 		trigger.classList.add('active');
@@ -991,7 +994,7 @@ function bindNoteContextChat(
 			renderConversation();
 		});
 		panel.querySelector('[data-chat-new]')?.addEventListener('click', createSession);
-		panel.querySelector('[data-chat-close]')?.addEventListener('click', close);
+		panel.querySelector('[data-chat-close]')?.addEventListener('click', () => sheet?.requestClose() ?? close());
 		send.addEventListener('click', () => {
 			if (controller) controller.abort();
 			else void submit();
@@ -1033,13 +1036,25 @@ function bindNoteContextChat(
 			if (panel?.isConnected) options.onError(error);
 		} finally {
 			if (panel?.isConnected) send.disabled = false;
+			if (initialPrompt.trim() && panel?.isConnected) {
+				input.value = initialPrompt.trim();
+				input.dispatchEvent(new Event('input'));
+				void submit();
+			}
 		}
 	};
 	const handleOpen = () => void open();
 	const handleOpenRequested = (event: Event) => {
-		const detail = (event as CustomEvent<{ noteId?: string; conversationId?: string }>).detail;
+		const detail = (
+			event as CustomEvent<{
+				noteId?: string;
+				conversationId?: string;
+				prompt?: string;
+				mode?: 'edit' | 'ask';
+			}>
+		).detail;
 		if (detail?.noteId && detail.noteId !== noteId) return;
-		void open(detail?.conversationId);
+		void open(detail?.conversationId, detail?.prompt ?? '', detail?.mode);
 	};
 	trigger.addEventListener('click', handleOpen);
 	root.addEventListener('r2:open-ai-chat', handleOpenRequested);
@@ -1070,6 +1085,13 @@ export function bindMarkdownAiAssistant(
 	const zh = locale === 'zh';
 	const t = (zhText: string, enText: string): string => (zh ? zhText : enText);
 	const onError = options.onError;
+	const editorRoot = host.closest<HTMLElement>('.note-editor');
+	const openChatAction = (prompt = '', mode: 'edit' | 'ask' = 'edit') => {
+		removeToolbar();
+		editorRoot?.dispatchEvent(
+			new CustomEvent('r2:open-ai-chat', { detail: { noteId: options.noteId, prompt, mode } }),
+		);
+	};
 	let panel: HTMLElement | null = null;
 	let toolbar: HTMLElement | null = null;
 	let trackedSelection: (AiRange & { text: string }) | null = null;
@@ -1665,13 +1687,7 @@ export function bindMarkdownAiAssistant(
 				const action = button.dataset.action as AiAction;
 				if (action === 'summarize') {
 					removePolishMenu();
-					openPanel(
-						'summarize',
-						trackedSelection.text,
-						trackedSelection,
-						zh ? SUMMARIZE_INSTRUCTION_ZH : SUMMARIZE_INSTRUCTION_EN,
-						{ autoStart: true, hideInstruction: true },
-					);
+					openChatAction(zh ? SUMMARIZE_INSTRUCTION_ZH : SUMMARIZE_INSTRUCTION_EN, 'ask');
 					return;
 				}
 				if (action === 'polish') {
@@ -1704,10 +1720,7 @@ export function bindMarkdownAiAssistant(
 							const prompt = POLISH_INSTRUCTIONS[style][zh ? 'zh' : 'en'];
 							removePolishMenu();
 							if (!selection) return;
-							openPanel('polish', selection.text, selection, prompt, {
-								autoStart: true,
-								hideInstruction: true,
-							});
+							openChatAction(prompt);
 						});
 					});
 					const onDocDown = (docEvent: Event) => {
@@ -1721,10 +1734,7 @@ export function bindMarkdownAiAssistant(
 				}
 				if (action === 'rewrite') {
 					removePolishMenu();
-					openPanel('rewrite', trackedSelection.text, trackedSelection, '', {
-						autoStart: false,
-						hideInstruction: false,
-					});
+					openChatAction();
 				}
 			}),
 		);
@@ -1756,7 +1766,7 @@ export function bindMarkdownAiAssistant(
 	const emptyPrompt = document.createElement('button');
 	emptyPrompt.type = 'button';
 	emptyPrompt.className = 'ai-empty-prompt';
-	emptyPrompt.innerHTML = `<i data-lucide="sparkles"></i><span>${t('开始创作，或者按下空格来唤起AI输入框', 'Start writing, or press Space to ask AI')}</span>`;
+	emptyPrompt.innerHTML = `<i data-lucide="sparkles"></i><span>${t('开始创作', 'Start writing')}</span><span class="ai-empty-shortcut">${t('，或者按下空格键来唤起AI输入框', ', or press Space to ask AI')}</span>`;
 	host.append(emptyPrompt);
 	paintIcons(emptyPrompt);
 	syncEmptyPrompt = () => emptyPrompt.classList.toggle('visible', view.state.doc.length === 0 && !panel);
@@ -1806,20 +1816,13 @@ export function bindMarkdownAiAssistant(
 					view.focus();
 					return;
 				}
-				const selected = { from: range.from, to: range.to, text: view.state.sliceDoc(range.from, range.to) };
 				const action = button.dataset.mobileAiAction as 'summarize' | 'polish' | 'rewrite';
 				if (action === 'summarize') {
-					openPanel(action, selected.text, selected, zh ? SUMMARIZE_INSTRUCTION_ZH : SUMMARIZE_INSTRUCTION_EN, {
-						autoStart: true,
-						hideInstruction: true,
-					});
+					openChatAction(zh ? SUMMARIZE_INSTRUCTION_ZH : SUMMARIZE_INSTRUCTION_EN, 'ask');
 				} else if (action === 'polish') {
-					openPanel(action, selected.text, selected, POLISH_INSTRUCTIONS.formal[zh ? 'zh' : 'en'], {
-						autoStart: true,
-						hideInstruction: true,
-					});
+					openChatAction(POLISH_INSTRUCTIONS.formal[zh ? 'zh' : 'en']);
 				} else {
-					openPanel(action, selected.text, selected);
+					openChatAction();
 				}
 			},
 			{ signal: mobileBindings.signal },

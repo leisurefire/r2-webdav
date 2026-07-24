@@ -2032,6 +2032,11 @@ details.markdown-callout > .markdown-callout-title::marker {
 	padding: 8px;
 }
 
+.mobile-note-meta,
+.mobile-note-export {
+	display: none;
+}
+
 .note-font-card {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
@@ -2299,6 +2304,21 @@ details.markdown-callout > .markdown-callout-title::marker {
 
 	.notes-inner-toolbar .note-last-modified {
 		display: none;
+	}
+
+	.note-editor-mobile .note-export-direct {
+		display: none;
+	}
+
+	.note-more-popover .mobile-note-meta {
+		display: block;
+		padding: 5px 8px 8px;
+		border-bottom: 1px solid var(--line);
+		margin-bottom: 4px;
+	}
+
+	.note-more-popover .mobile-note-export {
+		display: flex;
 	}
 
 	.note-editor-mobile .note-actions {

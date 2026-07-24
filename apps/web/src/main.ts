@@ -52,6 +52,11 @@ registerRender(render);
 document.addEventListener('truespace:open-settings', () => void openSettingsModal());
 
 window.addEventListener('popstate', () => {
+	const bottomSheet = document.querySelector<HTMLElement>('.bottom-sheet');
+	if (bottomSheet) {
+		bottomSheet.dispatchEvent(new CustomEvent('r2:close-bottom-sheet'));
+		return;
+	}
 	if (mobileNoteDialogOpen) {
 		setMobileNoteDialogOpen(false);
 		const dialog = document.querySelector<HTMLDialogElement>('#note-dialog[open]');
