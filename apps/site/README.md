@@ -31,4 +31,8 @@ npm run build:embed  # 构建到 /about 并交给 apps/web 的 public 目录
 npm run build:gh     # GitHub Pages，默认 SITE_BASE=/r2-webdav
 ```
 
-常规部署无需单独发布本目录。`@r2-webdav/web` 的 `build` 会先执行 `build:embed`，最终介绍站、文档与 Web App 一起进入 `apps/web/dist` 并发布到同一个 Pages 项目。
+常规部署无需单独发布本目录。根目录的 `npm run build` 会先执行 `build:embed`，将生成结果同步到 `apps/web/public/about`，再构建 Web App。
+
+Cloudflare 将 Root Directory 设为 `apps/web` 时，Web 包会以 devDependency 安装 VitePress，并在 `npm run build` 开始时自动执行 `build:embed`。因此只需提交 Markdown 源文件，不要提交 `apps/web/public/about` 生成目录。
+
+VitePress 只用于构建；部署结果是纯 HTML、CSS 和 JavaScript，不需要常驻 Node 服务。

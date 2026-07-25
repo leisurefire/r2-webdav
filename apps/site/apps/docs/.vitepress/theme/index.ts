@@ -1,7 +1,6 @@
 import DefaultTheme from 'vitepress/theme'
 import type { Theme } from 'vitepress'
 import { h } from 'vue'
-import ApiReference from './components/ApiReference.vue'
 import NotFound from './components/NotFound.vue'
 import SiteFooter from './components/SiteFooter.vue'
 import SiteNavbar from './components/SiteNavbar.vue'
@@ -25,10 +24,7 @@ const theme: Theme = {
       'not-found': () => h(NotFound),
     })
   },
-  enhanceApp(ctx) {
-    DefaultTheme.enhanceApp?.(ctx)
-    ctx.app.component('ApiReference', ApiReference)
-  },
+  enhanceApp: DefaultTheme.enhanceApp,
 }
 
 export default theme
