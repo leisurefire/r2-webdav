@@ -1,0 +1,25 @@
+{
+  "name": "@r2-webdav/site",
+  "private": true,
+  "version": "1.0.0",
+  "description": "R2 WebDAV X static site and VitePress documentation",
+  "scripts": {
+    "dev": "npm run build && node scripts/serve-site.mjs",
+    "dev:serve": "node scripts/serve-site.mjs",
+    "docs:dev": "vitepress apps/docs --host 127.0.0.1 --port 5173",
+    "docs:build": "vitepress build apps/docs",
+    "docs:preview": "vitepress preview apps/docs --host 127.0.0.1 --port 5173",
+    "build": "node scripts/build-root.mjs",
+    "build:embed": "node scripts/build-embed.mjs",
+    "build:gh": "node scripts/build-gh.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "vitepress": "^2.0.0-alpha.17"
+  }
+}

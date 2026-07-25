@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.output/
+apps/*/.vitepress/dist/
+apps/*/.vitepress/cache/
+
+# Framework caches
+.astro/
+apps/*/.astro/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.vscode/extensions.json
+
+# Logs
+*.log
+
+# Runtime
+*.pid
+
+
+# Assembled docs output
+apps/site/docs/
+apps/site/404.html
+apps/site/.nojekyll

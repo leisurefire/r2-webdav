@@ -10,6 +10,7 @@ This release uses a fixed `default` user. KV-backed users, tenant isolation, bil
 apps/
   dav-worker/       WebDAV + CalDAV + JSON API Worker
   web/              Cloudflare Pages SPA + Notes Functions
+  site/             Product site + VitePress docs, embedded at /about
 packages/
   shared-types/     API contracts shared by Worker and UI
 ```
@@ -77,6 +78,7 @@ Set `VITE_API_BASE=https://dav.example.com` for the Pages production build. Do n
 - JSON API: `https://dav.example.com/api/v1/`
 - Pages Notes API: `https://app.example.com/api/v1/notes`
 - Pages SPA: `/login`, `/files`, `/calendar`, `/notes`, `/settings`
+- Product site and docs: `/about/`, `/about/docs/`
 
 WebDAV and CalDAV accept Basic credentials or a random Bearer session token. Browser API routes accept the session through an HttpOnly cookie or `Authorization: Bearer` header. Worker and Pages must bind the same `NOTES_DB` so Pages Functions can validate sessions.
 

@@ -4,8 +4,8 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "vite",
-		"build": "tsc --noEmit && tsc -p functions/tsconfig.json && vite build",
+		"dev": "npm run build:embed -w @r2-webdav/site && vite",
+		"build": "npm run build:embed -w @r2-webdav/site && tsc --noEmit && tsc -p functions/tsconfig.json && vite build",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit && tsc -p functions/tsconfig.json",
 		"deploy": "wrangler pages deploy dist --project-name webdav-ui"

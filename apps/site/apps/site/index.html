@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <script>try{var d=matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',d);d?document.documentElement.setAttribute('data-theme','dark'):document.documentElement.removeAttribute('data-theme')}catch(e){}</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>R2 WebDAV X · 自托管个人云端工作区</title>
+  <meta name="description" content="将 Cloudflare R2 变成可通过 WebDAV、CalDAV 和浏览器访问的个人文件、日历、Markdown 笔记与书签工作区。" />
+  <meta property="og:title" content="R2 WebDAV X" />
+  <meta property="og:description" content="基于 Cloudflare R2、D1、Workers 与 Pages 的单用户云端工作区。" />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="assets/images/logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/theme.css" />
+  <script type="module" src="assets/site-shell.js"></script>
+</head>
+<body>
+  <site-navbar></site-navbar>
+
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <div class="hero-copy">
+          <span class="hero-eyebrow">Self-hosted on Cloudflare</span>
+          <h1>你的文件、日历与笔记，放在自己的云端。</h1>
+          <p class="hero-desc">R2 WebDAV X 将 Cloudflare R2 与 D1 组合成一个单用户工作区。浏览器里管理内容，常用客户端通过 WebDAV 与 CalDAV 保持同步。</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="docs/quick-start">Quick Start</a>
+            <a class="btn btn-ghost" href="/files">打开应用</a>
+          </div>
+          <div class="hero-note"><span>单用户部署</span><span>开源</span><span>数据保存在你的 Cloudflare 账户</span></div>
+        </div>
+
+        <div class="product-window" aria-label="R2 WebDAV X 文件管理界面预览">
+          <div class="window-bar"><i></i><i></i><i></i><span>webdav-ui.example.com/files</span></div>
+          <div class="app-preview">
+            <aside class="preview-sidebar">
+              <div class="preview-brand">
+                <svg class="brand-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7.4 18.5h9.5a4.1 4.1 0 0 0 .6-8.16A5.8 5.8 0 0 0 6.36 8.9 4.8 4.8 0 0 0 7.4 18.5Z" stroke="currentColor" stroke-width="1.7"/><path d="M8.4 13.2h7.2M12 9.8v6.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                <span>R2 WebDAV X</span>
+              </div>
+              <div class="preview-nav">
+                <span class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h6l2 2h10v10H3Z"/></svg>文件</span>
+                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></svg>日历</span>
+                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3h11l3 3v15H5Z"/><path d="M8 11h8M8 15h8"/></svg>笔记</span>
+                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h12v18l-6-4-6 4Z"/></svg>书签</span>
+                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H3v-4h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V3h4v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>设置</span>
+              </div>
+            </aside>
+            <div class="preview-main">
+              <div class="preview-top"><strong>我的文件</strong><button aria-label="上传文件">+</button></div>
+              <div class="preview-path"><span>我的文件</span><span>/</span><span>项目资料</span></div>
+              <div class="preview-table">
+                <div class="preview-row"><span class="preview-file"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10H3Z" stroke="currentColor" stroke-width="1.7"/></svg>设计资源</span><span>文件夹</span><span>今天</span></div>
+                <div class="preview-row"><span class="preview-file"><svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5Z" stroke="currentColor" stroke-width="1.7"/></svg>部署记录.md</span><span>18 KB</span><span>昨天</span></div>
+                <div class="preview-row"><span class="preview-file"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="10" r="2"/><path d="m4 17 5-4 4 3 3-2 4 3" stroke="currentColor" stroke-width="1.7"/></svg>旅行照片.webp</span><span>2.4 MB</span><span>7 月 19 日</span></div>
+                <div class="preview-row"><span class="preview-file"><svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5Z" stroke="currentColor" stroke-width="1.7"/></svg>资料索引.pdf</span><span>840 KB</span><span>7 月 16 日</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="sync-pill"><i></i>WebDAV 已同步</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-muted" id="features">
+      <div class="container">
+        <div class="section-head">
+          <div><span class="section-kicker">Workspace</span><h2 class="section-title">一个入口，管理分散的个人数据。</h2></div>
+          <p class="section-desc">浏览器负责日常管理，标准 DAV 协议连接系统文件管理器、同步工具与日历客户端。无需额外服务器，核心服务运行在 Cloudflare 边缘。</p>
+        </div>
+        <div class="capability-grid">
+          <article class="capability"><span class="capability-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h7l2 2h9v10H3Z"/></svg></span><h3>R2 文件库</h3><p>上传、下载、新建目录、重命名、移动、预览与删除；文件内容存储在自己的 R2 Bucket。</p></article>
+          <article class="capability"><span class="capability-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2"/><path d="M20 4v5h-5M4 20v-5h5"/></svg></span><h3>WebDAV</h3><p>兼容 PROPFIND、COPY、MOVE、LOCK 等常用方法，可连接 rclone、系统文件管理器与同步工具。</p></article>
+          <article class="capability"><span class="capability-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></svg></span><h3>CalDAV 日历</h3><p>支持日历发现、事件同步、多日历与 iCalendar；可接入 DAVx5、Apple Calendar 等客户端。</p></article>
+          <article class="capability"><span class="capability-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3h11l3 3v15H5Z"/><path d="M8 11h8M8 15h6"/></svg></span><h3>Markdown 笔记</h3><p>目录、归档、固定与全文编辑，支持 Markdown、KaTeX、代码高亮和可选 AI 写作助手。</p></article>
+          <article class="capability"><span class="capability-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h12v18l-6-4-6 4Z"/></svg></span><h3>书签中心</h3><p>读取 R2 中的书签数据，按目录浏览，自动加载站点图标与链接预览。</p></article>
+          <article class="capability"><span class="capability-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></span><h3>单用户安全模型</h3><p>固定账号、Basic/Bearer 鉴权、HttpOnly 会话 Cookie 与设备会话管理，边界简单明确。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-head">
+          <div><span class="section-kicker">Architecture</span><h2 class="section-title">为 Cloudflare 原生服务而设计。</h2></div>
+          <p class="section-desc">协议层、网页层和存储层职责分离。Worker 处理 DAV 与文件/日历 API，Pages 承载前端和 Notes Functions，R2 与 D1 保存数据。</p>
+        </div>
+        <div class="architecture" aria-label="R2 WebDAV X 架构">
+          <div class="arch-node"><span class="arch-label">Clients</span><strong>浏览器与 DAV 客户端</strong><p>Web UI、rclone、DAVx5、Apple Calendar 和系统文件管理器。</p><div class="protocols"><code>HTTPS</code><code>WebDAV</code><code>CalDAV</code></div></div>
+          <span class="arch-arrow" aria-hidden="true"></span>
+          <div class="arch-node primary"><span class="arch-label">Edge</span><strong>Workers + Pages</strong><p>鉴权、协议处理、JSON API、静态前端与同源笔记接口。</p><div class="protocols"><code>Worker</code><code>Pages</code><code>Functions</code></div></div>
+          <span class="arch-arrow" aria-hidden="true"></span>
+          <div class="arch-node"><span class="arch-label">Storage</span><strong>R2 + D1</strong><p>文件和 iCalendar 对象进入 R2；笔记、目录和会话进入 D1。</p><div class="protocols"><code>R2 Bucket</code><code>D1 Database</code></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-muted">
+      <div class="container cta-band">
+        <div><span class="section-kicker">Get started</span><h2>从一个 R2 Bucket 开始。</h2><p>准备 Cloudflare 账号与 Node.js 22，按文档创建绑定、写入 Secret，然后部署 Worker 与 Pages。</p></div>
+        <a class="btn btn-primary" href="docs/quick-start">Quick Start</a>
+      </div>
+    </section>
+  </main>
+
+  <site-footer></site-footer>
+</body>
+</html>

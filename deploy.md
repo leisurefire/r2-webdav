@@ -138,6 +138,15 @@ npm run build -w @r2-webdav/web
 npm run deploy -w @r2-webdav/web -- --project-name my-r2-webdav-ui
 ```
 
+Web 构建会先构建 `apps/site`，并把产品介绍与文档写入同一份 Pages 产物：
+
+```text
+https://my-r2-webdav-ui.pages.dev/about/
+https://my-r2-webdav-ui.pages.dev/about/docs/
+```
+
+介绍站无需创建第二个 Pages 项目或单独运行 Node 服务器。
+
 Pages Functions 位于 `apps/web/functions`，因此不要在仓库根目录直接执行 `wrangler pages deploy apps/web/dist`。workspace 脚本会自动以 `apps/web` 为工作目录，让 Wrangler 同时发现 `dist` 和 `functions`。如果终端已经位于 `apps/web`，也可以执行：
 
 ```bash

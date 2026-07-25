@@ -1,0 +1,576 @@
+/* ============================================================
+   docs（VitePress）主题样式
+   设计令牌来自主站共用的 apps/site/assets/theme.css，
+   这里只做 VitePress 变量映射与布局适配。
+   ============================================================ */
+
+@import '../../../site/assets/theme.css';
+
+/* ---------- VitePress 变量映射到统一令牌 ---------- */
+
+:root {
+  --vp-c-brand-1: var(--brand);
+  --vp-c-brand-2: var(--brand-strong);
+  --vp-c-brand-3: var(--brand-deep);
+  --vp-c-brand-soft: var(--brand-soft);
+
+  --vp-c-bg: var(--surface);
+  --vp-c-bg-alt: var(--surface-container);
+  --vp-c-bg-elv: var(--surface-bright);
+  --vp-c-bg-soft: var(--surface-container);
+
+  --vp-c-divider: var(--outline-variant);
+  --vp-c-border: var(--outline);
+  --vp-c-gutter: var(--outline-variant);
+
+  --vp-c-text-1: var(--on-surface);
+  --vp-c-text-2: var(--on-surface-variant);
+  --vp-c-text-3: var(--on-surface-dim);
+
+  --vp-c-default-1: var(--on-surface-variant);
+  --vp-c-default-2: var(--surface-container);
+  --vp-c-default-3: var(--surface-sunken);
+  --vp-c-default-soft: var(--surface-container);
+
+  --vp-font-family-base: var(--font-sans);
+  --vp-font-family-mono: var(--font-mono);
+
+  --vp-code-bg: var(--code-bg);
+  --vp-code-color: var(--on-brand-container);
+  --vp-code-block-bg: var(--code-bg);
+  --vp-code-block-color: var(--code-text);
+  --vp-code-lang-color: var(--on-surface-dim);
+  --vp-code-line-number-color: var(--on-surface-dim);
+  --vp-code-line-highlight-color: var(--brand-soft);
+
+  --vp-button-brand-border: var(--brand);
+  --vp-button-brand-text: #ffffff;
+  --vp-button-brand-bg: var(--brand);
+  --vp-button-brand-hover-border: var(--brand-strong);
+  --vp-button-brand-hover-text: #ffffff;
+  --vp-button-brand-hover-bg: var(--brand-strong);
+  --vp-button-brand-active-border: var(--brand-deep);
+  --vp-button-brand-active-text: #ffffff;
+  --vp-button-brand-active-bg: var(--brand-deep);
+
+  --vp-button-alt-border: var(--outline);
+  --vp-button-alt-text: var(--on-surface);
+  --vp-button-alt-bg: transparent;
+  --vp-button-alt-hover-border: var(--outline);
+  --vp-button-alt-hover-text: var(--on-surface);
+  --vp-button-alt-hover-bg: var(--surface-container);
+  --vp-button-alt-active-border: var(--outline);
+  --vp-button-alt-active-text: var(--on-surface);
+  --vp-button-alt-active-bg: var(--surface-sunken);
+
+  --vp-home-hero-name-color: var(--on-surface);
+  --vp-home-hero-name-background: none;
+  --vp-home-hero-image-background-image: none;
+  --vp-home-hero-image-filter: none;
+
+  --vp-nav-height: 64px;
+  --vp-sidebar-width: 288px;
+
+  --vp-custom-block-tip-border: transparent;
+  --vp-custom-block-tip-text: var(--on-brand-container);
+  --vp-custom-block-tip-bg: var(--brand-soft);
+  --vp-custom-block-tip: var(--brand);
+  --vp-custom-block-tip-code-bg: var(--brand-container);
+  --vp-custom-block-warning-border: transparent;
+  --vp-custom-block-warning-text: var(--on-warning-container);
+  --vp-custom-block-warning-bg: var(--warning-container);
+  --vp-custom-block-warning: var(--warning);
+  --vp-custom-block-warning-code-bg: var(--warning-container);
+  --vp-custom-block-danger-border: transparent;
+  --vp-custom-block-danger-text: var(--on-error-container);
+  --vp-custom-block-danger-bg: var(--error-container);
+  --vp-custom-block-danger: var(--error);
+  --vp-custom-block-danger-code-bg: var(--error-container);
+  --vp-custom-block-info-border: transparent;
+  --vp-custom-block-info-text: var(--on-surface-variant);
+  --vp-custom-block-info-bg: var(--surface-container);
+  --vp-custom-block-info: var(--on-surface-variant);
+  --vp-custom-block-info-code-bg: var(--surface-sunken);
+}
+
+html[data-theme='dark'] {
+  --vp-button-brand-text: #191919;
+  --vp-button-brand-hover-text: #191919;
+  --vp-button-brand-active-text: #191919;
+}
+
+/* ---------- 基础 ---------- */
+
+html {
+  color-scheme: light;
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--surface);
+}
+
+/* ---------- 共享站点顶栏 / 根布局 ---------- */
+
+/* site-navbar 宿主不要建 stacking context：内部 .site-header 是 fixed，
+   父级 relative+z-index 会把 backdrop-filter 的采样范围截断为空。 */
+.Layout > site-navbar {
+  display: block;
+}
+
+.Layout .site-header {
+  z-index: 100001;
+}
+
+.VPContent {
+  padding-top: var(--vp-nav-height);
+}
+/* ---------- 隐藏默认侧栏 / 右侧大纲，由 UnifiedLocalNav 接管 ---------- */
+
+.VPLocalNav {
+  display: none !important;
+}
+
+.VPSidebar,
+.VPDoc .aside {
+  display: none !important;
+}
+
+/* 文档内容：首块增加上内边距，避免贴住 NavBar */
+.VPDoc {
+  background: var(--surface);
+  padding-top: 8px;
+}
+
+.VPDoc .container {
+  padding-top: 0;
+}
+
+.VPDoc .content {
+  padding-top: 28px !important;
+}
+
+.VPDoc .content-container {
+  padding-top: 8px;
+}
+
+.vp-doc > :first-child {
+  margin-top: 0;
+}
+
+.vp-doc h1 {
+  margin-top: 0 !important;
+  padding-top: 8px;
+}
+
+@media (min-width: 960px) {
+  .VPContent:not(.is-home),
+  .VPContent.has-sidebar {
+    padding-left: var(--vp-sidebar-width) !important;
+    padding-right: 0 !important;
+  }
+
+  .VPDoc.has-sidebar .content,
+  .VPDoc.has-aside .content,
+  .VPDoc:not(.has-sidebar) .content {
+    max-width: 100%;
+    padding-inline: 40px;
+    padding-top: 36px !important;
+  }
+
+  .VPDoc.has-sidebar .content-container,
+  .VPDoc.has-aside .content-container,
+  .VPDoc:not(.has-sidebar) .content-container {
+    max-width: 920px;
+    margin: 0 auto;
+  }
+
+  .Layout > site-footer.docs-page-footer {
+    width: calc(100% - var(--vp-sidebar-width));
+    margin-left: var(--vp-sidebar-width);
+  }
+}
+
+/* 文档标题 */
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3,
+.vp-doc h4 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.vp-doc h1 {
+  font-size: 2rem;
+  line-height: 1.35;
+}
+
+.vp-doc h2 {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 48px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.vp-doc :not(pre) > code {
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius-s);
+}
+
+.vp-doc div[class*='language-'] {
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius-m);
+  background: var(--code-bg);
+}
+
+/* 代码块正文色 */
+.vp-doc div[class*='language-'] code,
+.vp-doc div[class*='language-'] pre {
+  color: var(--code-text);
+  background: transparent;
+}
+
+/*
+ * VitePress Shiki 双主题默认挂在 html.dark / html:not(.dark) 上，
+ * 本站自定义 data-theme，需单独把深色高亮切到 --shiki-dark。
+ */
+html[data-theme='dark'] .shiki,
+html[data-theme='dark'] .shiki span {
+  color: var(--shiki-dark, var(--code-text)) !important;
+  -webkit-text-decoration: var(--shiki-dark-text-decoration, inherit);
+  text-decoration: var(--shiki-dark-text-decoration, inherit);
+  font-weight: var(--shiki-dark-font-weight, inherit);
+  background-color: transparent !important;
+}
+
+html:not([data-theme='dark']) .shiki,
+html:not([data-theme='dark']) .shiki span {
+  color: var(--shiki-light, var(--code-text));
+  -webkit-text-decoration: var(--shiki-light-text-decoration, inherit);
+  text-decoration: var(--shiki-light-text-decoration, inherit);
+  font-weight: var(--shiki-light-font-weight, inherit);
+  background-color: transparent;
+}
+
+/* 深色代码块：独立视觉，避免浅色 token 贴深底 */
+html[data-theme='dark'] .vp-doc div[class*='language-'] {
+  background: var(--code-bg);
+  border-color: var(--code-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+html[data-theme='dark'] .vp-doc div[class*='language-'] .lang,
+html[data-theme='dark'] .vp-doc div[class*='language-'] button.copy {
+  color: var(--on-surface-dim);
+}
+
+html[data-theme='dark'] .vp-doc :not(pre) > code {
+  color: var(--on-brand-container);
+  background: var(--code-bg);
+  border-color: var(--code-border);
+}
+
+.vp-doc blockquote {
+  border-left: 3px solid var(--brand);
+  background: transparent;
+}
+
+.vp-doc th {
+  background: var(--surface-container);
+}
+
+.vp-doc tr:nth-child(2n) {
+  background: transparent;
+}
+
+/* ---------- 文档落地页 ---------- */
+
+.VPHome {
+  background: var(--surface);
+}
+
+.VPHomeHero {
+  padding: 96px 24px 64px;
+}
+
+.VPHomeHero .container {
+  max-width: var(--content-w);
+}
+
+.VPHomeHero .name,
+.VPHomeHero .text {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.VPHomeHero .name {
+  font-size: clamp(40px, 5.5vw, 64px);
+  color: var(--on-surface);
+}
+
+.VPHomeHero .text {
+  margin-top: 12px;
+  color: var(--brand-strong);
+  font-size: clamp(24px, 3.5vw, 40px);
+}
+
+.VPHomeHero .tagline {
+  max-width: 620px;
+  padding-top: 16px;
+  color: var(--on-surface-variant);
+  font-size: 17px;
+  line-height: 1.8;
+}
+
+.VPHomeHero .actions {
+  gap: 12px;
+  padding-top: 32px;
+}
+
+.VPButton {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 20px !important;
+  border-radius: var(--radius-m) !important;
+  font-weight: 600;
+  line-height: 1 !important;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.VPHomeHero .image,
+.VPHomeHero .image-bg,
+.VPHomeHero .image-container {
+  display: none;
+}
+
+.VPHomeFeatures {
+  padding: 24px 24px 48px;
+}
+
+.VPHomeFeatures .container {
+  max-width: var(--content-w);
+}
+
+.VPFeature {
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-l);
+  background: var(--surface-bright);
+  box-shadow: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.VPFeature:hover {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--outline-variant));
+  box-shadow: var(--shadow-card);
+}
+
+.VPFeature .title {
+  font-family: var(--font-serif);
+  color: var(--on-surface);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.VPFeature .details {
+  color: var(--on-surface-variant);
+  line-height: 1.75;
+}
+
+.VPFeature .icon {
+  border-radius: var(--radius-m);
+  background: var(--brand-container);
+  color: var(--on-brand-container);
+}
+
+/* ---------- API 文档页 ---------- */
+
+.api-reference-page .VPContent,
+.api-reference-page .VPPage,
+.api-reference-page .UnifiedLocalNav {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+}
+
+/* ---------- 侧栏 UnifiedLocalNav 修复 ---------- */
+
+/* 桌面：固定在 NavBar 下方，不压住内容 */
+@media (min-width: 960px) {
+  .UnifiedLocalNav {
+    top: var(--vp-nav-height) !important;
+    height: calc(100vh - var(--vp-nav-height)) !important;
+    overflow: hidden;
+  }
+}
+
+/* 移动：本地目录条与 NavBar 分离 */
+@media (max-width: 959px) {
+  .VPDoc > .UnifiedLocalNav {
+    margin-top: 0 !important;
+    top: var(--vp-nav-height);
+  }
+}
+
+/* ---------- 响应式 ---------- */
+
+@media (max-width: 960px) {
+  .VPHomeHero {
+    padding-top: 72px;
+    text-align: center;
+  }
+
+  .VPHomeHero .main {
+    margin: 0 auto;
+  }
+
+  .VPHomeHero .actions {
+    justify-content: center;
+  }
+
+  .VPHomeHero .tagline {
+    margin-inline: auto;
+  }
+
+  .VPDoc .content {
+    padding-top: 20px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .vp-doc div[class*='language-'] {
+    max-width: 100%;
+    margin-right: 0;
+    margin-left: 0;
+    border-radius: var(--radius-m);
+  }
+
+  .vp-doc div[class*='language-'] pre {
+    overflow-x: auto;
+    font-size: 12px;
+    line-height: 1.6;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .vp-doc div[class*='language-'] code {
+    white-space: pre;
+    overflow-wrap: normal;
+  }
+
+  .vp-doc :not(pre) > code {
+    font-size: 0.88em;
+    overflow-wrap: anywhere;
+  }
+
+  .vp-doc blockquote {
+    margin-right: 0;
+    margin-left: 0;
+    padding: 2px 0 2px 14px;
+    font-size: 14px;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+  }
+
+  .VPHomeHero {
+    padding: 56px 20px 40px;
+  }
+
+  .VPHomeFeatures {
+    padding-inline: 18px;
+  }
+
+}
+
+/* ---------- 统一 404 ---------- */
+
+.Layout:has(.not-found) .VPLocalNav,
+.Layout:has(.not-found) .VPSidebar,
+.Layout:has(.not-found) .VPFooter,
+.Layout:has(.not-found) .UnifiedLocalNav {
+  display: none !important;
+}
+
+.Layout:has(.not-found) .VPContent {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.Layout:has(.not-found) {
+  background: var(--surface);
+}
+
+/* 隐藏空 VPFooter（我们用自定义 SiteFooter） */
+.VPFooter {
+  display: none !important;
+}
+
+/* ---------- 文档页根布局 / Footer ---------- */
+
+.Layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100svh;
+}
+
+.VPContent.is-home {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+}
+
+.VPHome {
+  display: flex !important;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 100%;
+  margin-bottom: 0 !important;
+  background: var(--surface);
+}
+
+/* VitePress 默认 96px/128px 底边距 —— 直接干掉 */
+.VPHome.external-link-icon-enabled,
+div.VPHome {
+  margin-bottom: 0 !important;
+}
+
+.VPHomeFeatures {
+  padding-bottom: 24px !important;
+}
+
+.Layout > site-footer {
+  flex: none;
+  margin-top: 0;
+}
+
+/* home-features-after 之后的空 Content / vp-doc 占位隐藏 */
+.VPHomeContent,
+.VPHome > .vp-doc,
+.VPHome .vp-doc.container {
+  display: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  border: 0 !important;
+}
+
+
+
+
+
+

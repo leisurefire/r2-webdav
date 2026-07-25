@@ -1,0 +1,378 @@
+openapi: 3.1.0
+info:
+  title: R2 WebDAV X JSON API
+  version: 0.1.0
+  description: 浏览器管理端使用的 Worker JSON API。除健康检查和登录外，接口均需要会话 Cookie 或 Bearer Token。
+servers:
+  - url: https://dav.example.com
+    description: DAV Worker
+tags:
+  - name: System
+  - name: Auth
+  - name: Files
+  - name: Calendar
+  - name: Bookmarks
+paths:
+  /api/v1/health:
+    get:
+      tags: [System]
+      summary: 健康检查
+      security: []
+      responses:
+        '200':
+          description: Worker 正常运行
+          content:
+            application/json:
+              example: { ok: true, data: { status: ok } }
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: 登录并创建会话
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+            example: { username: admin, password: change-me }
+      responses:
+        '200':
+          description: 登录成功，同时设置 HttpOnly Cookie
+          content:
+            application/json:
+              example: { ok: true, data: { token: r2s_example, expiresAt: '2026-08-24T12:00:00.000Z' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: 撤销当前会话
+      responses:
+        '200':
+          description: 已退出
+          content:
+            application/json:
+              example: { ok: true, data: { loggedOut: true } }
+  /api/v1/auth/devices:
+    get:
+      tags: [Auth]
+      summary: 列出设备会话
+      responses:
+        '200':
+          description: 会话列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { const: true }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/DeviceSession' }
+  /api/v1/auth/devices/{id}:
+    delete:
+      tags: [Auth]
+      summary: 撤销指定设备会话
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: 已撤销
+          content:
+            application/json:
+              example: { ok: true, data: { deleted: true, current: false } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/fs:
+    get:
+      tags: [Files]
+      summary: 列出目录
+      parameters:
+        - $ref: '#/components/parameters/FilePathOptional'
+      responses:
+        '200':
+          description: 目录内容
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { const: true }
+                  data: { $ref: '#/components/schemas/FileListing' }
+    delete:
+      tags: [Files]
+      summary: 删除文件或目录
+      parameters:
+        - $ref: '#/components/parameters/FilePath'
+      responses:
+        '200': { $ref: '#/components/responses/MutationSuccess' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/fs/content:
+    get:
+      tags: [Files]
+      summary: 获取文件元数据或内容
+      parameters:
+        - $ref: '#/components/parameters/FilePath'
+        - name: download
+          in: query
+          schema: { type: integer, enum: [1] }
+          description: 设置为 1 时返回文件流；省略时返回元数据 JSON。
+      responses:
+        '200':
+          description: 文件元数据或二进制内容
+    put:
+      tags: [Files]
+      summary: 上传或覆盖文件
+      parameters:
+        - $ref: '#/components/parameters/FilePath'
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '200': { $ref: '#/components/responses/MutationSuccess' }
+  /api/v1/fs/mkdir:
+    post:
+      tags: [Files]
+      summary: 新建目录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string, example: documents/projects }
+      responses:
+        '201': { $ref: '#/components/responses/MutationSuccess' }
+  /api/v1/fs/move:
+    post:
+      tags: [Files]
+      summary: 移动或重命名
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to]
+              properties:
+                from: { type: string }
+                to: { type: string }
+                overwrite: { type: boolean, default: true }
+            example: { from: documents/old.md, to: archive/new.md, overwrite: false }
+      responses:
+        '200': { $ref: '#/components/responses/MutationSuccess' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/bookmarks:
+    get:
+      tags: [Bookmarks]
+      summary: 读取 bookmarkhub.json
+      description: 从 WebDAV 文件根目录读取并校验 `bookmarkhub.json`。
+      responses:
+        '200':
+          description: BookmarkHub 数据
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/calendars:
+    get:
+      tags: [Calendar]
+      summary: 列出日历
+      responses:
+        '200':
+          description: 日历列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { const: true }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Calendar' }
+  /api/v1/calendars/{calendarId}/events:
+    get:
+      tags: [Calendar]
+      summary: 查询事件
+      parameters:
+        - $ref: '#/components/parameters/CalendarId'
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: 与时间范围重叠的事件
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { const: true }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/CalendarEvent' }
+    post:
+      tags: [Calendar]
+      summary: 创建或更新事件
+      parameters:
+        - $ref: '#/components/parameters/CalendarId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CalendarEventInput' }
+      responses:
+        '200':
+          description: 已保存的事件
+  /api/v1/calendars/{calendarId}/events/{uid}:
+    delete:
+      tags: [Calendar]
+      summary: 删除事件
+      parameters:
+        - $ref: '#/components/parameters/CalendarId'
+        - name: uid
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 已删除
+          content:
+            application/json:
+              example: { ok: true, data: { deleted: true } }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: r2_session
+  parameters:
+    FilePath:
+      name: path
+      in: query
+      required: true
+      schema: { type: string }
+      example: documents/readme.md
+    FilePathOptional:
+      name: path
+      in: query
+      required: false
+      schema: { type: string, default: '' }
+    CalendarId:
+      name: calendarId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[A-Za-z0-9._-]{1,100}$' }
+      example: default
+    DeviceId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    FileEntry:
+      type: object
+      required: [name, path, type, size, modifiedAt, etag]
+      properties:
+        name: { type: string }
+        path: { type: string }
+        type: { type: string, enum: [file, directory] }
+        size: { type: integer }
+        contentType: { type: string }
+        modifiedAt: { type: string, format: date-time }
+        etag: { type: string }
+    FileListing:
+      type: object
+      required: [path, entries]
+      properties:
+        path: { type: string }
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/FileEntry' }
+    Calendar:
+      type: object
+      required: [id, displayName, color, ctag]
+      properties:
+        id: { type: string }
+        displayName: { type: string }
+        color: { type: string }
+        ctag: { type: string }
+    CalendarEventInput:
+      type: object
+      required: [title, start, end]
+      properties:
+        uid: { type: string, description: 省略时由服务器生成 }
+        title: { type: string }
+        start: { type: string, format: date-time }
+        end: { type: string, format: date-time }
+        allDay: { type: boolean, default: false }
+        description: { type: string }
+        location: { type: string }
+        kind: { type: string, enum: [event, birthday] }
+    CalendarEvent:
+      allOf:
+        - $ref: '#/components/schemas/CalendarEventInput'
+        - type: object
+          required: [uid, calendarId]
+          properties:
+            uid: { type: string }
+            calendarId: { type: string }
+            etag: { type: string }
+    DeviceSession:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        browser: { type: string }
+        platform: { type: string }
+        type: { type: string, enum: [desktop, mobile, tablet, unknown] }
+        ip: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        current: { type: boolean }
+    Error:
+      type: object
+      properties:
+        ok: { const: false }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+  responses:
+    MutationSuccess:
+      description: 操作成功
+      content:
+        application/json:
+          example: { ok: true, data: { status: 201 } }
+    Unauthorized:
+      description: 未登录或凭据错误
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { ok: false, error: { code: UNAUTHORIZED, message: Invalid username or password } }
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: 目标已存在或资源冲突
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+security:
+  - BearerAuth: []
+  - SessionCookie: []

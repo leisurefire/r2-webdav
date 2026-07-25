@@ -21,6 +21,7 @@ import {
 	FolderOpen,
 	FolderPlus,
 	Image,
+	Info,
 	Inbox,
 	Italic,
 	Languages,
@@ -100,6 +101,7 @@ export function refreshIcons(): void {
 			FolderOpen,
 			FolderPlus,
 			Image,
+			Info,
 			Inbox,
 			Italic,
 			Languages,
@@ -182,6 +184,7 @@ export function shell(page: Page, _title: string, content = loadingMarkup()): vo
 				<div class="account-menu-wrap brand-menu-wrap">
 					<div class="account-popover" id="account-popover" hidden>
 						<button data-settings-open><i data-lucide="settings"></i><span>${t('settings')}</span></button>
+						<button data-about-open><i data-lucide="info"></i><span>${t('about')}</span></button>
 						<div class="account-menu-separator"></div>
 						<button class="account-logout" id="account-logout"><i data-lucide="log-out"></i><span>${t('logout')}</span></button>
 					</div>
@@ -205,6 +208,9 @@ export function shell(page: Page, _title: string, content = loadingMarkup()): vo
 		.forEach((item) => item.addEventListener('click', () => navigate(item.dataset.route!)));
 	document.querySelector('[data-settings-open]')?.addEventListener('click', () => {
 		document.dispatchEvent(new CustomEvent('truespace:open-settings'));
+	});
+	document.querySelector('[data-about-open]')?.addEventListener('click', () => {
+		location.assign('/about/');
 	});
 	const accountPopover = document.querySelector<HTMLElement>('#account-popover');
 	const accountToggles = [...document.querySelectorAll<HTMLButtonElement>('#brand-menu-toggle, #mobile-account-toggle')];
