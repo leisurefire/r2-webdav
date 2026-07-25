@@ -1569,12 +1569,14 @@ details.markdown-callout > .markdown-callout-title::marker {
 	font-family: inherit;
 	font-size: var(--note-title-size, 40px);
 	font-weight: 700;
-	line-height: 1.3;
+	/* Fallback only; non-edit height is fitted from fontBoundingBox metrics in JS. */
+	line-height: 1.18;
 	letter-spacing: 0;
 }
 
 .note-title-display {
-	height: calc(var(--note-title-size, 40px) * 1.3);
+	height: var(--note-title-line-box, 1.18em);
+	line-height: var(--note-title-line-box, 1.18em);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;

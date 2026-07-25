@@ -95,6 +95,8 @@ export function applyNoteViewPreferences(noteId: string, preferences: NoteViewPr
 	document.querySelectorAll<HTMLElement>(`[data-note-editor-id="${CSS.escape(noteId)}"]`).forEach((editor) => {
 		editor.classList.toggle('note-width-full', preferences.fullWidth);
 		editor.classList.toggle('note-font-serif', preferences.font === 'serif');
+		const display = editor.querySelector<HTMLElement>('[data-note-title-display]');
+		if (display) fitNoteTitleDisplay(display);
 	});
 	document.querySelectorAll<HTMLElement>(`[data-note-toolbar-id="${CSS.escape(noteId)}"]`).forEach((toolbar) => {
 		const widthButton = toolbar.querySelector<HTMLButtonElement>('[data-note-full-width]');
@@ -207,6 +209,74 @@ function resizeNoteTitle(control: HTMLTextAreaElement): void {
 	control.style.height = `${control.scrollHeight}px`;
 }
 
+/** Design line-height for titles; fitted box never shrinks below this. */
+const TITLE_LINE_HEIGHT_RATIO = 1.18;
+/** Sample covering Latin descenders/ascenders and CJK for ink fallbacks. */
+const TITLE_FONT_EXTENT_SAMPLE = 'Hgypqj|Áy字';
+
+let titleMetricsCanvas: HTMLCanvasElement | null = null;
+
+function titleDesignLineBoxPx(style: CSSStyleDeclaration): number {
+	const fontSize = Number.parseFloat(style.fontSize);
+	return (Number.isFinite(fontSize) && fontSize > 0 ? fontSize : 40) * TITLE_LINE_HEIGHT_RATIO;
+}
+
+/** Measure the font's vertical extent (not an arbitrary line-height multiple). */
+function measureTitleFontBoxPx(style: CSSStyleDeclaration, text: string): number {
+	const lineBox = titleDesignLineBoxPx(style);
+	titleMetricsCanvas ??= document.createElement('canvas');
+	const ctx = titleMetricsCanvas.getContext('2d');
+	if (ctx) {
+		ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+		const metrics = ctx.measureText(text.trim() || 'H');
+		const fontAscent = metrics.fontBoundingBoxAscent;
+		const fontDescent = metrics.fontBoundingBoxDescent;
+		if (Number.isFinite(fontAscent) && Number.isFinite(fontDescent)) {
+			return Math.max(lineBox, fontAscent + fontDescent);
+		}
+		const ink = ctx.measureText(`${text.trim() || 'H'}${TITLE_FONT_EXTENT_SAMPLE}`);
+		const ascent = ink.actualBoundingBoxAscent;
+		const descent = ink.actualBoundingBoxDescent;
+		if (Number.isFinite(ascent) && Number.isFinite(descent)) {
+			return Math.max(lineBox, ascent + descent);
+		}
+	}
+
+	// DOM fallback when canvas metrics are unavailable.
+	const probe = document.createElement('span');
+	probe.textContent = `${text.trim() || 'H'}${TITLE_FONT_EXTENT_SAMPLE}`;
+	probe.style.cssText = [
+		'position:absolute',
+		'left:-99999px',
+		'top:0',
+		'visibility:hidden',
+		'pointer-events:none',
+		'white-space:nowrap',
+		'display:inline-block',
+		`font-family:${style.fontFamily}`,
+		`font-size:${style.fontSize}`,
+		`font-weight:${style.fontWeight}`,
+		`font-style:${style.fontStyle}`,
+		`letter-spacing:${style.letterSpacing}`,
+		'line-height:1',
+		'padding:0',
+		'margin:0',
+		'border:0',
+	].join(';');
+	document.body.append(probe);
+	const height = probe.getBoundingClientRect().height;
+	probe.remove();
+	return Math.max(lineBox, height);
+}
+
+/** Fit non-edit title height to real font bounds so descenders are not clipped. */
+function fitNoteTitleDisplay(display: HTMLElement): void {
+	if (!display.isConnected) return;
+	const style = getComputedStyle(display);
+	const box = Math.ceil(measureTitleFontBoxPx(style, display.textContent ?? '') + 0.001);
+	display.style.setProperty('--note-title-line-box', `${box}px`);
+}
+
 export function syncNoteTitle(note: Note, source?: HTMLTextAreaElement): void {
 	document.querySelectorAll<HTMLElement>('[data-note-card-id]').forEach((card) => {
 		if (card.dataset.noteCardId === note.id) {
@@ -220,6 +290,7 @@ export function syncNoteTitle(note: Note, source?: HTMLTextAreaElement): void {
 		if (display) {
 			display.textContent = note.title;
 			display.title = note.title;
+			fitNoteTitleDisplay(display);
 		}
 		const input = editor.querySelector<HTMLTextAreaElement>('[data-note-title]');
 		if (input && input !== source && input !== document.activeElement) {
@@ -319,6 +390,11 @@ export function bindNoteEditor(
 	const titleDisplay = root.querySelector<HTMLButtonElement>('[data-note-title-display]')!;
 	const heading = title.closest<HTMLElement>('.note-heading')!;
 	const resizeTitle = () => resizeNoteTitle(title);
+	const fitTitleDisplay = () => fitNoteTitleDisplay(titleDisplay);
+	fitTitleDisplay();
+	void document.fonts?.ready.then(() => {
+		if (titleDisplay.isConnected) fitTitleDisplay();
+	});
 	const openTitleEditor = () => {
 		heading.classList.add('is-editing');
 		resizeTitle();
@@ -349,6 +425,7 @@ export function bindNoteEditor(
 		title.value = selected.title;
 		resizeTitle();
 		heading.classList.remove('is-editing');
+		fitTitleDisplay();
 	});
 	titleDisplay.addEventListener('click', openTitleEditor);
 	title.addEventListener('keydown', (event) => {
@@ -362,6 +439,7 @@ export function bindNoteEditor(
 			return;
 		}
 		if (heading.classList.contains('is-editing')) resizeTitle();
+		else fitTitleDisplay();
 	});
 	titleResizeObserver.observe(source);
 	const compose = root.querySelector<HTMLElement>('[data-note-compose]');
