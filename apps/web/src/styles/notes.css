@@ -1569,12 +1569,12 @@ details.markdown-callout > .markdown-callout-title::marker {
 	font-family: inherit;
 	font-size: var(--note-title-size, 40px);
 	font-weight: 700;
-	line-height: 1.18;
+	line-height: 1.3;
 	letter-spacing: 0;
 }
 
 .note-title-display {
-	height: calc(var(--note-title-size, 40px) * 1.18);
+	height: calc(var(--note-title-size, 40px) * 1.3);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -1589,7 +1589,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 }
 
 .note-source .note-heading.is-editing {
-	z-index: 4;
+	z-index: 6;
 	margin: var(--note-heading-edit-margin);
 	padding: var(--note-heading-edit-padding);
 	border-radius: 8px;

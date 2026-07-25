@@ -340,6 +340,10 @@
 	display: inline-flex;
 }
 
+.note-source:has(.note-heading.is-editing) .ai-empty-prompt {
+	display: none;
+}
+
 .ai-empty-prompt svg {
 	width: 15px;
 	height: 15px;
