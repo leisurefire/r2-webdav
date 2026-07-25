@@ -112,7 +112,7 @@ export function applyNoteViewPreferences(noteId: string, preferences: NoteViewPr
 	});
 }
 
-export function noteActionControlsMarkup(selected: Note, includeRefresh = false): string {
+export function noteActionControlsMarkup(selected: Note, includeRefresh = false, mobile = false): string {
 	const saveState = noteCommitStates.get(selected.id)?.status ?? 'synced';
 	const preferences = noteViewPreferences(selected.id);
 	const exportLabel = locale === 'zh' ? '导出 Markdown' : 'Export Markdown';
@@ -123,18 +123,20 @@ export function noteActionControlsMarkup(selected: Note, includeRefresh = false)
 	const serifLabel = locale === 'zh' ? '衬线' : 'Serif';
 	const sansLabel = locale === 'zh' ? '非衬线' : 'Sans serif';
 	const fullWidthLabel = locale === 'zh' ? '全宽' : 'Full width';
+	const pinLabel = selected.pinned ? t('unpin') : t('pin');
+	const lastModifiedMarkup = `<time class="note-last-modified" data-note-last-modified datetime="${html(selected.updatedAt)}">${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>`;
 	return `<div class="note-actions" data-note-toolbar-id="${html(selected.id)}">
 		<div class="note-actions-meta">
 			<span class="note-save-status" data-note-save-status data-state="${saveState}" role="status" aria-label="${noteSaveCopy(saveState)}" title="${noteSaveCopy(saveState)}"></span>
-			<time class="note-last-modified" data-note-last-modified datetime="${html(selected.updatedAt)}">${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>
+			${mobile ? '' : lastModifiedMarkup}
 		</div>
 		<div class="note-actions-tools">
-			<button type="button" class="row-action note-export-direct" data-note-export title="${exportLabel}" aria-label="${exportLabel}"><i data-lucide="file-down"></i></button>
-			<button type="button" class="row-action ${selected.pinned ? 'active' : ''}" data-note-pin title="${selected.pinned ? t('unpin') : t('pin')}" aria-label="${selected.pinned ? t('unpin') : t('pin')}" aria-pressed="${selected.pinned}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
+			${mobile ? '' : `<button type="button" class="row-action note-export-direct" data-note-export title="${exportLabel}" aria-label="${exportLabel}"><i data-lucide="file-down"></i></button>`}
+			<button type="button" class="row-action ${selected.pinned ? 'active' : ''}" data-note-pin title="${pinLabel}" aria-label="${pinLabel}" aria-pressed="${selected.pinned}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
 			<div class="action-menu note-action-more" data-action-menu>
 				<button type="button" class="row-action" data-menu-toggle title="${moreLabel}" aria-label="${moreLabel}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
 				<div class="action-menu-popover note-more-popover" data-menu-popover role="menu">
-					<div class="mobile-note-meta"><time class="note-last-modified" data-note-last-modified datetime="${html(selected.updatedAt)}">${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time></div>
+					${mobile ? `<div class="mobile-note-meta">${lastModifiedMarkup}</div>` : ''}
 					<div class="note-font-card" role="group" aria-label="${fontLabel}">
 						<button type="button" class="note-font-choice" data-note-font="sans" role="menuitemradio" aria-checked="${preferences.font === 'sans'}" title="${sansLabel}" aria-label="${sansLabel}">
 							<span class="note-font-preview note-font-preview-sans">Aa</span>
@@ -145,7 +147,8 @@ export function noteActionControlsMarkup(selected: Note, includeRefresh = false)
 							<span class="note-font-choice-label">${serifLabel}</span>
 						</button>
 					</div>
-					<button type="button" class="mobile-note-export" data-note-export role="menuitem"><i data-lucide="file-down"></i><span>${exportLabel}</span></button>
+					<button type="button" data-note-pin-menu role="menuitem"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i><span>${pinLabel}</span></button>
+					${mobile ? `<button type="button" class="mobile-note-export" data-note-export role="menuitem"><i data-lucide="file-down"></i><span>${exportLabel}</span></button>` : ''}
 					<button type="button" class="desktop-only-action" data-note-full-width role="menuitemcheckbox" aria-checked="${preferences.fullWidth}"><i data-lucide="maximize-2"></i><span>${fullWidthLabel}</span><i class="note-menu-check" data-lucide="check" aria-hidden="true"></i></button>
 					<button type="button" data-note-move role="menuitem"><i data-lucide="folder-input"></i><span>${moveLabel}</span></button>
 					<button type="button" data-note-archive role="menuitem"><i data-lucide="archive"></i><span>${selected.archived ? t('restore') : t('archive')}</span></button>
@@ -158,7 +161,7 @@ export function noteActionControlsMarkup(selected: Note, includeRefresh = false)
 }
 
 export function noteToolbarMarkup(selected: Note): string {
-	return `<div class="notes-inner-toolbar desktop-only-toolbar workspace-top-row">${notePathMarkup(selected)}${noteActionControlsMarkup(selected, false)}</div>`;
+	return `<div class="notes-inner-toolbar desktop-only-toolbar workspace-top-row">${notePathMarkup(selected)}${noteActionControlsMarkup(selected, false, false)}</div>`;
 }
 
 export function noteEditorMarkup(selected: Note, mobile = false): string {
@@ -166,7 +169,7 @@ export function noteEditorMarkup(selected: Note, mobile = false): string {
 	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'} ${preferences.fullWidth ? 'note-width-full' : ''} ${preferences.font === 'serif' ? 'note-font-serif' : ''}" data-note-editor-id="${html(selected.id)}">
 		${!mobile ? noteToolbarMarkup(selected) : ''}
 		<form data-note-form>
-			${mobile ? `<div class="note-editor-head"><button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>${notePathMarkup(selected)}${noteActionControlsMarkup(selected)}</div>` : ''}
+			${mobile ? `<div class="note-editor-head"><button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>${notePathMarkup(selected)}${noteActionControlsMarkup(selected, false, true)}</div>` : ''}
 			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-source note-source-pending" data-note-source aria-label="${t('markdown')}" aria-busy="true"><div class="note-heading"><button type="button" class="note-title-display" data-note-title-display title="${html(selected.title)}">${html(selected.title)}</button><textarea data-note-title rows="1" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}">${html(selected.title)}</textarea></div></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
 			${
 				mobile
@@ -316,12 +319,18 @@ export function syncNoteTitle(note: Note, source?: HTMLTextAreaElement): void {
 
 export function syncNotePinControls(note: Note): void {
 	document
-		.querySelectorAll<HTMLButtonElement>(`[data-note-toolbar-id="${CSS.escape(note.id)}"] [data-note-pin]`)
+		.querySelectorAll<HTMLButtonElement>(
+			`[data-note-toolbar-id="${CSS.escape(note.id)}"] [data-note-pin], [data-note-toolbar-id="${CSS.escape(note.id)}"] [data-note-pin-menu]`,
+		)
 		.forEach((button) => {
 			const label = note.pinned ? t('unpin') : t('pin');
-			button.classList.toggle('active', note.pinned);
 			button.title = label;
 			button.setAttribute('aria-label', label);
+			if (button.hasAttribute('data-note-pin-menu')) {
+				button.innerHTML = `<i data-lucide="${note.pinned ? 'pin-off' : 'pin'}"></i><span>${label}</span>`;
+				return;
+			}
+			button.classList.toggle('active', note.pinned);
 			button.setAttribute('aria-pressed', String(note.pinned));
 			button.innerHTML = `<i data-lucide="${note.pinned ? 'pin-off' : 'pin'}"></i>`;
 		});
@@ -770,7 +779,7 @@ export function bindNoteEditor(
 	root
 		.querySelector<HTMLFormElement>('[data-note-form]')
 		?.addEventListener('submit', (event) => event.preventDefault());
-	actionButtons('[data-note-pin]').forEach((button) =>
+	actionButtons('[data-note-pin], [data-note-pin-menu]').forEach((button) =>
 		button.addEventListener('click', () => {
 			optimisticallyUpdateNote(data, selected, { pinned: !selected.pinned });
 			if (notesData) replaceNotesSidebar(notesData, selected.id);
