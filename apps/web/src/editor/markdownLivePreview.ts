@@ -1,7 +1,6 @@
 import {
 	EditorSelection,
 	EditorState,
-	StateEffect,
 	StateField,
 	Transaction,
 	type Extension,
@@ -50,12 +49,11 @@ export {
 	showEditorHighlight,
 	type EditorHighlightKind,
 } from './editorHighlights';
-import {
-	renderMarkdown,
-	renderMarkdownDocument,
-	renderMarkdownInline,
-	renderResolvedMarkdownLink,
-} from './markdownRenderer';
+import { renderMarkdown, renderMarkdownInline, renderResolvedMarkdownLink } from './markdownRenderer';
+import { slugifyMarkdownHeading, type MarkdownHeading } from './markdownHeadings';
+import { collectLiveMarkdownHeadings, isMarkdownHeadingNode } from './markdownLiveHeadings';
+import { aiReviewField } from './markdownAiReview';
+export { buildAiReviewMarkDecorations, clearAiReview, showAiReview, type AiReviewSegment } from './markdownAiReview';
 
 export const markdownLanguageSupport = markdown({ extensions: GFM });
 
@@ -282,20 +280,6 @@ export function indentStructuredMarkdownLine(view: EditorView, direction: 'inden
 type LinkDefinition = { href: string; title?: string };
 type ResolvedLink = LinkDefinition & { label: string };
 
-function isMarkdownHeading(name: string): boolean {
-	return /^ATXHeading[1-6]$|^SetextHeading[12]$/.test(name);
-}
-
-function slugifyHeadingText(value: string): string {
-	return (
-		value
-			.trim()
-			.toLowerCase()
-			.replace(/[^\p{L}\p{N}]+/gu, '-')
-			.replace(/^-|-$/g, '') || 'section'
-	);
-}
-
 function normalizeReferenceLabel(value: string): string {
 	return value
 		.replace(/\\([\\[\]])/g, '$1')
@@ -328,21 +312,11 @@ function headingPositionForHash(view: EditorView, hash: string): number | null {
 	} catch {
 		return null;
 	}
-	const slug = slugifyHeadingText(id);
-	const headingIndex = renderMarkdownDocument(view.state.doc.toString()).headings.findIndex(
-		(heading) => heading.id === id || heading.id === slug || slugifyHeadingText(heading.text) === slug,
+	const slug = slugifyMarkdownHeading(id);
+	const heading = collectLiveMarkdownHeadings(view.state).find(
+		(item) => item.id === id || item.id === slug || slugifyMarkdownHeading(item.text) === slug,
 	);
-	if (headingIndex < 0) return null;
-	let index = 0;
-	let position: number | null = null;
-	syntaxTree(view.state).iterate({
-		enter(node) {
-			if (!isMarkdownHeading(node.name)) return;
-			if (index === headingIndex) position = node.from;
-			index += 1;
-		},
-	});
-	return position;
+	return heading?.from ?? null;
 }
 
 export function markdownHeadingPosition(view: EditorView, hash: string): number | null {
@@ -985,7 +959,7 @@ class WikiLinkWidget extends SourceWidget {
 			const headingTarget = this.link.target.includes('#')
 				? this.link.target.slice(this.link.target.indexOf('#') + 1)
 				: this.link.target;
-			anchor.href = `#${slugifyHeadingText(headingTarget)}`;
+			anchor.href = `#${slugifyMarkdownHeading(headingTarget)}`;
 			anchor.textContent = label;
 			anchor.addEventListener('click', (event) => {
 				if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
@@ -1149,7 +1123,7 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 		tree.iterate({
 			enter(node) {
 				if (node.name === 'ListItem') listItems.push({ from: node.from, to: node.to });
-				if (isMarkdownHeading(node.name)) headings.push({ from: node.from, to: node.to });
+				if (isMarkdownHeadingNode(node.name)) headings.push({ from: node.from, to: node.to });
 			},
 		});
 		const references = new Map<string, LinkDefinition>();
@@ -1289,7 +1263,7 @@ export function buildLivePreviewDecorations(state: EditorState): DecorationSet {
 						add(node.from, node.to, Decoration.replace({ widget: new HorizontalRuleWidget(node.from, node.to) }));
 					return;
 				}
-				if (isMarkdownHeading(node.name)) {
+				if (isMarkdownHeadingNode(node.name)) {
 					const level = node.name.at(-1);
 					add(node.from, node.to, Decoration.mark({ class: `cm-live-heading cm-live-h${level}` }));
 					if (!isActive) {
@@ -1364,7 +1338,7 @@ type MarkdownLivePreviewOptions = {
 	onChange: (value: string, immediate: boolean) => void;
 	onImageTooLarge?: () => void;
 	onImageReadError?: () => void;
-	onHeadingsChange?: (headings: ReturnType<typeof renderMarkdownDocument>['headings']) => void;
+	onHeadingsChange?: (headings: MarkdownHeading[]) => void;
 };
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -1523,7 +1497,7 @@ export function createMarkdownLivePreview(
 					options.onChange(update.state.doc.toString(), immediate);
 				}
 				if (options.onHeadingsChange && update.docChanged) {
-					options.onHeadingsChange(renderMarkdownDocument(update.state.doc.toString()).headings);
+					options.onHeadingsChange(collectLiveMarkdownHeadings(update.state));
 				}
 			}),
 		],
@@ -1533,67 +1507,7 @@ export function createMarkdownLivePreview(
 	// before the outline code references the EditorView instance.
 	queueMicrotask(() => {
 		if (!view.dom.isConnected) return;
-		options.onHeadingsChange?.(renderMarkdownDocument(view.state.doc.toString()).headings);
+		options.onHeadingsChange?.(collectLiveMarkdownHeadings(view.state));
 	});
 	return view;
-}
-
-/**
- * AI review mode: character-level deleted/inserted marks inside a unified preview.
- * Segments are stored with absolute document positions and remapped across edits.
- */
-export type AiReviewSegment = { from: number; to: number; kind: 'deleted' | 'inserted' };
-
-const aiReviewSetEffect = StateEffect.define<AiReviewSegment[] | null>();
-
-export function buildAiReviewMarkDecorations(segments: AiReviewSegment[]): DecorationSet {
-	const ranges = segments
-		.filter((segment) => segment.to > segment.from)
-		.map((segment) =>
-			Decoration.mark({
-				class: segment.kind === 'deleted' ? 'cm-ai-review-deleted' : 'cm-ai-review-inserted',
-			}).range(segment.from, segment.to),
-		);
-	return ranges.length ? Decoration.set(ranges, true) : Decoration.none;
-}
-
-const aiReviewField = StateField.define<{ segments: AiReviewSegment[] | null; decorations: DecorationSet }>({
-	create: () => ({ segments: null, decorations: Decoration.none }),
-	update(value, transaction) {
-		let segments = value.segments;
-		let rebuild = false;
-		for (const effect of transaction.effects) {
-			if (effect.is(aiReviewSetEffect)) {
-				segments = effect.value;
-				rebuild = true;
-			}
-		}
-		if (!segments || segments.length === 0) {
-			if (!rebuild && value.segments === null) return value;
-			return { segments: null, decorations: Decoration.none };
-		}
-		if (transaction.docChanged) {
-			segments = segments
-				.map((segment) => ({
-					from: transaction.changes.mapPos(segment.from, 1),
-					to: transaction.changes.mapPos(segment.to, -1),
-					kind: segment.kind,
-				}))
-				.filter((segment) => segment.to > segment.from);
-			rebuild = true;
-		}
-		if (!rebuild) return value;
-		return { segments, decorations: buildAiReviewMarkDecorations(segments) };
-	},
-	provide: (field) => EditorView.decorations.from(field, (state) => state.decorations),
-});
-
-/** Show the AI review decoration for a character-level rewrite preview. */
-export function showAiReview(view: EditorView, segments: AiReviewSegment[]): void {
-	view.dispatch({ effects: aiReviewSetEffect.of(segments) });
-}
-
-/** Clear the AI review decoration (accept, undo, or abort). */
-export function clearAiReview(view: EditorView): void {
-	view.dispatch({ effects: aiReviewSetEffect.of(null) });
 }

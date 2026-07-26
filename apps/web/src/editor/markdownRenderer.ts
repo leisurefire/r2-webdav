@@ -2,6 +2,9 @@ import DOMPurify from 'dompurify';
 import { Marked, type Token } from 'marked';
 import markedKatex from 'marked-katex-extension';
 import { parseFrontmatterBlock, type FrontmatterEntry } from './markdownStructure';
+import { createMarkdownHeading, type MarkdownHeading } from './markdownHeadings';
+
+export type { MarkdownHeading } from './markdownHeadings';
 
 type ObsidianInlineToken = Token & {
 	type: 'obsidian-highlight' | 'obsidian-comment' | 'obsidian-wikilink';
@@ -93,12 +96,6 @@ markdown.use({
 });
 
 const EXTERNAL_LINK_SCHEME = /^(?:https?:)?\/\//i;
-
-export interface MarkdownHeading {
-	id: string;
-	level: number;
-	text: string;
-}
 
 function escapeAttribute(value: string): string {
 	return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -300,18 +297,9 @@ export function renderMarkdownDocument(value: string): { html: string; headings:
 	const usedIds = new Set<string>();
 	documentNode.body.querySelectorAll<HTMLHeadingElement>('h1, h2, h3, h4, h5, h6').forEach((heading) => {
 		const level = Number(heading.tagName.slice(1));
-		const base =
-			heading.textContent
-				?.trim()
-				.toLowerCase()
-				.replace(/[^\p{L}\p{N}]+/gu, '-')
-				.replace(/^-|-$/g, '') || 'section';
-		let id = base;
-		let suffix = 2;
-		while (usedIds.has(id)) id = `${base}-${suffix++}`;
-		usedIds.add(id);
-		heading.id = id;
-		headings.push({ id, level, text: heading.textContent?.trim() ?? id });
+		const item = createMarkdownHeading(heading.textContent ?? '', level, usedIds);
+		heading.id = item.id;
+		headings.push(item);
 	});
 	return { html: documentNode.body.innerHTML, headings };
 }

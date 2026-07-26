@@ -8,7 +8,7 @@ import {
 	canSafelyRevert,
 	splitAiTitle,
 	splitRewriteSummary,
-} from './aiAssistant';
+} from './aiParsing';
 import { buildAiReviewPreview, diffText } from './textDiff';
 import { buildAiReviewMarkDecorations } from './markdownLivePreview';
 import { aiChatMode, groupAiModelsByProvider, saveAiChatMode } from '../api/client';
