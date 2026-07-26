@@ -167,6 +167,11 @@ body {
 }
 
 @media (min-width: 960px) {
+  .Layout > site-navbar[docs-mode] .site-header-inner {
+    width: 100%;
+    padding-inline: 24px;
+  }
+
   .VPContent:not(.is-home),
   .VPContent.has-sidebar {
     padding-left: var(--vp-sidebar-width) !important;
@@ -568,7 +573,6 @@ div.VPHome {
   overflow: hidden !important;
   border: 0 !important;
 }
-
 
 
 

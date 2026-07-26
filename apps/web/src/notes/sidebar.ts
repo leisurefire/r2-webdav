@@ -196,24 +196,20 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 				return `<div class="note-tree-node ${folder ? 'note-folder-card' : 'note-tree-special'} ${node.kind === 'archive' ? 'archive-tree-item' : ''} ${node.active ? 'active' : ''} ${node.expanded ? 'expanded' : ''}" data-note-folder-drop="${html(drop)}" style="--tree-depth:${depth}"${draggable}><button type="button" class="collection-tree-row" ${filter}>${icon}<span>${html(node.name)}</span></button>${actions}${node.expanded && children ? `<div class="notes-tree-children">${children}</div>` : ''}</div>`;
 			},
 		);
-	const rootStatus =
-		noteScopesLoading.has('root') || !noteScopesLoaded.has('root')
-			? `<div class="note-scope-status muted">${locale === 'zh' ? '加载中…' : 'Loading…'}</div>`
-			: '';
+	const rootLoading = noteScopesLoading.has('root') || !noteScopesLoaded.has('root');
 	const pinnedRootMarkup = pinnedRootNotes.length
 		? `<div class="notes-tree-children notes-tree-root notes-tree-root-pinned" data-note-folder-drop="root">${pinnedRootNotes.map((note) => noteCardMarkup(note, selected)).join('')}</div>`
 		: '';
-	const unpinnedRootMarkup = `<div class="notes-tree-children notes-tree-root notes-tree-root-unpinned" data-note-folder-drop="root">${unpinnedRootNotes.map((note) => noteCardMarkup(note, selected)).join('')}${rootStatus}</div>`;
+	const unpinnedRootMarkup = `<div class="notes-tree-children notes-tree-root notes-tree-root-unpinned" data-note-folder-drop="root">${unpinnedRootNotes.map((note) => noteCardMarkup(note, selected)).join('')}</div>`;
 	const folderMarkup = renderFolderish(folderTree);
 	const archiveMarkup = renderFolderish(archiveTree);
 	return workspaceSidebarMarkup({
 		label: locale === 'zh' ? '便签目录' : 'Note folders',
+		labelLeading: rootLoading ? treeLeadingMarkup('folder', false, true) : '',
 		tools: `<div class="notes-folder-tools sidebar-context-tools"><button class="row-action" data-new-note title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button><button class="row-action" data-new-note-folder title="${locale === 'zh' ? '新建目录' : 'New folder'}" aria-label="${locale === 'zh' ? '新建目录' : 'New folder'}"><i data-lucide="folder-plus"></i></button>${noteSortMenuMarkup()}<button type="button" class="row-action" data-notes-refresh title="${locale === 'zh' ? '同步便签' : 'Sync notes'}" aria-label="${locale === 'zh' ? '同步便签' : 'Sync notes'}"><i data-lucide="refresh-cw"></i></button></div>`,
 		body: `${pinnedRootMarkup}${folderMarkup}${unpinnedRootMarkup}${archiveMarkup}`,
 		treeAttributes: 'data-notes-tree',
-		footer: notesLoadingMore
-			? `<div class="notes-load-status" aria-live="polite">${loadingMarkup(true)}</div>`
-			: '',
+		footer: notesLoadingMore ? `<div class="notes-load-status" aria-live="polite">${loadingMarkup(true)}</div>` : '',
 	});
 }
 

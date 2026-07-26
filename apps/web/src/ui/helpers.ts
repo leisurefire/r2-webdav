@@ -63,6 +63,7 @@ export function renderTreeNodes<T>(
 
 export interface WorkspaceSidebarOptions {
 	label: string;
+	labelLeading?: string;
 	ariaLabel?: string;
 	tools?: string;
 	body: string;
@@ -73,7 +74,7 @@ export interface WorkspaceSidebarOptions {
 
 export function workspaceSidebarMarkup(options: WorkspaceSidebarOptions): string {
 	return `<aside class="notes-folders workspace-context-panel" aria-label="${html(options.ariaLabel ?? options.label)}">
-		<div class="notes-folders-head sidebar-context-head"><strong>${html(options.label)}</strong>${options.tools ?? ''}</div>
+		<div class="notes-folders-head sidebar-context-head"><strong class="sidebar-context-title">${options.labelLeading ?? ''}<span>${html(options.label)}</span></strong>${options.tools ?? ''}</div>
 		<div class="notes-tree ${options.treeClass ?? ''}" ${options.treeAttributes ?? ''}>${options.body}</div>
 		${options.footer ?? ''}
 	</aside>`;

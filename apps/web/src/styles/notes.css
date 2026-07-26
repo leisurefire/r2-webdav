@@ -76,6 +76,12 @@
 	font-size: 11px;
 }
 
+.sidebar-context-title {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
 .notes-tree {
 	min-height: 0;
 	flex: 1;
@@ -2345,12 +2351,6 @@ details.markdown-callout > .markdown-callout-title::marker {
 	.note-action-more .desktop-only-action {
 		display: none !important;
 	}
-}
-
-.note-scope-status {
-	padding: 0.35rem 0.75rem 0.55rem;
-	font-size: 0.8rem;
-	opacity: 0.7;
 }
 
 /* Align the notes context tree with the other workspace sidebars. */
