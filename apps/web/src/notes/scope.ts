@@ -12,7 +12,8 @@ import {
 	trackNoteNetworkOp,
 } from './commits';
 import { canMoveNoteFolder, noteFolderPath } from './folderTree';
-import { currentSelectedNoteId, replaceNotesSidebar, sortNotes } from './page';
+import { currentSelectedNoteId, replaceNotesSidebar } from './page';
+import { sortNotes } from './sorting';
 import type { NoteChanges } from './outbox';
 import {
 	archiveExpanded,
@@ -73,8 +74,7 @@ export function mergeNotesIntoPage(page: NotePage, incoming: Note[], markContent
 	for (const note of incoming) {
 		const existing = byId.get(note.id);
 		if (existing) {
-			const keepContent =
-				!markContentLoaded && noteContentLoaded.has(existing.id) ? existing.content : note.content;
+			const keepContent = !markContentLoaded && noteContentLoaded.has(existing.id) ? existing.content : note.content;
 			Object.assign(existing, note, { content: keepContent });
 			if (markContentLoaded) noteContentLoaded.add(existing.id);
 		} else {

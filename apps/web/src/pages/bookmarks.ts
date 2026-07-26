@@ -5,6 +5,7 @@ import { locale, t } from '../i18n';
 import {
 	collapseTreeBranch,
 	expandTreeBranch,
+	iconToolbarMarkup,
 	renderTreeNodes,
 	showTreePathHighlight,
 	treeLeadingMarkup,
@@ -158,7 +159,9 @@ export function paintBookmarkView(): void {
 	if (context)
 		context.innerHTML = workspaceSidebarMarkup({
 			label: locale === 'zh' ? '链接目录' : 'Link folders',
-			tools: `<div class="sidebar-context-tools"><button type="button" class="row-action" data-links-refresh title="${refreshLabel}" aria-label="${refreshLabel}"><i data-lucide="refresh-cw"></i></button></div>`,
+			tools: iconToolbarMarkup([
+				{ icon: 'refresh-cw', label: refreshLabel, attributes: { 'data-links-refresh': true } },
+			]),
 			body: `<div class="bookmark-tree-node note-tree-node note-folder-card ${folder === root ? 'active' : ''} expanded"><button class="bookmark-folder collection-tree-row bookmark-folder-root" data-bookmark-folder="" data-bookmark-has-children="${root.folders.length > 0}" style="--tree-depth:0">${treeLeadingMarkup('bookmark', true)}<span>${locale === 'zh' ? '全部链接' : 'All links'}</span></button>${folderTree || `<span class="muted bookmark-folder-empty">${locale === 'zh' ? '暂无文件夹' : 'No folders'}</span>`}</div>`,
 			treeClass: 'bookmark-folder-tree',
 		});

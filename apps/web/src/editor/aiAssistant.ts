@@ -47,6 +47,7 @@ import { markdownMarkerCoverage } from './markdownFormatting';
 import { enhanceSelect, type CustomSelectHandle } from '../ui/dropdown';
 import { openConfirmDialog, openTextInputDialog } from '../ui/dialogs';
 import { mountBottomSheet, type BottomSheetHandle } from '../ui/bottomSheet';
+import { onDisconnect } from '../ui/lifecycle';
 
 type Locale = 'en' | 'zh';
 
@@ -1062,14 +1063,11 @@ function bindNoteContextChat(
 	trigger.addEventListener('click', handleOpen);
 	root.addEventListener('r2:open-ai-chat', handleOpenRequested);
 	// Keep the AI rail open while editing; only the collapse control (or unmount) closes it.
-	const disconnectObserver = new MutationObserver(() => {
-		if (!root.isConnected) close();
-	});
-	disconnectObserver.observe(document.body, { childList: true, subtree: true });
+	const unregisterDisconnect = onDisconnect(root, close);
 	return () => {
 		trigger.removeEventListener('click', handleOpen);
 		root.removeEventListener('r2:open-ai-chat', handleOpenRequested);
-		disconnectObserver.disconnect();
+		unregisterDisconnect();
 		close();
 	};
 }
@@ -1832,9 +1830,11 @@ export function bindMarkdownAiAssistant(
 		);
 	});
 	const unbindChat = bindNoteContextChat(view, host, locale, options);
+	let unregisterDisconnect = () => {};
 	const destroy = () => {
 		if (destroyed) return;
 		destroyed = true;
+		unregisterDisconnect();
 		// Prefer the panel's own close path so a pending polish/rewrite review is discarded.
 		if (closeActivePanel) closeActivePanel();
 		else {
@@ -1853,13 +1853,9 @@ export function bindMarkdownAiAssistant(
 		emptyPrompt.remove();
 		document.querySelector('.ai-polish-menu')?.remove();
 		window.removeEventListener('scroll', removeToolbar, true);
-		disconnectObserver.disconnect();
 	};
 	// When the note editor host is torn down (sidebar repaint / note switch), drop floating AI UI.
-	const disconnectObserver = new MutationObserver(() => {
-		if (!host.isConnected) destroy();
-	});
-	disconnectObserver.observe(document.body, { childList: true, subtree: true });
+	unregisterDisconnect = onDisconnect(host, destroy);
 
 	return {
 		// Callers must use this for empty-prompt refresh — never the destroy path.

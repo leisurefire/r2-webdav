@@ -5,6 +5,29 @@ import { locale } from '../i18n';
 import { enhanceSelect } from './dropdown';
 import { openTextInputDialog } from './dialogs';
 
+export interface IconButtonOptions {
+	icon: string;
+	label: string;
+	className?: string;
+	attributes?: Record<string, string | boolean | undefined>;
+}
+
+function markupAttributes(attributes: IconButtonOptions['attributes']): string {
+	return Object.entries(attributes ?? {})
+		.filter(([name, value]) => /^[a-z][\w:-]*$/i.test(name) && value !== false && value !== undefined)
+		.map(([name, value]) => (value === true ? name : `${name}="${html(value)}"`))
+		.join(' ');
+}
+
+export function iconButtonMarkup(options: IconButtonOptions): string {
+	const attributes = markupAttributes(options.attributes);
+	return `<button type="button" class="${html(options.className ?? 'row-action')}" title="${html(options.label)}" aria-label="${html(options.label)}"${attributes ? ` ${attributes}` : ''}><i data-lucide="${html(options.icon)}"></i></button>`;
+}
+
+export function iconToolbarMarkup(buttons: IconButtonOptions[], className = 'sidebar-context-tools'): string {
+	return `<div class="${html(className)}">${buttons.map(iconButtonMarkup).join('')}</div>`;
+}
+
 export function openTextDialog(title: string, label: string, initial = ''): Promise<string | null> {
 	return openTextInputDialog(
 		title,

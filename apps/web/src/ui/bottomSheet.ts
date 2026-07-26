@@ -1,3 +1,5 @@
+import { onDisconnect } from './lifecycle';
+
 export interface BottomSheetHandle {
 	requestClose: () => void;
 	destroy: () => void;
@@ -75,9 +77,14 @@ export function mountBottomSheet(panel: HTMLElement, onClose: () => void): Botto
 	head?.addEventListener('pointercancel', onPointerCancel);
 	const onCloseRequest = () => onClose();
 	panel.addEventListener('r2:close-bottom-sheet', onCloseRequest);
-	return {
+	let unregisterDisconnect = () => {};
+	let destroyed = false;
+	const handle: BottomSheetHandle = {
 		requestClose,
 		destroy: () => {
+			if (destroyed) return;
+			destroyed = true;
+			unregisterDisconnect();
 			if (viewportFrame) cancelAnimationFrame(viewportFrame);
 			viewport?.removeEventListener('resize', syncViewport);
 			viewport?.removeEventListener('scroll', syncViewport);
@@ -96,4 +103,6 @@ export function mountBottomSheet(panel: HTMLElement, onClose: () => void): Botto
 			panel.classList.remove('bottom-sheet');
 		},
 	};
+	unregisterDisconnect = onDisconnect(panel, handle.destroy);
+	return handle;
 }

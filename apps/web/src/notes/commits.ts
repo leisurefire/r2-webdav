@@ -3,14 +3,10 @@ import { api, ApiError } from '../api/client';
 import { errorMessage, pageFromPath, toast } from '../shell';
 import { cacheNotes, persistNotePages } from './cache';
 import { noteOutbox, persistNoteOutbox, type NoteChanges, type StoredNoteMutation } from './outbox';
-import { paintNoteSaveStatus, syncNoteMetadata, syncNotePinControls } from './editorPane';
-import { currentSelectedNoteId, replaceNotesSidebar } from './page';
-import { updateNoteFolderCounts } from './scope';
 import { notesData, archivedNotesData, noteFolders } from './store';
-import { sortNotes } from './page';
+import { sortNotes } from './sorting';
+import { paintNoteSaveStatus, type NoteSaveState } from './status';
 import type { NoteSyncField, ProtectedNoteFields } from './sync';
-
-export type NoteSaveState = 'pending' | 'syncing' | 'synced' | 'failed';
 
 export interface NoteCommitState {
 	note: Note;
@@ -200,10 +196,15 @@ export async function savePendingNote(state: NoteCommitState): Promise<boolean> 
 			persistNoteOutbox(true);
 			state.status = state.pending ? 'pending' : 'synced';
 			paintNoteSaveStatus(state.note.id, state.status);
-			syncNoteMetadata(state.note);
-			if (changes.pinned !== undefined) syncNotePinControls(state.note);
-			if ((changes.folderId !== undefined || changes.archived !== undefined) && pageFromPath() === 'notes')
-				replaceNotesSidebar(notesData ?? state.data, currentSelectedNoteId());
+			if (pageFromPath() === 'notes') {
+				const { syncNoteMetadata, syncNotePinControls } = await import('./editorPane');
+				syncNoteMetadata(state.note);
+				if (changes.pinned !== undefined) syncNotePinControls(state.note);
+				if (changes.folderId !== undefined || changes.archived !== undefined) {
+					const { currentSelectedNoteId, replaceNotesSidebar } = await import('./page');
+					replaceNotesSidebar(notesData ?? state.data, currentSelectedNoteId());
+				}
+			}
 			return true;
 		} catch (error) {
 			state.pending = { ...changes, ...(state.pending ?? {}) };

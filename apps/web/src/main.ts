@@ -7,12 +7,6 @@ import './styles/ai.css';
 import './styles/responsive.css';
 import { hasSession } from './api/client';
 import { pageFromPath, registerRender } from './shell';
-import { renderCalendar } from './pages/calendar';
-import { renderFiles } from './pages/files';
-import { renderLinks } from './pages/bookmarks';
-import { renderLogin } from './pages/login';
-import { renderNotes, paintNotes } from './notes/page';
-import { openSettingsModal } from './pages/settings';
 import { flushAllNoteCommits, hasUnsyncedNoteChanges } from './notes/commits';
 import {
 	flushMobileNote,
@@ -24,10 +18,22 @@ import {
 	setMobileNoteId,
 } from './notes/store';
 
+const pageRenderers = {
+	files: async () => (await import('./pages/files')).renderFiles(),
+	calendar: async () => (await import('./pages/calendar')).renderCalendar(),
+	notes: async () => (await import('./notes/page')).renderNotes(),
+	links: async () => (await import('./pages/bookmarks')).renderLinks(),
+} satisfies Record<'files' | 'calendar' | 'notes' | 'links', () => Promise<void>>;
+
+async function openSettings(tab?: 'connection' | 'devices'): Promise<void> {
+	const { openSettingsModal } = await import('./pages/settings');
+	await openSettingsModal(tab);
+}
+
 async function render(): Promise<void> {
 	if (location.pathname === '/login' || !hasSession()) {
 		if (location.pathname !== '/login') history.replaceState({}, '', '/login');
-		renderLogin();
+		(await import('./pages/login')).renderLogin();
 		return;
 	}
 	const legacySettingsTab =
@@ -40,16 +46,13 @@ async function render(): Promise<void> {
 			!/^\/notes\/[^/]+$/.test(location.pathname))
 	)
 		history.replaceState({}, '', `/${page}`);
-	if (page === 'files') await renderFiles();
-	else if (page === 'calendar') await renderCalendar();
-	else if (page === 'notes') await renderNotes();
-	else if (page === 'links') await renderLinks();
-	else await renderLinks();
-	if (legacySettingsTab) await openSettingsModal(legacySettingsTab);
+	const renderer = pageRenderers[page as keyof typeof pageRenderers] ?? pageRenderers.links;
+	await renderer();
+	if (legacySettingsTab) await openSettings(legacySettingsTab);
 }
 
 registerRender(render);
-document.addEventListener('truespace:open-settings', () => void openSettingsModal());
+document.addEventListener('truespace:open-settings', () => void openSettings());
 
 window.addEventListener('popstate', () => {
 	const bottomSheet = document.querySelector<HTMLElement>('.bottom-sheet');
@@ -67,7 +70,10 @@ window.addEventListener('popstate', () => {
 		void (async () => {
 			await flush?.();
 			dialog?.close();
-			if (pageFromPath() === 'notes' && notesData) paintNotes(notesData, selectedId);
+			if (pageFromPath() === 'notes' && notesData) {
+				const { paintNotes } = await import('./notes/page');
+				paintNotes(notesData, selectedId);
+			}
 		})();
 		return;
 	}

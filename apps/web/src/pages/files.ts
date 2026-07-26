@@ -16,6 +16,7 @@ import { locale, t } from '../i18n';
 import {
 	collapseTreeBranch,
 	expandTreeBranch,
+	iconToolbarMarkup,
 	openTextDialog,
 	showTreePathHighlight,
 	treeLeadingMarkup,
@@ -68,6 +69,20 @@ export function breadcrumbMarkup(path: string): string {
 	return crumbs.join('');
 }
 
+function fileToolsMarkup(className?: string): string {
+	const uploadLabel = locale === 'zh' ? '上传' : 'Upload';
+	const mkdirLabel = locale === 'zh' ? '新建文件夹' : 'New folder';
+	const syncLabel = locale === 'zh' ? '同步文件' : 'Sync files';
+	return iconToolbarMarkup(
+		[
+			{ icon: 'upload', label: uploadLabel, attributes: { 'data-files-upload': true } },
+			{ icon: 'folder-plus', label: mkdirLabel, attributes: { 'data-files-mkdir': true } },
+			{ icon: 'refresh-cw', label: syncLabel, attributes: { 'data-files-refresh': true } },
+		],
+		className,
+	);
+}
+
 export function fileSidebarMarkup(listing: FileListing): string {
 	const directCurrentChild = (path: string): { path: string; name: string } | null => {
 		if (!currentPath || currentPath === path || (path && !currentPath.startsWith(`${path}/`))) return null;
@@ -89,17 +104,9 @@ export function fileSidebarMarkup(listing: FileListing): string {
 		const loading = fileTreeLoadingPaths.has(path);
 		return `<div class="file-tree-node note-tree-node note-folder-card ${path === currentPath ? 'active' : ''} ${expanded ? 'expanded' : ''}" style="--tree-depth:${depth}"><button type="button" class="collection-tree-row" data-file-tree-path="${html(path)}">${treeLeadingMarkup(path === '' ? 'database' : expanded ? 'folder-open' : 'folder', expanded, loading)}<span>${html(name)}</span></button>${expanded && children.length ? `<div class="notes-tree-children">${children.map((child) => renderFolder(child.path, child.name, depth + 1)).join('')}</div>` : ''}</div>`;
 	};
-	const uploadLabel = locale === 'zh' ? '上传' : 'Upload';
-	const mkdirLabel = locale === 'zh' ? '新建文件夹' : 'New folder';
-	const syncLabel = locale === 'zh' ? '同步文件' : 'Sync files';
-	const tools = `<div class="sidebar-context-tools">
-		<button type="button" class="row-action" data-files-upload title="${uploadLabel}" aria-label="${uploadLabel}"><i data-lucide="upload"></i></button>
-		<button type="button" class="row-action" data-files-mkdir title="${mkdirLabel}" aria-label="${mkdirLabel}"><i data-lucide="folder-plus"></i></button>
-		<button type="button" class="row-action" data-files-refresh title="${syncLabel}" aria-label="${syncLabel}"><i data-lucide="refresh-cw"></i></button>
-	</div>`;
 	return workspaceSidebarMarkup({
 		label: locale === 'zh' ? '存储库结构' : 'Storage structure',
-		tools,
+		tools: fileToolsMarkup(),
 		body: renderFolder('', locale === 'zh' ? '我的文件' : 'My files', 0),
 		treeClass: 'file-folder-tree',
 		treeAttributes: 'data-file-tree',
@@ -320,14 +327,7 @@ export function paintFiles(listing: FileListing): void {
 			</article>`,
 		)
 		.join('');
-	const uploadLabel = locale === 'zh' ? '上传' : 'Upload';
-	const mkdirLabel = locale === 'zh' ? '新建文件夹' : 'New folder';
-	const syncLabel = locale === 'zh' ? '同步文件' : 'Sync files';
-	const mobileTools = `<div class="page-context-tools mobile-only-tools">
-			<button type="button" class="row-action" data-files-upload title="${uploadLabel}" aria-label="${uploadLabel}"><i data-lucide="upload"></i></button>
-			<button type="button" class="row-action" data-files-mkdir title="${mkdirLabel}" aria-label="${mkdirLabel}"><i data-lucide="folder-plus"></i></button>
-			<button type="button" class="row-action" data-files-refresh title="${syncLabel}" aria-label="${syncLabel}"><i data-lucide="refresh-cw"></i></button>
-		</div>`;
+	const mobileTools = fileToolsMarkup('page-context-tools mobile-only-tools');
 	content.innerHTML = `<div class="file-layout"><div class="toolbar workspace-top-row"><div class="breadcrumbs">${breadcrumbMarkup(listing.path)}</div>
 			${mobileTools}
 			<input type="file" id="file-input" hidden multiple>

@@ -20,7 +20,8 @@ import {
 	noteCommitStates,
 	trackNoteNetworkOp,
 } from './commits';
-import { bindNoteEditor, noteEditorMarkup, paintNoteSaveStatus } from './editorPane';
+import { bindNoteEditor, noteEditorMarkup } from './editorPane';
+import { paintNoteSaveStatus } from './status';
 import { noteFolderPath } from './folderTree';
 import { bindNoteSidebar, bindNotesFolders, bindNotesNavigation, notesFolderSidebarMarkup } from './sidebar';
 import {
@@ -43,7 +44,6 @@ import {
 	noteFolders,
 	notesData,
 	notesLoadingMore,
-	noteSort,
 	noteSortValues,
 	noteExpandedFolders,
 	setSelectedNoteFolderId,
@@ -57,6 +57,7 @@ import {
 	setNotesLoadingMore,
 	validatedNotePages,
 } from './store';
+import { sortNotes } from './sorting';
 
 function noteIdFromPath(): string | undefined {
 	if (!location.pathname.startsWith('/notes/')) return undefined;
@@ -67,28 +68,6 @@ function noteIdFromPath(): string | undefined {
 let notesTreeScrollTop = 0;
 export function setNotesTreeScrollTop(next: number): void {
 	notesTreeScrollTop = next;
-}
-
-export function sortNotes(items: Note[]): void {
-	const collator = new Intl.Collator(locale === 'zh' ? 'zh-CN' : 'en', { numeric: true, sensitivity: 'base' });
-	items.sort((left, right) => {
-		const pinned = Number(right.pinned) - Number(left.pinned);
-		if (pinned) return pinned;
-		switch (noteSort) {
-			case 'name-asc':
-				return collator.compare(left.title, right.title);
-			case 'name-desc':
-				return collator.compare(right.title, left.title);
-			case 'modified-asc':
-				return Date.parse(left.updatedAt) - Date.parse(right.updatedAt);
-			case 'created-desc':
-				return Date.parse(right.createdAt) - Date.parse(left.createdAt);
-			case 'created-asc':
-				return Date.parse(left.createdAt) - Date.parse(right.createdAt);
-			default:
-				return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
-		}
-	});
 }
 
 export function rememberNotesTreeScroll(root: ParentNode | null | undefined = document): void {
@@ -212,13 +191,15 @@ export function paintNotes(data: NotePage, selectedId?: string, openMobile = fal
 	}
 	const selectedData = archivedSelected ? archivedNotesData! : data;
 	const folderSidebar = notesFolderSidebarMarkup(data, selected);
+	const mobileViewport = matchMedia('(max-width: 760px)').matches;
+	const showMobileEditor = Boolean(selected && openMobile && mobileViewport);
 	const context = sidebarContext();
 	if (context) context.innerHTML = folderSidebar;
 	content.innerHTML = `<div class="notes-layout">
 		<div class="notes-mobile-sidebar">${folderSidebar}</div>
 		${selected ? noteEditorMarkup(selected) : `<section class="note-editor note-editor-desktop"><div class="notes-empty large"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div></section>`}
 	</div>
-		${selected ? `<dialog class="note-dialog" id="note-dialog">${noteEditorMarkup(selected, true)}</dialog>` : ''}`;
+		${showMobileEditor ? `<dialog class="note-dialog" id="note-dialog">${noteEditorMarkup(selected!, true)}</dialog>` : ''}`;
 	refreshIcons();
 	if (context) {
 		bindNotesNavigation(context);
@@ -239,11 +220,11 @@ export function paintNotes(data: NotePage, selectedId?: string, openMobile = fal
 		.forEach((node) => node.addEventListener('click', () => void refreshNotes()));
 	if (!selected) return;
 	const desktopEditor = content.querySelector<HTMLElement>('.note-editor-desktop');
-	if (desktopEditor) bindNoteEditor(desktopEditor, selectedData, selected, false, content);
+	if (desktopEditor && !mobileViewport) bindNoteEditor(desktopEditor, selectedData, selected, false, content);
 	const dialog = content.querySelector<HTMLDialogElement>('#note-dialog');
 	if (dialog) {
 		bindNoteEditor(dialog, selectedData, selected, true);
-		if (openMobile && matchMedia('(max-width: 760px)').matches) {
+		if (showMobileEditor) {
 			history.pushState({ noteDialog: selected.id }, '', location.href);
 			setMobileNoteDialogOpen(true);
 			dialog.showModal();

@@ -1,4 +1,5 @@
 import { Check, ChevronDown, Search, createElement, type IconNode } from 'lucide';
+import { onDisconnect } from './lifecycle';
 
 export interface DropdownAction {
 	id: string;
@@ -331,18 +332,14 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 	document.addEventListener('pointerdown', onDocumentPointer, true);
 	window.addEventListener('resize', onViewportChange);
 	window.addEventListener('scroll', onViewportChange, true);
-	const observer = new MutationObserver(() => {
-		if (root.isConnected) return;
-		handle.destroy();
-	});
-	observer.observe(document.body, { childList: true, subtree: true });
+	let unregisterDisconnect = () => {};
 
 	const handle: CustomSelectHandle = {
 		refresh,
 		open: show,
 		close,
 		destroy: () => {
-			observer.disconnect();
+			unregisterDisconnect();
 			document.removeEventListener('pointerdown', onDocumentPointer, true);
 			window.removeEventListener('resize', onViewportChange);
 			window.removeEventListener('scroll', onViewportChange, true);
@@ -351,6 +348,7 @@ export function enhanceSelect(select: HTMLSelectElement, options: CustomSelectOp
 			delete (select as HTMLSelectElement & { __customSelect?: CustomSelectHandle }).__customSelect;
 		},
 	};
+	unregisterDisconnect = onDisconnect(root, handle.destroy);
 	(select as HTMLSelectElement & { __customSelect?: CustomSelectHandle }).__customSelect = handle;
 	refresh();
 	return handle;

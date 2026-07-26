@@ -14,6 +14,7 @@ import { locale, t } from '../i18n';
 import {
 	collapseTreeBranch,
 	expandTreeBranch,
+	iconButtonMarkup,
 	openFolderDialog,
 	openTextDialog,
 	renderTreeNodes,
@@ -75,8 +76,8 @@ import {
 	renderNotes,
 	replaceNotesSidebar,
 	setNotesTreeScrollTop,
-	sortNotes,
 } from './page';
+import { sortNotes } from './sorting';
 import { syncNoteMetadata, syncNotePinControls } from './editorPane';
 import type { NoteChanges } from './outbox';
 import { cacheNotes, invalidateNoteCaches } from './cache';
@@ -203,10 +204,13 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 	const unpinnedRootMarkup = `<div class="notes-tree-children notes-tree-root notes-tree-root-unpinned" data-note-folder-drop="root">${unpinnedRootNotes.map((note) => noteCardMarkup(note, selected)).join('')}</div>`;
 	const folderMarkup = renderFolderish(folderTree);
 	const archiveMarkup = renderFolderish(archiveTree);
+	const newFolderLabel = locale === 'zh' ? '新建目录' : 'New folder';
+	const refreshLabel = locale === 'zh' ? '同步便签' : 'Sync notes';
+	const tools = `<div class="notes-folder-tools sidebar-context-tools">${iconButtonMarkup({ icon: 'plus', label: t('newNote'), attributes: { 'data-new-note': true } })}${iconButtonMarkup({ icon: 'folder-plus', label: newFolderLabel, attributes: { 'data-new-note-folder': true } })}${noteSortMenuMarkup()}${iconButtonMarkup({ icon: 'refresh-cw', label: refreshLabel, attributes: { 'data-notes-refresh': true } })}</div>`;
 	return workspaceSidebarMarkup({
 		label: locale === 'zh' ? '便签目录' : 'Note folders',
 		labelLeading: rootLoading ? treeLeadingMarkup('folder', false, true) : '',
-		tools: `<div class="notes-folder-tools sidebar-context-tools"><button class="row-action" data-new-note title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button><button class="row-action" data-new-note-folder title="${locale === 'zh' ? '新建目录' : 'New folder'}" aria-label="${locale === 'zh' ? '新建目录' : 'New folder'}"><i data-lucide="folder-plus"></i></button>${noteSortMenuMarkup()}<button type="button" class="row-action" data-notes-refresh title="${locale === 'zh' ? '同步便签' : 'Sync notes'}" aria-label="${locale === 'zh' ? '同步便签' : 'Sync notes'}"><i data-lucide="refresh-cw"></i></button></div>`,
+		tools,
 		body: `${pinnedRootMarkup}${folderMarkup}${unpinnedRootMarkup}${archiveMarkup}`,
 		treeAttributes: 'data-notes-tree',
 		footer: notesLoadingMore ? `<div class="notes-load-status" aria-live="polite">${loadingMarkup(true)}</div>` : '',

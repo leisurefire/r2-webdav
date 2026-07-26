@@ -2,12 +2,14 @@ import type { Note, NotePage } from '@r2-webdav/shared-types';
 import { html, refreshIcons, toast, errorMessage } from '../shell';
 import { locale, t, type MessageKey } from '../i18n';
 import { openFolderDialog, showTreePathHighlight } from '../ui/helpers';
+import { onDisconnect } from '../ui/lifecycle';
 import { flushNoteCommit, noteCommitStates } from './commits';
 import { ensureFolderNotesLoaded, optimisticallyUpdateNote } from './scope';
 import type { NoteChanges } from './outbox';
 import { noteFolderPath } from './folderTree';
 import { currentSelectedNoteId, deleteNote, paintNotes, replaceNotesSidebar } from './page';
-import { showEditorHighlight } from '../editor/editorHighlights';
+import { mountNoteOutline, type NoteOutlineHandle } from './outline';
+import { noteSaveCopy, paintNoteSaveStatus, type NoteSaveState } from './status';
 import {
 	noteExpandedFolders,
 	noteFolders,
@@ -17,7 +19,6 @@ import {
 	setMobileNoteId,
 	setSelectedNoteFolderId,
 } from './store';
-import type { NoteSaveState } from './commits';
 
 export function notePathMarkup(note: Note): string {
 	const title = note.title.trim() || (locale === 'zh' ? '无标题便签' : 'Untitled note');
@@ -42,19 +43,20 @@ export function revealNoteFolderInTree(folderId: string | null): void {
 	}
 	const selectedId = currentSelectedNoteId();
 	if (notesData) replaceNotesSidebar(notesData, selectedId);
-	const highlightFolder = () => requestAnimationFrame(() => {
-		const tree = document.querySelector<HTMLElement>('[data-notes-tree]');
-		if (!tree) return;
-		const target = folderId
-			? tree.querySelector<HTMLElement>(`[data-note-folder-drop="${CSS.escape(folderId)}"]`)
-			: tree.querySelector<HTMLElement>(
-					'.notes-tree-root-pinned, .notes-tree-root-unpinned, [data-note-folder-drop="root"]',
-				);
-		const row = target?.matches('.collection-tree-row')
-			? target
-			: target?.querySelector<HTMLElement>(':scope > .collection-tree-row');
-		showTreePathHighlight(row);
-	});
+	const highlightFolder = () =>
+		requestAnimationFrame(() => {
+			const tree = document.querySelector<HTMLElement>('[data-notes-tree]');
+			if (!tree) return;
+			const target = folderId
+				? tree.querySelector<HTMLElement>(`[data-note-folder-drop="${CSS.escape(folderId)}"]`)
+				: tree.querySelector<HTMLElement>(
+						'.notes-tree-root-pinned, .notes-tree-root-unpinned, [data-note-folder-drop="root"]',
+					);
+			const row = target?.matches('.collection-tree-row')
+				? target
+				: target?.querySelector<HTMLElement>(':scope > .collection-tree-row');
+			showTreePathHighlight(row);
+		});
 	if (folderId) void ensureFolderNotesLoaded(folderId).then(highlightFolder);
 	else highlightFolder();
 }
@@ -187,24 +189,6 @@ export function noteEditorMarkup(selected: Note, mobile = false): string {
 		</form>
 		<button type="button" class="note-ai-chat-trigger" data-note-ai-chat title="${locale === 'zh' ? '询问 AI' : 'Ask AI'}" aria-label="${locale === 'zh' ? '询问 AI' : 'Ask AI'}"><i data-lucide="sparkles"></i></button>
 	</section>`;
-}
-
-export function noteSaveCopy(state: NoteSaveState): string {
-	if (locale === 'zh') {
-		return { pending: '待同步', syncing: '同步中', synced: '已同步', failed: '同步失败' }[state];
-	}
-	return { pending: 'Pending', syncing: 'Syncing', synced: 'Synced', failed: 'Sync failed' }[state];
-}
-
-export function paintNoteSaveStatus(noteId: string, state: NoteSaveState): void {
-	document.querySelectorAll<HTMLElement>(`[data-note-toolbar-id="${CSS.escape(noteId)}"]`).forEach((toolbar) => {
-		const status = toolbar.querySelector<HTMLElement>('[data-note-save-status]');
-		if (!status) return;
-		status.dataset.state = state;
-		status.textContent = '';
-		status.title = noteSaveCopy(state);
-		status.setAttribute('aria-label', noteSaveCopy(state));
-	});
 }
 
 function resizeNoteTitle(control: HTMLTextAreaElement): void {
@@ -453,6 +437,7 @@ export function bindNoteEditor(
 	titleResizeObserver.observe(source);
 	const compose = root.querySelector<HTMLElement>('[data-note-compose]');
 	const outline = root.querySelector<HTMLElement>('[data-note-outline]');
+	let outlineController: NoteOutlineHandle | undefined;
 	void import('../editor/markdownLivePreview')
 		.then(({ createMarkdownLivePreview, scrollToMarkdownHeading, markdownHeadingPosition }) => {
 			if (!source.isConnected) return;
@@ -464,236 +449,29 @@ export function bindNoteEditor(
 					reorderVisibleNoteCards(data);
 					if (immediate) void flushNoteCommit(selected.id);
 				},
-				onHeadingsChange: (headings) => {
-					if (!outline || !compose) return;
-					try {
-						const hasOutline = headings.length > 0;
-						compose.classList.toggle('has-outline', hasOutline);
-						outline.classList.toggle('empty', !hasOutline);
-						compose.classList.remove('outline-collapsed');
-						outline.classList.remove('collapsed', 'open');
-						if (!hasOutline) {
-							outline.replaceChildren();
-							return;
-						}
-
-						const scroller = view.scrollDOM;
-						const rail = document.createElement('div');
-						rail.className = 'note-outline-rail';
-						rail.setAttribute('role', 'navigation');
-						rail.setAttribute('aria-label', locale === 'zh' ? '章节位置' : 'Section positions');
-
-						const panel = document.createElement('div');
-						panel.className = 'note-outline-panel';
-						panel.setAttribute('role', 'menu');
-
-						const markButtons: HTMLButtonElement[] = [];
-						const itemButtons: HTMLButtonElement[] = [];
-						const anchors = headings
-							.map((heading) => {
-								const from = markdownHeadingPosition(view, heading.id);
-								return from === null ? null : { id: heading.id, from };
-							})
-							.filter((item): item is { id: string; from: number } => item !== null);
-
-						const centerInScrollable = (container: HTMLElement, target: HTMLElement | null | undefined) => {
-							if (!target || container.scrollHeight <= container.clientHeight + 1) return;
-							const containerRect = container.getBoundingClientRect();
-							const targetRect = target.getBoundingClientRect();
-							const top =
-								container.scrollTop +
-								(targetRect.top - containerRect.top) -
-								(container.clientHeight - targetRect.height) / 2;
-							container.scrollTop = Math.max(0, Math.min(top, container.scrollHeight - container.clientHeight));
-						};
-
-						let lastActiveId: string | null = null;
-						const setActive = (activeId: string | null) => {
-							for (const button of markButtons) {
-								button.classList.toggle('active', button.dataset.headingId === activeId);
-							}
-							for (const button of itemButtons) {
-								button.classList.toggle('active', button.dataset.headingId === activeId);
-							}
-							if (activeId === lastActiveId) return;
-							lastActiveId = activeId;
-							// Keep the current section visible/centered when the rail or panel overflows.
-							const activeMark = markButtons.find((button) => button.dataset.headingId === activeId);
-							const activeItem = itemButtons.find((button) => button.dataset.headingId === activeId);
-							centerInScrollable(rail, activeMark);
-							centerInScrollable(panel, activeItem);
-						};
-
-						// Clicking an outline entry pins that section as active until the user
-						// actually scrolls, so short trailing sections still highlight after a jump.
-						let pinnedId: string | null = null;
-						let settleTimer: number | null = null;
-						let programmaticTop = 0;
-						let scrollSettled = true;
-						const pinSection = (id: string) => {
-							pinnedId = id;
-							programmaticTop = scroller.scrollTop;
-							scrollSettled = false;
-							if (settleTimer !== null) window.clearTimeout(settleTimer);
-							settleTimer = window.setTimeout(() => {
-								scrollSettled = true;
-							}, 140);
-						};
-
-						const refreshActive = () => {
-							if (!anchors.length) {
-								setActive(null);
-								return;
-							}
-							if (pinnedId !== null) {
-								setActive(pinnedId);
-								return;
-							}
-							const viewportTop = scroller.scrollTop + 36;
-							let activeId = anchors[0]!.id;
-							for (const anchor of anchors) {
-								// lineBlockAt is document-relative and stays valid while off-screen.
-								const offset = view.lineBlockAt(anchor.from).top;
-								if (offset <= viewportTop) activeId = anchor.id;
-								else break;
-							}
-							setActive(activeId);
-						};
-
-						for (const heading of headings) {
-							const mark = document.createElement('button');
-							mark.type = 'button';
-							mark.className = 'note-outline-mark';
-							mark.dataset.headingId = heading.id;
-							mark.style.setProperty('--outline-level', String(heading.level));
-							mark.title = heading.text;
-							mark.setAttribute('aria-label', heading.text);
-							mark.addEventListener('click', (event) => {
-								event.stopPropagation();
-								scrollToMarkdownHeading(view, heading.id);
-								pinSection(heading.id);
-								const headingFrom = markdownHeadingPosition(view, heading.id);
-								if (headingFrom !== null) {
-									const line = view.state.doc.lineAt(headingFrom);
-									showEditorHighlight(view, line.from, line.to, 'transient');
-								}
-								mark.classList.remove('section-pulse');
-								void mark.offsetWidth;
-								mark.classList.add('section-pulse');
-								// Mobile: first tap expands the panel; second tap (or any mark) jumps.
-								if (matchMedia('(hover: none)').matches) outline.classList.add('open');
-								refreshActive();
-							});
-							markButtons.push(mark);
-							rail.append(mark);
-
-							const item = document.createElement('button');
-							item.type = 'button';
-							item.className = 'note-outline-item';
-							item.dataset.headingId = heading.id;
-							item.style.setProperty('--outline-level', String(heading.level));
-							item.setAttribute('role', 'menuitem');
-							const label = document.createElement('span');
-							label.textContent = heading.text;
-							item.append(label);
-							item.addEventListener('click', (event) => {
-								event.stopPropagation();
-								scrollToMarkdownHeading(view, heading.id);
-								pinSection(heading.id);
-								const headingFrom = markdownHeadingPosition(view, heading.id);
-								if (headingFrom !== null) {
-									const line = view.state.doc.lineAt(headingFrom);
-									showEditorHighlight(view, line.from, line.to, 'transient');
-								}
-								item.classList.remove('section-pulse');
-								void item.offsetWidth;
-								item.classList.add('section-pulse');
-								outline.classList.remove('open');
-								refreshActive();
-							});
-							itemButtons.push(item);
-							panel.append(item);
-						}
-
-						outline.replaceChildren(rail, panel);
-
-						const syncOutlineScroll = () => {
-							const activeMark = markButtons.find((button) => button.classList.contains('active'));
-							const activeItem = itemButtons.find((button) => button.classList.contains('active'));
-							centerInScrollable(rail, activeMark);
-							centerInScrollable(panel, activeItem);
-						};
-						const openPanel = () => {
-							outline.classList.add('open');
-							// Panel may have been hidden; re-center after it participates in layout.
-							requestAnimationFrame(syncOutlineScroll);
-						};
-						const closePanel = () => {
-							if (!outline.matches(':hover') && !outline.contains(document.activeElement))
-								outline.classList.remove('open');
-						};
-						outline.addEventListener('mouseenter', openPanel);
-						outline.addEventListener('mouseleave', () => {
-							if (!matchMedia('(hover: none)').matches) outline.classList.remove('open');
-						});
-						rail.addEventListener('focusin', openPanel);
-						panel.addEventListener('focusout', () => closePanel());
-						// Touch: tapping the rail area toggles the floating list.
-						rail.addEventListener('click', (event) => {
-							if (!(event.target instanceof Element)) return;
-							if (event.target.closest('.note-outline-mark')) return;
-							if (matchMedia('(hover: none)').matches) outline.classList.toggle('open');
-						});
-
-						const previous = outline as HTMLElement & {
-							_outlineCleanup?: () => void;
-						};
-						previous._outlineCleanup?.();
-						const onScroll = () => {
-							if (pinnedId !== null && scroller.scrollTop !== programmaticTop) {
-								if (scrollSettled) {
-									// The jump finished and the user moved the page: release the pin.
-									pinnedId = null;
-								} else {
-									programmaticTop = scroller.scrollTop;
-									if (settleTimer !== null) window.clearTimeout(settleTimer);
-									settleTimer = window.setTimeout(() => {
-										scrollSettled = true;
-									}, 140);
-								}
-							}
-							refreshActive();
-						};
-						// Wheel or touch input counts as an intentional scroll even when the page
-						// cannot move further, so drop the pin immediately.
-						const onUserScrollInput = () => {
-							if (pinnedId === null) return;
-							pinnedId = null;
-							refreshActive();
-						};
-						const onOutside = (event: Event) => {
-							if (!(event.target instanceof Node) || outline.contains(event.target)) return;
-							outline.classList.remove('open');
-						};
-						scroller.addEventListener('scroll', onScroll, { passive: true });
-						scroller.addEventListener('wheel', onUserScrollInput, { passive: true });
-						scroller.addEventListener('touchmove', onUserScrollInput, { passive: true });
-						document.addEventListener('pointerdown', onOutside);
-						previous._outlineCleanup = () => {
-							scroller.removeEventListener('scroll', onScroll);
-							scroller.removeEventListener('wheel', onUserScrollInput);
-							scroller.removeEventListener('touchmove', onUserScrollInput);
-							document.removeEventListener('pointerdown', onOutside);
-							if (settleTimer !== null) window.clearTimeout(settleTimer);
-						};
-						refreshActive();
-					} catch (error) {
-						console.error('Note outline failed', error);
-					}
-				},
+				onHeadingsChange: (headings) => outlineController?.update(headings),
 				onImageTooLarge: () =>
 					toast(locale === 'zh' ? '图片超过 256 KB，暂不允许粘贴' : 'Images over 256 KB cannot be pasted yet'),
 				onImageReadError: () => toast(locale === 'zh' ? '无法读取粘贴的图片' : 'Could not read the pasted image'),
+			});
+			if (outline && compose) {
+				outlineController = mountNoteOutline({
+					outline,
+					compose,
+					view,
+					locale,
+					headingPosition: (id) => markdownHeadingPosition(view, id),
+					scrollToHeading: (id) => {
+						void scrollToMarkdownHeading(view, id);
+					},
+				});
+			}
+			let destroyAi: (() => void) | undefined;
+			onDisconnect(source, () => {
+				destroyAi?.();
+				outlineController?.destroy();
+				titleResizeObserver.disconnect();
+				view.destroy();
 			});
 			if (heading) view.scrollDOM.insertBefore(heading, view.contentDOM);
 			view.requestMeasure();
@@ -721,6 +499,7 @@ export function bindNoteEditor(
 						reorderVisibleNoteCards(data);
 					},
 				});
+				destroyAi = ai.destroy;
 				// onChange must call syncEmptyPrompt only — never destroy (that closed the review UI after DIFF).
 				syncAiEmptyPrompt = ai.syncEmptyPrompt;
 			});
