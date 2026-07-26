@@ -1,6 +1,12 @@
 import type { EditorState } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
-import { createMarkdownHeading, markdownHeadingText, type MarkdownHeading } from './markdownHeadings';
+import { EditorView } from '@codemirror/view';
+import {
+	createMarkdownHeading,
+	markdownHeadingText,
+	slugifyMarkdownHeading,
+	type MarkdownHeading,
+} from './markdownHeadings';
 
 export type PositionedMarkdownHeading = MarkdownHeading & { from: number };
 
@@ -25,4 +31,34 @@ export function collectLiveMarkdownHeadings(state: EditorState): PositionedMarkd
 		},
 	});
 	return headings;
+}
+
+export function markdownHeadingPosition(view: EditorView, hash: string): number | null {
+	let id: string;
+	try {
+		id = decodeURIComponent(hash.startsWith('#') ? hash.slice(1) : hash);
+	} catch {
+		return null;
+	}
+	const slug = slugifyMarkdownHeading(id);
+	const heading = collectLiveMarkdownHeadings(view.state).find(
+		(item) => item.id === id || item.id === slug || slugifyMarkdownHeading(item.text) === slug,
+	);
+	return heading?.from ?? null;
+}
+
+export function scrollToMarkdownHeading(view: EditorView, hash: string): boolean {
+	const position = markdownHeadingPosition(view, hash);
+	if (position === null) return false;
+	view.dispatch({ selection: { anchor: position } });
+	view.focus();
+	requestAnimationFrame(() => {
+		const coords = view.coordsAtPos(position);
+		if (!coords) return;
+		const scroller = view.scrollDOM;
+		const scrollerRect = scroller.getBoundingClientRect();
+		const top = scroller.scrollTop + coords.top - scrollerRect.top - 18;
+		scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+	});
+	return true;
 }
