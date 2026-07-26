@@ -1,5 +1,5 @@
 import type { NoteChatChange } from '../api/client';
-import type { AiReviewSegment } from './markdownLivePreview';
+import type { AiReviewSegment } from './markdownAiReview';
 
 export function normalizeAiMarkdown(value: string): string {
 	const trimmed = value.trim();

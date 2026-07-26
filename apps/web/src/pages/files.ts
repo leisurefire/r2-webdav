@@ -27,6 +27,7 @@ import { renderMarkdown } from '../editor/markdownRenderer';
 export let currentPath = '';
 const fileCache = new Map<string, FileListing>();
 const validatedFilePaths = new Set<string>();
+const MAX_FILE_CACHE_ENTRIES = 100;
 const fileExpandedPaths = new Set<string>(['']);
 const fileTreeLoadingPaths = new Set<string>();
 let directoryLoadCleanup: (() => void) | null = null;
@@ -160,11 +161,26 @@ export function fileCacheKey(path: string): string {
 	return `r2_files_${encodeURIComponent(path || 'root')}`;
 }
 
+function rememberFileListing(listing: FileListing): void {
+	fileCache.delete(listing.path);
+	fileCache.set(listing.path, listing);
+	while (fileCache.size > MAX_FILE_CACHE_ENTRIES) {
+		const oldestPath = fileCache.keys().next().value as string | undefined;
+		if (oldestPath === undefined) break;
+		fileCache.delete(oldestPath);
+		validatedFilePaths.delete(oldestPath);
+	}
+}
+
 export function cachedFiles(path: string): FileListing | null {
-	if (fileCache.has(path)) return fileCache.get(path)!;
+	const cached = fileCache.get(path);
+	if (cached) {
+		rememberFileListing(cached);
+		return cached;
+	}
 	try {
 		const listing = JSON.parse(localStorage.getItem(fileCacheKey(path)) ?? 'null') as FileListing | null;
-		if (listing?.path === path && Array.isArray(listing.entries)) fileCache.set(path, listing);
+		if (listing?.path === path && Array.isArray(listing.entries)) rememberFileListing(listing);
 		return listing?.path === path ? listing : null;
 	} catch {
 		return null;
@@ -172,7 +188,7 @@ export function cachedFiles(path: string): FileListing | null {
 }
 
 export function cacheFiles(listing: FileListing): void {
-	fileCache.set(listing.path, listing);
+	rememberFileListing(listing);
 	localStorage.setItem(fileCacheKey(listing.path), JSON.stringify(listing));
 }
 
@@ -522,6 +538,7 @@ export async function renderFiles(forceSync = false): Promise<void> {
 		finishDirectoryLoading();
 		paintFiles(listing);
 	} catch (error) {
+		validatedFilePaths.delete(requestedPath);
 		finishDirectoryLoading();
 		if (!cached) content.innerHTML = `<div class="error-banner">${html(errorMessage(error))}</div>`;
 		else {

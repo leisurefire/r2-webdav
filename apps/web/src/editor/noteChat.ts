@@ -25,7 +25,7 @@ import {
 } from './aiParsing';
 import { paintAiIcons as paintIcons, populateModelSelect, providerLogoElement } from './aiUi';
 import { markNewContent, showEditorHighlight } from './editorHighlights';
-import { clearAiReview, showAiReview, type AiReviewSegment } from './markdownLivePreview';
+import { clearAiReview, showAiReview, type AiReviewSegment } from './markdownAiReview';
 import { renderMarkdown } from './markdownRenderer';
 import { buildAiReviewPreview } from './textDiff';
 

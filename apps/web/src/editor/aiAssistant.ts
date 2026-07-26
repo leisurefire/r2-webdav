@@ -7,7 +7,8 @@ import {
 	type NoteChatChange,
 	type NoteChatSession,
 } from '../api/client';
-import { clearAiReview, showAiReview, toggleMarkdownWrap } from './markdownLivePreview';
+import { clearAiReview, showAiReview } from './markdownAiReview';
+import { toggleMarkdownWrap } from './markdownEditing';
 import { clearSelectionHold, holdSelectionHighlight, markNewContent } from './editorHighlights';
 import { buildAiReviewPreview } from './textDiff';
 import { renderMarkdown } from './markdownRenderer';
@@ -109,6 +110,9 @@ export function bindMarkdownAiAssistant(
 	let panel: HTMLElement | null = null;
 	let toolbar: HTMLElement | null = null;
 	let trackedSelection: (AiRange & { text: string }) | null = null;
+	let polishMenuBindings: AbortController | null = null;
+	let toolbarFrame = 0;
+	let blurTimer = 0;
 
 	let syncEmptyPrompt = () => {};
 	/** Close the open AI action panel (discards pending review). Null when none is open. */
@@ -119,7 +123,13 @@ export function bindMarkdownAiAssistant(
 		panel = null;
 		syncEmptyPrompt();
 	};
+	const removePolishMenu = () => {
+		polishMenuBindings?.abort();
+		polishMenuBindings = null;
+		document.querySelector('.ai-polish-menu')?.remove();
+	};
 	const removeToolbar = () => {
+		removePolishMenu();
 		toolbar?.remove();
 		toolbar = null;
 	};
@@ -717,8 +727,6 @@ export function bindMarkdownAiAssistant(
 				view.focus();
 			});
 		});
-		const removePolishMenu = () => document.querySelector('.ai-polish-menu')?.remove();
-
 		toolbar.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((button) =>
 			button.addEventListener('mousedown', (event) => {
 				event.preventDefault();
@@ -741,6 +749,8 @@ export function bindMarkdownAiAssistant(
 					if (expanded) return;
 					button.setAttribute('aria-expanded', 'true');
 					const menu = document.createElement('div');
+					polishMenuBindings = new AbortController();
+					const menuSignal = polishMenuBindings.signal;
 					menu.className = 'ai-polish-menu';
 					menu.setAttribute('role', 'menu');
 					const rect = button.getBoundingClientRect();
@@ -769,7 +779,7 @@ export function bindMarkdownAiAssistant(
 						button.setAttribute('aria-expanded', 'false');
 						document.removeEventListener('mousedown', onDocDown, true);
 					};
-					document.addEventListener('mousedown', onDocDown, true);
+					document.addEventListener('mousedown', onDocDown, { capture: true, signal: menuSignal });
 					return;
 				}
 				if (action === 'rewrite') {
@@ -780,7 +790,13 @@ export function bindMarkdownAiAssistant(
 		);
 	};
 
-	const scheduleToolbar = () => requestAnimationFrame(showToolbar);
+	const scheduleToolbar = () => {
+		if (toolbarFrame) cancelAnimationFrame(toolbarFrame);
+		toolbarFrame = requestAnimationFrame(() => {
+			toolbarFrame = 0;
+			showToolbar();
+		});
+	};
 	view.dom.addEventListener('mouseup', scheduleToolbar);
 	view.dom.addEventListener('touchend', scheduleToolbar, { passive: true });
 	view.dom.addEventListener('keyup', scheduleToolbar);
@@ -794,12 +810,15 @@ export function bindMarkdownAiAssistant(
 		else scheduleToolbar();
 	};
 	selectionPoll.addEventListener('selectionchange', onSelectionChange);
-	view.dom.addEventListener('blur', () =>
-		window.setTimeout(() => {
+	const onEditorBlur = () => {
+		window.clearTimeout(blurTimer);
+		blurTimer = window.setTimeout(() => {
+			blurTimer = 0;
 			if (panel) return removeToolbar();
 			if (!view.hasFocus && !toolbar?.matches(':hover') && !toolbar?.contains(document.activeElement)) removeToolbar();
-		}, 120),
-	);
+		}, 120);
+	};
+	view.dom.addEventListener('blur', onEditorBlur);
 	window.addEventListener('scroll', removeToolbar, { capture: true, passive: true });
 
 	// Empty-document prompt: placeholder text plus a space shortcut that opens the AI panel.
@@ -897,9 +916,13 @@ export function bindMarkdownAiAssistant(
 		view.dom.removeEventListener('touchend', scheduleToolbar);
 		view.dom.removeEventListener('keyup', scheduleToolbar);
 		view.dom.removeEventListener('input', syncEmptyPrompt);
+		view.dom.removeEventListener('blur', onEditorBlur);
+		if (toolbarFrame) cancelAnimationFrame(toolbarFrame);
+		window.clearTimeout(blurTimer);
+		toolbarFrame = 0;
+		blurTimer = 0;
 		removeToolbar();
 		emptyPrompt.remove();
-		document.querySelector('.ai-polish-menu')?.remove();
 		window.removeEventListener('scroll', removeToolbar, true);
 	};
 	// When the note editor host is torn down (sidebar repaint / note switch), drop floating AI UI.
