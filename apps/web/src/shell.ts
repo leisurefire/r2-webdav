@@ -58,23 +58,13 @@ import {
 import { openConfirmDialog } from './ui/dialogs';
 import { api, ApiError } from './api/client';
 import { locale, t } from './i18n';
+import { html } from './ui/markup';
 
-export type Page = 'files' | 'calendar' | 'notes' | 'links' | 'devices' | 'settings';
+export { html } from './ui/markup';
+
+export type Page = 'files' | 'calendar' | 'notes' | 'links';
 export const app = document.querySelector<HTMLDivElement>('#app')!;
 export let sidebarCollapsed = localStorage.getItem('r2_sidebar_collapsed') === '1';
-
-export const html = (value: unknown): string =>
-	String(value ?? '').replace(
-		/[&<>"']/g,
-		(char) =>
-			({
-				'&': '&amp;',
-				'<': '&lt;',
-				'>': '&gt;',
-				'"': '&quot;',
-				"'": '&#039;',
-			})[char]!,
-	);
 
 export function refreshIcons(): void {
 	createIcons({
@@ -142,6 +132,8 @@ export function toast(message: string): void {
 	const node = document.createElement('div');
 	node.className = 'toast';
 	node.textContent = message;
+	node.setAttribute('role', 'status');
+	node.setAttribute('aria-live', 'polite');
 	document.body.append(node);
 	window.setTimeout(() => node.remove(), 3200);
 }
@@ -169,7 +161,7 @@ export function loadingMarkup(compact = false): string {
 
 export function pageFromPath(): Page {
 	const page = location.pathname.replace(/^\//, '').split('/')[0] as Page;
-	return ['files', 'calendar', 'notes', 'links', 'devices', 'settings'].includes(page) ? page : 'files';
+	return ['files', 'calendar', 'notes', 'links'].includes(page) ? page : 'files';
 }
 
 export function navigate(path: string): void {
@@ -177,7 +169,7 @@ export function navigate(path: string): void {
 	void render();
 }
 
-export function shell(page: Page, _title: string, content = loadingMarkup()): void {
+export function shell(page: Page, content = loadingMarkup()): void {
 	app.innerHTML = `<div class="app-shell page-entering ${sidebarCollapsed ? 'sidebar-collapsed' : ''}" data-page="${page}">
 		<aside class="sidebar workspace-rail workspace-rail-left">
 			<div class="sidebar-head">
@@ -213,22 +205,26 @@ export function shell(page: Page, _title: string, content = loadingMarkup()): vo
 		location.assign('/about/');
 	});
 	const accountPopover = document.querySelector<HTMLElement>('#account-popover');
-	const accountToggles = [...document.querySelectorAll<HTMLButtonElement>('#brand-menu-toggle, #mobile-account-toggle')];
+	const accountToggles = [
+		...document.querySelectorAll<HTMLButtonElement>('#brand-menu-toggle, #mobile-account-toggle'),
+	];
 	const accountWrap = document.querySelector<HTMLElement>('.brand-menu-wrap');
 	const closeAccountMenu = () => {
 		if (accountPopover) accountPopover.hidden = true;
 		accountToggles.forEach((toggle) => toggle.setAttribute('aria-expanded', 'false'));
 		accountWrap?.classList.remove('open');
 	};
-	accountToggles.forEach((accountToggle) => accountToggle.addEventListener('click', (event) => {
-		if (accountToggle.id === 'brand-menu-toggle' && matchMedia('(max-width: 760px)').matches) return;
-		event.stopPropagation();
-		const opening = accountPopover?.hidden ?? false;
-		if (accountPopover) accountPopover.hidden = !opening;
-		accountToggles.forEach((toggle) => toggle.setAttribute('aria-expanded', String(opening)));
-		accountWrap?.classList.toggle('open', opening);
-		if (opening) window.setTimeout(() => document.addEventListener('click', closeAccountMenu, { once: true }), 0);
-	}));
+	accountToggles.forEach((accountToggle) =>
+		accountToggle.addEventListener('click', (event) => {
+			if (accountToggle.id === 'brand-menu-toggle' && matchMedia('(max-width: 760px)').matches) return;
+			event.stopPropagation();
+			const opening = accountPopover?.hidden ?? false;
+			if (accountPopover) accountPopover.hidden = !opening;
+			accountToggles.forEach((toggle) => toggle.setAttribute('aria-expanded', String(opening)));
+			accountWrap?.classList.toggle('open', opening);
+			if (opening) window.setTimeout(() => document.addEventListener('click', closeAccountMenu, { once: true }), 0);
+		}),
+	);
 	document.querySelector('#account-logout')?.addEventListener('click', () => void confirmLogout());
 	document.querySelector('#sidebar-toggle')?.addEventListener('click', () => {
 		sidebarCollapsed = !sidebarCollapsed;
@@ -278,8 +274,7 @@ document.addEventListener('click', (event) => {
 		toggle.setAttribute('aria-expanded', String(opening));
 		return;
 	}
-	if (target?.closest('[data-menu-popover]')) closeActionMenus();
-	else closeActionMenus();
+	closeActionMenus();
 });
 
 document.addEventListener('keydown', (event) => {

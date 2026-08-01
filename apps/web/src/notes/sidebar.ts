@@ -12,9 +12,11 @@ import {
 } from '../shell';
 import { locale, t } from '../i18n';
 import {
+	actionMenuMarkup,
 	collapseTreeBranch,
 	expandTreeBranch,
 	iconButtonMarkup,
+	menuItemMarkup,
 	openFolderDialog,
 	openTextDialog,
 	renderTreeNodes,
@@ -101,22 +103,55 @@ export function noteSortMenuMarkup(): string {
 					'created-desc': 'Created: newest',
 					'created-asc': 'Created: oldest',
 				};
-	return `<div class="action-menu note-sort-menu" data-action-menu><button class="row-action" data-menu-toggle title="${locale === 'zh' ? '排序方式' : 'Sort notes'}" aria-label="${locale === 'zh' ? '排序方式' : 'Sort notes'}" aria-expanded="false"><i data-lucide="sort-asc"></i></button><div class="action-menu-popover" data-menu-popover role="menu">${noteSortValues.map((value) => `<button class="${noteSort === value ? 'selected' : ''}" data-note-sort-value="${value}" role="menuitemradio" aria-checked="${noteSort === value}"><span>${labels[value]}</span>${noteSort === value ? '<i data-lucide="check"></i>' : ''}</button>`).join('')}</div></div>`;
+	return actionMenuMarkup({
+		label: locale === 'zh' ? '排序方式' : 'Sort notes',
+		icon: 'sort-asc',
+		className: 'note-sort-menu',
+		items: noteSortValues
+			.map((value) =>
+				menuItemMarkup({
+					label: labels[value],
+					className: noteSort === value ? 'selected' : undefined,
+					trailingIcon: noteSort === value ? 'check' : undefined,
+					attributes: {
+						'data-note-sort-value': value,
+						role: 'menuitemradio',
+						'aria-checked': noteSort === value,
+					},
+				}),
+			)
+			.join(''),
+	});
 }
 
 export function noteCardMarkup(note: Note, selected?: Note): string {
+	const items = [
+		menuItemMarkup({
+			icon: 'folder-input',
+			label: locale === 'zh' ? '移动到目录' : 'Move to folder',
+			attributes: { 'data-note-card-move': note.id },
+		}),
+		menuItemMarkup({
+			icon: note.pinned ? 'pin-off' : 'pin',
+			label: note.pinned ? t('unpin') : t('pin'),
+			attributes: { 'data-note-card-pin': note.id },
+		}),
+		menuItemMarkup({
+			icon: 'archive',
+			label: note.archived ? t('restore') : t('archive'),
+			attributes: { 'data-note-card-archive': note.id },
+		}),
+		menuItemMarkup({
+			icon: 'trash-2',
+			label: t('delete'),
+			className: 'danger',
+			attributes: { 'data-note-card-delete': note.id },
+		}),
+	].join('');
 	return `<article class="note-card ${note.id === selected?.id ? 'active' : ''}" draggable="true" data-note-card-id="${html(note.id)}"><button class="note-card-open" data-note="${html(note.id)}">
 		<div class="note-card-title"><span class="note-card-leading" aria-hidden="true"><i data-lucide="${note.pinned ? 'pin' : 'file'}"></i></span><span class="note-card-label">${html(note.title)}</span></div>
 	</button>
-	<div class="note-card-actions action-menu" data-action-menu>
-			<button class="row-action" data-menu-toggle title="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-label="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
-			<div class="action-menu-popover" data-menu-popover role="menu">
-				<button data-note-card-move="${html(note.id)}" role="menuitem"><i data-lucide="folder-input"></i><span>${locale === 'zh' ? '移动到目录' : 'Move to folder'}</span></button>
-				<button data-note-card-pin="${html(note.id)}" role="menuitem"><i data-lucide="${note.pinned ? 'pin-off' : 'pin'}"></i><span>${note.pinned ? t('unpin') : t('pin')}</span></button>
-				<button data-note-card-archive="${html(note.id)}" role="menuitem"><i data-lucide="archive"></i><span>${note.archived ? t('restore') : t('archive')}</span></button>
-				<button class="danger" data-note-card-delete="${html(note.id)}" role="menuitem"><i data-lucide="trash-2"></i><span>${t('delete')}</span></button>
-			</div>
-		</div>
+	${actionMenuMarkup({ label: locale === 'zh' ? '更多操作' : 'More actions', items, className: 'note-card-actions' })}
 	</article>`;
 }
 
@@ -189,7 +224,33 @@ export function notesFolderSidebarMarkup(data: NotePage, selected?: Note): strin
 					? treeLeadingMarkup(node.expanded ? 'folder-open' : 'folder', node.expanded, node.loading)
 					: caret(node.expanded);
 				const actions = folder
-					? `<div class="note-folder-actions action-menu" data-action-menu><button class="row-action" data-new-note="${html(node.key)}" title="${t('newNote')}" aria-label="${t('newNote')}"><i data-lucide="plus"></i></button><button class="row-action" data-menu-toggle title="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-label="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button><div class="action-menu-popover" data-menu-popover role="menu"><button data-move-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="folder-input"></i><span>${locale === 'zh' ? '移动目录' : 'Move folder'}</span></button><button data-rename-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="pencil"></i><span>${locale === 'zh' ? '重命名' : 'Rename'}</span></button><button class="danger" data-delete-note-folder="${html(node.key)}" role="menuitem"><i data-lucide="folder-minus"></i><span>${locale === 'zh' ? '解散' : 'Dissolve'}</span></button></div></div>`
+					? actionMenuMarkup({
+							label: locale === 'zh' ? '更多操作' : 'More actions',
+							className: 'note-folder-actions',
+							leading: iconButtonMarkup({
+								icon: 'plus',
+								label: t('newNote'),
+								attributes: { 'data-new-note': node.key },
+							}),
+							items: [
+								menuItemMarkup({
+									icon: 'folder-input',
+									label: locale === 'zh' ? '移动目录' : 'Move folder',
+									attributes: { 'data-move-note-folder': node.key },
+								}),
+								menuItemMarkup({
+									icon: 'pencil',
+									label: locale === 'zh' ? '重命名' : 'Rename',
+									attributes: { 'data-rename-note-folder': node.key },
+								}),
+								menuItemMarkup({
+									icon: 'folder-minus',
+									label: locale === 'zh' ? '解散' : 'Dissolve',
+									className: 'danger',
+									attributes: { 'data-delete-note-folder': node.key },
+								}),
+							].join(''),
+						})
 					: '';
 				const filter = node.kind === 'archive' ? 'data-note-archived' : `data-note-folder-filter="${html(node.key)}"`;
 				const drop = node.kind === 'archive' ? 'archive' : node.key;

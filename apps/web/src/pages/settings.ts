@@ -11,8 +11,9 @@ import {
 } from '../api/client';
 import { confirmAction, errorMessage, html, loadingMarkup, navigate, refreshIcons, render, toast } from '../shell';
 import { locale, setLocale, t, type Locale, type MessageKey } from '../i18n';
-import { createModalDialog } from '../ui/dialogs';
+import { createModalDialog, showModalDialog } from '../ui/dialogs';
 import { enhanceSelect, type CustomSelectHandle } from '../ui/dropdown';
+import { emptyStateMarkup, errorBannerMarkup, iconButtonMarkup } from '../ui/markup';
 
 type SettingsTab = 'connection' | 'language' | 'ai' | 'devices';
 
@@ -57,20 +58,22 @@ function deviceMarkup(device: DeviceSession): string {
 }
 
 export async function openSettingsModal(initialTab: SettingsTab = 'connection'): Promise<void> {
-	document.querySelector<HTMLDialogElement>('#settings-dialog')?.remove();
+	const currentDialog = document.querySelector<HTMLDialogElement>('#settings-dialog');
+	if (currentDialog?.open) currentDialog.close();
+	else currentDialog?.remove();
 	const davOrigin = API_BASE || location.origin;
 	let models = availableAiModels();
 	const dialog = createModalDialog('large', 'settings-dialog');
 	dialog.id = 'settings-dialog';
 	dialog.setAttribute('aria-labelledby', `settings-modal-title-${initialTab}`);
 	dialog.innerHTML = `<div class="settings-modal-shell">
-		<button type="button" class="row-action settings-modal-close" data-settings-close aria-label="${label('关闭', 'Close')}" title="${label('关闭', 'Close')}"><i data-lucide="x"></i></button>
+		${iconButtonMarkup({ icon: 'x', label: label('关闭', 'Close'), className: 'row-action settings-modal-close', attributes: { 'data-settings-close': true } })}
 		<div class="settings-modal-body">
 			<aside class="settings-sidebar"><div class="settings-sidebar-head"><strong>TrueSpace</strong><span>${t('settings')}</span></div><nav class="settings-tabs" aria-label="${t('settings')}">${tabs.map((tab) => `<button type="button" data-settings-tab="${tab.id}" class="${tab.id === initialTab ? 'active' : ''}"><i data-lucide="${tab.icon}"></i><span>${label(tab.zh, tab.en)}</span></button>`).join('')}</nav></aside>
 			<div class="settings-panels">
 		<section data-settings-panel="connection"><header class="settings-modal-head"><h2 id="settings-modal-title-connection">${t('settingsConnection')}</h2><p>${label('用于第三方客户端连接 TrueSpace。', 'Use these endpoints to connect third-party clients.')}</p></header>
-					<div class="field"><label>${t('webdavUrl')}</label><div class="input-row"><input class="input" readonly value="${html(davOrigin)}/"><button class="button icon-button" data-copy="${html(davOrigin)}/" title="${t('copy')} ${t('webdavUrl')}" aria-label="${t('copy')} ${t('webdavUrl')}"><i data-lucide="copy"></i></button></div></div>
-					<div class="field"><label>${t('caldavUrl')}</label><div class="input-row"><input class="input" readonly value="${html(davOrigin)}/caldav/"><button class="button icon-button" data-copy="${html(davOrigin)}/caldav/" title="${t('copy')} ${t('caldavUrl')}" aria-label="${t('copy')} ${t('caldavUrl')}"><i data-lucide="copy"></i></button></div></div>
+					<div class="field"><label>${t('webdavUrl')}</label><div class="input-row"><input class="input" readonly value="${html(davOrigin)}/">${iconButtonMarkup({ icon: 'copy', label: `${t('copy')} ${t('webdavUrl')}`, className: 'button icon-button', attributes: { 'data-copy': `${davOrigin}/` } })}</div></div>
+					<div class="field"><label>${t('caldavUrl')}</label><div class="input-row"><input class="input" readonly value="${html(davOrigin)}/caldav/">${iconButtonMarkup({ icon: 'copy', label: `${t('copy')} ${t('caldavUrl')}`, className: 'button icon-button', attributes: { 'data-copy': `${davOrigin}/caldav/` } })}</div></div>
 				</section>
 				<section data-settings-panel="language" hidden><header class="settings-modal-head"><h2 id="settings-modal-title-language">${t('settingsLanguage')}</h2><p>${t('settingsLanguageHint')}</p></header><div class="field"><label for="language-select">${t('settingsLanguage')}</label><select class="input" id="language-select"><option value="en" ${locale === 'en' ? 'selected' : ''}>${t('english')}</option><option value="zh" ${locale === 'zh' ? 'selected' : ''}>${t('chinese')}</option></select></div></section>
 				<section data-settings-panel="ai" hidden><header class="settings-modal-head"><h2 id="settings-modal-title-ai">${t('settingsAi')}</h2><p>${label('可以从远端拉取模型，也可以直接输入任意模型 ID。', 'Pull models from the provider or enter any model ID manually.')}</p></header>
@@ -81,8 +84,7 @@ export async function openSettingsModal(initialTab: SettingsTab = 'connection'):
 			</div>
 		</div>
 	</div>`;
-	document.body.append(dialog);
-	dialog.showModal();
+	showModalDialog(dialog, { dismissOnBackdrop: true });
 	refreshIcons();
 	let activeTab = initialTab;
 	let devicesLoaded = false;
@@ -96,7 +98,8 @@ export async function openSettingsModal(initialTab: SettingsTab = 'connection'):
 			const devices = await api.devices();
 			devicesLoaded = true;
 			host.innerHTML =
-				devices.map(deviceMarkup).join('') || `<p class="muted">${label('没有已登录设备', 'No signed-in devices')}</p>`;
+				devices.map(deviceMarkup).join('') ||
+				emptyStateMarkup(label('没有已登录设备', 'No signed-in devices'), { compact: true });
 			refreshIcons();
 			host.querySelectorAll<HTMLButtonElement>('[data-revoke]').forEach((button) => {
 				button.addEventListener('click', async () => {
@@ -115,7 +118,7 @@ export async function openSettingsModal(initialTab: SettingsTab = 'connection'):
 				});
 			});
 		} catch (error) {
-			host.innerHTML = `<div class="error-banner">${html(errorMessage(error))}</div>`;
+			host.innerHTML = errorBannerMarkup(errorMessage(error));
 		}
 	};
 	const activate = (tab: SettingsTab) => {
@@ -133,14 +136,6 @@ export async function openSettingsModal(initialTab: SettingsTab = 'connection'):
 		.querySelectorAll<HTMLButtonElement>('[data-settings-tab]')
 		.forEach((button) => button.addEventListener('click', () => activate(button.dataset.settingsTab as SettingsTab)));
 	dialog.querySelector('[data-settings-close]')?.addEventListener('click', close);
-	dialog.addEventListener('cancel', (event) => {
-		event.preventDefault();
-		close();
-	});
-	dialog.addEventListener('click', (event) => {
-		if (event.target === dialog) close();
-	});
-	dialog.addEventListener('close', () => dialog.remove());
 	dialog.querySelectorAll<HTMLElement>('[data-copy]').forEach((button) =>
 		button.addEventListener('click', async () => {
 			await navigator.clipboard.writeText(button.dataset.copy!);

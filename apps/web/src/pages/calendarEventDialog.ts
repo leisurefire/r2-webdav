@@ -3,6 +3,7 @@ import { Lunar, Solar } from 'lunar-typescript';
 import { api } from '../api/client';
 import { confirmAction, errorMessage, html, toast } from '../shell';
 import { locale } from '../i18n';
+import { createModalDialog, showModalDialog } from '../ui/dialogs';
 import { enhanceSelect } from '../ui/dropdown';
 import { inputDate } from './calendarDates';
 
@@ -124,23 +125,23 @@ export async function eventDialog(
 				: Array.from({ length: 30 }, (_, index) => `Day ${index + 1}`);
 		const timeValue = (date: Date) =>
 			`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-		const dialog = document.createElement('dialog');
-		dialog.className = 'event-dialog';
-		dialog.innerHTML = `<form class="dialog-body" id="event-form"><h2>${existing ? copy.editEvent : copy.newEvent}</h2>
+		const dialog = createModalDialog('medium', 'event-dialog');
+		dialog.setAttribute('aria-labelledby', 'event-dialog-title');
+		dialog.innerHTML = `<form class="dialog-body" id="event-form"><h2 id="event-dialog-title">${existing ? copy.editEvent : copy.newEvent}</h2>
 			<div class="event-dialog-options">
 				<div class="field"><label>${copy.type}</label><div class="segment-control compact"><button type="button" data-event-kind="event">${copy.event}</button><button type="button" data-event-kind="birthday">${copy.birthday}</button></div></div>
 				<div class="field"><label>${copy.calendar}</label><div class="segment-control compact"><button type="button" data-calendar-system="solar">${copy.solar}</button><button type="button" data-calendar-system="lunar">${copy.lunar}</button></div></div>
 			</div>
 			<div class="field"><label for="event-title">${copy.title}</label><input class="input" id="event-title" value="${html(existing?.title ?? '')}" required></div>
-			<div id="event-solar-fields"><div class="event-time-grid"><div class="field"><label for="event-start">${copy.starts}</label><input class="input" type="datetime-local" id="event-start" value="${inputDate(start.toISOString())}" required></div><div class="field event-end-field"><label for="event-end">${copy.ends}</label><input class="input" type="datetime-local" id="event-end" value="${inputDate(end.toISOString())}" required></div></div></div>
-			<div id="event-lunar-fields" hidden><div class="lunar-date-grid"><div class="field"><label for="event-lunar-year">${copy.year}</label><input class="input" type="number" min="1900" max="2100" id="event-lunar-year" value="${initialLunar.year}" required></div><div class="field"><label for="event-lunar-month">${copy.month}</label><select class="input" id="event-lunar-month">${monthNames.map((name, index) => `<option value="${index + 1}" ${initialLunar.month === index + 1 ? 'selected' : ''}>${name}</option>`).join('')}</select></div><div class="field"><label for="event-lunar-day">${copy.day}</label><select class="input" id="event-lunar-day">${dayNames.map((name, index) => `<option value="${index + 1}" ${initialLunar.day === index + 1 ? 'selected' : ''}>${name}</option>`).join('')}</select></div></div><label class="checkbox-row"><input type="checkbox" id="event-lunar-leap" ${initialLunar.leap ? 'checked' : ''}> ${copy.leap}</label><div class="event-time-grid lunar-time-fields"><div class="field"><label for="event-start-time">${copy.starts}</label><input class="input" type="time" id="event-start-time" value="${timeValue(start)}" required></div><div class="field event-end-field"><label for="event-end-time">${copy.ends}</label><input class="input" type="time" id="event-end-time" value="${timeValue(end)}" required></div></div></div>
+			<div class="event-dialog-section" id="event-solar-fields"><div class="event-time-grid"><div class="field"><label for="event-start">${copy.starts}</label><input class="input" type="datetime-local" id="event-start" value="${inputDate(start.toISOString())}" required></div><div class="field event-end-field"><label for="event-end">${copy.ends}</label><input class="input" type="datetime-local" id="event-end" value="${inputDate(end.toISOString())}" required></div></div></div>
+			<div class="event-dialog-section" id="event-lunar-fields" hidden><div class="lunar-date-grid"><div class="field"><label for="event-lunar-year">${copy.year}</label><input class="input" type="number" min="1900" max="2100" id="event-lunar-year" value="${initialLunar.year}" required></div><div class="field"><label for="event-lunar-month">${copy.month}</label><select class="input" id="event-lunar-month">${monthNames.map((name, index) => `<option value="${index + 1}" ${initialLunar.month === index + 1 ? 'selected' : ''}>${name}</option>`).join('')}</select></div><div class="field"><label for="event-lunar-day">${copy.day}</label><select class="input" id="event-lunar-day">${dayNames.map((name, index) => `<option value="${index + 1}" ${initialLunar.day === index + 1 ? 'selected' : ''}>${name}</option>`).join('')}</select></div></div><label class="checkbox-row"><input type="checkbox" id="event-lunar-leap" ${initialLunar.leap ? 'checked' : ''}> ${copy.leap}</label><div class="event-time-grid lunar-time-fields"><div class="field"><label for="event-start-time">${copy.starts}</label><input class="input" type="time" id="event-start-time" value="${timeValue(start)}" required></div><div class="field event-end-field"><label for="event-end-time">${copy.ends}</label><input class="input" type="time" id="event-end-time" value="${timeValue(end)}" required></div></div></div>
 			<div class="field event-all-day-field"><label class="checkbox-row"><input type="checkbox" id="event-all-day" ${existing?.allDay ? 'checked' : ''}> ${copy.allDay}</label></div>
 			<div class="birthday-repeat" id="birthday-repeat" hidden><span>${copy.repeat}</span><strong>${copy.yearly}</strong></div>
 			<div class="field"><label for="event-location">${copy.location}</label><input class="input" id="event-location" value="${html(existing?.location ?? '')}"></div>
 			<div class="field"><label for="event-description">${copy.description}</label><textarea class="input" id="event-description">${html(existing?.description ?? '')}</textarea></div>
 			<div class="dialog-actions">${existing ? `<button type="button" class="button danger danger-zone" id="event-delete">${copy.delete}</button>` : ''}<button type="button" class="button" id="event-cancel">${copy.cancel}</button><button class="button primary">${copy.save}</button></div>
 		</form>`;
-		document.body.append(dialog);
+		showModalDialog(dialog, { dismissOnBackdrop: true, onClose: () => resolve(null) });
 		dialog.querySelectorAll<HTMLSelectElement>('select').forEach((select) => enhanceSelect(select));
 		const setState = () => {
 			dialog
@@ -174,9 +175,8 @@ export async function eventDialog(
 		);
 		setState();
 		const finish = (result: 'saved' | 'deleted' | null) => {
-			dialog.close();
-			dialog.remove();
 			resolve(result);
+			if (dialog.open) dialog.close(result ?? 'cancel');
 		};
 		dialog.querySelector('#event-cancel')?.addEventListener('click', () => finish(null));
 		dialog.querySelector('#event-delete')?.addEventListener('click', async () => {
@@ -245,8 +245,14 @@ export async function eventDialog(
 				toast(errorMessage(error));
 			}
 		});
-		dialog.addEventListener('cancel', () => finish(null), { once: true });
-		dialog.showModal();
+		dialog.addEventListener(
+			'cancel',
+			(event) => {
+				event.preventDefault();
+				finish(null);
+			},
+			{ once: true },
+		);
 		dialog.querySelector<HTMLInputElement>('#event-title')?.focus();
 	});
 }

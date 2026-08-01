@@ -4,6 +4,7 @@ import { errorMessage, html, refreshIcons, shell, sidebarContext, toast } from '
 import { locale, t } from '../i18n';
 import {
 	collapseTreeBranch,
+	emptyStateMarkup,
 	expandTreeBranch,
 	iconToolbarMarkup,
 	renderTreeNodes,
@@ -11,6 +12,7 @@ import {
 	treeLeadingMarkup,
 	workspaceSidebarMarkup,
 } from '../ui/helpers';
+import { withControlsBusy } from '../ui/controls';
 import { enhanceSelect } from '../ui/dropdown';
 import { bindBookmarkPreviews } from '../bookmarks/previews';
 import { bookmarkHub, pullBookmarks } from '../bookmarks/store';
@@ -98,7 +100,7 @@ export function bookmarkPathMarkup(path: string[]): string {
 			`<button class="bookmark-path-item ${index === path.length - 1 ? 'current' : ''}" data-bookmark-path="${html(target)}">${html(name)}</button>`,
 		);
 	});
-	return `<nav class="collection-path bookmark-path workspace-top-row" aria-label="${locale === 'zh' ? '当前收藏路径' : 'Current collection path'}">${crumbs.join('')}</nav>`;
+	return `<nav class="collection-path bookmark-path workspace-top-row ${path.length ? '' : 'is-root'}" aria-label="${locale === 'zh' ? '当前收藏路径' : 'Current collection path'}">${crumbs.join('')}</nav>`;
 }
 
 export function bookmarkFolderOptions(root: BookmarkFolder): BookmarkFolder[] {
@@ -153,7 +155,7 @@ export function paintBookmarkView(): void {
 	const refreshLabel = locale === 'zh' ? '拉取链接' : 'Refresh links';
 	content.innerHTML = `<div class="links-layout">
 		<div class="notes-inner-toolbar mobile-only-tools"><div class="bookmark-folder-select-wrap"><select class="input bookmark-folder-select" aria-label="${locale === 'zh' ? '选择链接目录' : 'Choose link folder'}">${folderOptions}</select></div></div>
-		<div class="bookmarks-main">${bookmarkPathMarkup(bookmarkFolderPath)}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card)).join('') : `<div class="notes-empty large"><i data-lucide="bookmark"></i><span>${locale === 'zh' ? '暂无保存链接' : 'No saved links'}</span></div>`}</div></div>
+		<div class="bookmarks-main">${bookmarkPathMarkup(bookmarkFolderPath)}<div class="bookmarks-grid ${cards.length ? '' : 'empty'}">${cards.length ? cards.map((card) => bookmarkCardMarkup(card)).join('') : emptyStateMarkup(locale === 'zh' ? '暂无保存链接' : 'No saved links', { icon: 'bookmark', className: 'empty-state--fill' })}</div></div>
 	</div>`;
 	const context = sidebarContext();
 	if (context)
@@ -227,21 +229,10 @@ export function paintBookmarkView(): void {
 			...content.querySelectorAll<HTMLButtonElement>('[data-links-refresh]'),
 			...(context?.querySelectorAll<HTMLButtonElement>('[data-links-refresh]') ?? []),
 		];
-		buttons.forEach((button) => {
-			button.disabled = true;
-			button.classList.add('is-syncing');
-			button.setAttribute('aria-busy', 'true');
-		});
-		try {
+		await withControlsBusy(buttons, async () => {
 			await pullBookmarks(true);
 			paintBookmarkView();
-		} finally {
-			buttons.forEach((button) => {
-				button.disabled = false;
-				button.classList.remove('is-syncing');
-				button.removeAttribute('aria-busy');
-			});
-		}
+		});
 	};
 	content
 		.querySelectorAll('[data-links-refresh]')
@@ -252,7 +243,7 @@ export function paintBookmarkView(): void {
 }
 
 export async function renderLinks(forceSync = false): Promise<void> {
-	if (!document.querySelector('.links-layout')) shell('links', t('links'));
+	if (!document.querySelector('.links-layout')) shell('links');
 	if (forceSync || !bookmarkHub) await pullBookmarks(true);
 	paintBookmarkView();
 }

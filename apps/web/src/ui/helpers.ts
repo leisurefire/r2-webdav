@@ -1,32 +1,18 @@
 import type { NoteFolder } from '@r2-webdav/shared-types';
-import { html } from '../shell';
+import { html } from './markup';
 import { buildNoteFolderTree, flattenNoteFolderTree, noteFolderPath } from '../notes/folderTree';
 import { locale } from '../i18n';
 import { enhanceSelect } from './dropdown';
-import { openTextInputDialog } from './dialogs';
+import { createModalDialog, openTextInputDialog, showModalDialog } from './dialogs';
 
-export interface IconButtonOptions {
-	icon: string;
-	label: string;
-	className?: string;
-	attributes?: Record<string, string | boolean | undefined>;
-}
-
-function markupAttributes(attributes: IconButtonOptions['attributes']): string {
-	return Object.entries(attributes ?? {})
-		.filter(([name, value]) => /^[a-z][\w:-]*$/i.test(name) && value !== false && value !== undefined)
-		.map(([name, value]) => (value === true ? name : `${name}="${html(value)}"`))
-		.join(' ');
-}
-
-export function iconButtonMarkup(options: IconButtonOptions): string {
-	const attributes = markupAttributes(options.attributes);
-	return `<button type="button" class="${html(options.className ?? 'row-action')}" title="${html(options.label)}" aria-label="${html(options.label)}"${attributes ? ` ${attributes}` : ''}><i data-lucide="${html(options.icon)}"></i></button>`;
-}
-
-export function iconToolbarMarkup(buttons: IconButtonOptions[], className = 'sidebar-context-tools'): string {
-	return `<div class="${html(className)}">${buttons.map(iconButtonMarkup).join('')}</div>`;
-}
+export {
+	actionMenuMarkup,
+	emptyStateMarkup,
+	errorBannerMarkup,
+	iconButtonMarkup,
+	iconToolbarMarkup,
+	menuItemMarkup,
+} from './markup';
 
 export function openTextDialog(title: string, label: string, initial = ''): Promise<string | null> {
 	return openTextInputDialog(
@@ -57,18 +43,18 @@ export function openFolderDialog(
 					return `<option value="${html(folder.id)}" ${folder.id === currentId ? 'selected' : ''}>${html(label)}</option>`;
 				}),
 		].join('');
-		const dialog = document.createElement('dialog');
-		dialog.innerHTML = `<form method="dialog" class="dialog-body"><h2>${html(title)}</h2><div class="field"><label for="dialog-folder">${locale === 'zh' ? '目标目录' : 'Destination'}</label><select class="input" id="dialog-folder">${options}</select></div><div class="dialog-actions"><button class="button" value="cancel">${locale === 'zh' ? '取消' : 'Cancel'}</button><button class="button primary" value="confirm">${locale === 'zh' ? '移动' : 'Move'}</button></div></form>`;
-		document.body.append(dialog);
+		const dialog = createModalDialog('small', 'folder-dialog');
+		dialog.setAttribute('aria-labelledby', 'folder-dialog-title');
+		dialog.innerHTML = `<form method="dialog" class="dialog-body"><h2 id="folder-dialog-title">${html(title)}</h2><div class="field"><label for="dialog-folder">${locale === 'zh' ? '目标目录' : 'Destination'}</label><select class="input" id="dialog-folder">${options}</select></div><div class="dialog-actions"><button class="button" value="cancel">${locale === 'zh' ? '取消' : 'Cancel'}</button><button class="button primary" value="confirm">${locale === 'zh' ? '移动' : 'Move'}</button></div></form>`;
 		const select = dialog.querySelector<HTMLSelectElement>('#dialog-folder')!;
-		const dropdown = enhanceSelect(select);
-		dialog.addEventListener('close', () => {
-			const value = select.value;
-			const destination = dialog.returnValue === 'confirm' ? value || null : undefined;
-			dialog.remove();
-			resolve(destination);
+		showModalDialog(dialog, {
+			dismissOnBackdrop: true,
+			onClose: () => {
+				const value = select.value;
+				resolve(dialog.returnValue === 'confirm' ? value || null : undefined);
+			},
 		});
-		dialog.showModal();
+		const dropdown = enhanceSelect(select);
 		dropdown.open();
 	});
 }

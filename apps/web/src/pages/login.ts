@@ -1,6 +1,8 @@
 import { api } from '../api/client';
-import { app, errorMessage, html, refreshIcons, render } from '../shell';
+import { app, errorMessage, refreshIcons, render } from '../shell';
 import { locale, setLocale, t } from '../i18n';
+import { withControlsBusy } from '../ui/controls';
+import { errorBannerMarkup } from '../ui/markup';
 
 export function renderLogin(): void {
 	app.innerHTML = `<main class="login-page">
@@ -20,19 +22,19 @@ export function renderLogin(): void {
 		event.preventDefault();
 		const submit = document.querySelector<HTMLButtonElement>('#login-submit')!;
 		const error = document.querySelector<HTMLDivElement>('#login-error')!;
-		submit.disabled = true;
 		submit.textContent = t('signingIn');
 		error.innerHTML = '';
 		try {
-			await api.login(
-				document.querySelector<HTMLInputElement>('#username')!.value,
-				document.querySelector<HTMLInputElement>('#password')!.value,
-			);
-			history.replaceState({}, '', '/files');
-			await render();
+			await withControlsBusy([submit], async () => {
+				await api.login(
+					document.querySelector<HTMLInputElement>('#username')!.value,
+					document.querySelector<HTMLInputElement>('#password')!.value,
+				);
+				history.replaceState({}, '', '/files');
+				await render();
+			});
 		} catch (reason) {
-			error.innerHTML = `<div class="error-banner">${html(errorMessage(reason))}</div>`;
-			submit.disabled = false;
+			error.innerHTML = errorBannerMarkup(errorMessage(reason));
 			submit.textContent = t('continue');
 		}
 	});

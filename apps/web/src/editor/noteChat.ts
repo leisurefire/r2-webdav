@@ -12,9 +12,10 @@ import {
 	type NoteChatSession,
 } from '../api/client';
 import { mountBottomSheet, type BottomSheetHandle } from '../ui/bottomSheet';
-import { openConfirmDialog, openTextInputDialog } from '../ui/dialogs';
+import { createModalDialog, openConfirmDialog, openTextInputDialog, showModalDialog } from '../ui/dialogs';
 import { enhanceSelect, type CustomSelectHandle } from '../ui/dropdown';
 import { onDisconnect } from '../ui/lifecycle';
+import { iconButtonMarkup } from '../ui/markup';
 import {
 	applyChatEditPatches,
 	canSafelyRevert,
@@ -181,14 +182,14 @@ export function bindNoteContextChat(
 		panel.innerHTML = `<header class="note-ai-chat-head workspace-rail-head">
 			<select data-chat-history title="${t('历史对话', 'Chat history')}" aria-label="${t('历史对话', 'Chat history')}"></select>
 			<span class="toolbar-spacer"></span>
-			<button type="button" class="row-action" data-chat-new title="${t('新建对话', 'New chat')}" aria-label="${t('新建对话', 'New chat')}"><i data-lucide="message-circle-plus"></i></button>
-			<button type="button" class="row-action" data-chat-close title="${t('关闭 AI', 'Close AI')}" aria-label="${t('关闭 AI', 'Close AI')}"><i data-lucide="x"></i></button>
+			${iconButtonMarkup({ icon: 'message-circle-plus', label: t('新建对话', 'New chat'), attributes: { 'data-chat-new': true } })}
+			${iconButtonMarkup({ icon: 'x', label: t('关闭 AI', 'Close AI'), attributes: { 'data-chat-close': true } })}
 		</header>
 		<div class="note-ai-chat-messages" data-chat-messages data-bottom-sheet-scroll>${welcomeHtml()}</div>
 		<div class="note-ai-chat-composer">
 			<div class="note-ai-context-chip"><i data-lucide="${hasSelection ? 'text-select' : 'file-text'}"></i><span>${contextLabel}</span></div>
 			<div class="note-ai-chat-input-row"><textarea rows="1" data-chat-input placeholder="${t('使用 AI 处理当前内容…', 'Ask AI about this content…')}" aria-label="${t('向 AI 提问', 'Ask AI')}"></textarea></div>
-			<div class="note-ai-chat-footer"><button type="button" class="row-action" data-chat-settings title="${t('编辑或询问', 'Edit or ask')}" aria-label="${t('编辑或询问', 'Edit or ask')}"><i data-lucide="sliders-horizontal"></i></button><select class="note-ai-mode" data-chat-mode aria-label="${t('AI 模式', 'AI mode')}"><option value="edit">${t('编辑', 'Edit')}</option><option value="ask">${t('询问', 'Ask')}</option></select><span class="toolbar-spacer"></span><select class="note-ai-model" data-chat-model aria-label="${t('选择模型', 'Choose model')}"></select><button type="button" class="ai-send" data-chat-send title="${t('提交', 'Submit')}" aria-label="${t('提交', 'Submit')}"><i data-lucide="arrow-up"></i></button></div>
+			<div class="note-ai-chat-footer">${iconButtonMarkup({ icon: 'sliders-horizontal', label: t('编辑或询问', 'Edit or ask'), attributes: { 'data-chat-settings': true } })}<select class="note-ai-mode" data-chat-mode aria-label="${t('AI 模式', 'AI mode')}"><option value="edit">${t('编辑', 'Edit')}</option><option value="ask">${t('询问', 'Ask')}</option></select><span class="toolbar-spacer"></span><select class="note-ai-model" data-chat-model aria-label="${t('选择模型', 'Choose model')}"></select><button type="button" class="ai-send" data-chat-send title="${t('提交', 'Submit')}" aria-label="${t('提交', 'Submit')}"><i data-lucide="arrow-up"></i></button></div>
 		</div>`;
 		compose.querySelector(`[data-chat-review="${reviewBarId}"]`)?.remove();
 		root.append(panel);
@@ -277,9 +278,9 @@ export function bindNoteContextChat(
 			showEditorHighlight(view, firstLine.from, lastLine.to, 'transient');
 		};
 		const openCitations = (citations: AiCitation[]) => {
-			const dialog = document.createElement('dialog');
-			dialog.className = 'note-ai-citations-dialog';
-			dialog.innerHTML = `<div class="note-ai-citations-shell"><header><div><h2>${t('引用内容', 'Sources')}</h2><p>${t(`${citations.length} 处原文`, `${citations.length} source${citations.length === 1 ? '' : 's'}`)}</p></div><button type="button" class="row-action" data-citations-close title="${t('关闭', 'Close')}" aria-label="${t('关闭', 'Close')}"><i data-lucide="x"></i></button></header><div class="note-ai-citations"></div></div>`;
+			const dialog = createModalDialog('medium', 'note-ai-citations-dialog');
+			dialog.setAttribute('aria-labelledby', 'note-ai-citations-title');
+			dialog.innerHTML = `<div class="note-ai-citations-shell"><header><div><h2 id="note-ai-citations-title">${t('引用内容', 'Sources')}</h2><p>${t(`${citations.length} 处原文`, `${citations.length} source${citations.length === 1 ? '' : 's'}`)}</p></div>${iconButtonMarkup({ icon: 'x', label: t('关闭', 'Close'), attributes: { 'data-citations-close': true } })}</header><div class="note-ai-citations"></div></div>`;
 			const sources = dialog.querySelector<HTMLElement>('.note-ai-citations')!;
 			for (const citation of citations) {
 				const excerpt = citationExcerpt(citation);
@@ -292,11 +293,9 @@ export function bindNoteContextChat(
 				button.addEventListener('click', () => jumpToCitation(citation));
 				sources.append(button);
 			}
-			document.body.append(dialog);
+			showModalDialog(dialog, { dismissOnBackdrop: true });
 			paintIcons(dialog);
 			dialog.querySelector('[data-citations-close]')?.addEventListener('click', () => dialog.close());
-			dialog.addEventListener('close', () => dialog.remove());
-			dialog.showModal();
 		};
 		const renderAnswer = (node: HTMLElement, answer: string) => {
 			const envelope = parseChatAiEnvelope(answer);
@@ -530,9 +529,9 @@ export function bindNoteContextChat(
 			bar.className = 'note-ai-chat-review';
 			bar.dataset.chatReview = reviewBarId;
 			bar.innerHTML = `<span class="note-ai-chat-review-label">${t('已更新', 'Updated')}</span>
-				<button type="button" class="row-action" data-review-diff title="${t('隐藏差异', 'Hide diff')}" aria-label="${t('隐藏差异', 'Hide diff')}" aria-pressed="true"><i data-lucide="eye-off"></i></button>
-				<button type="button" class="row-action" data-review-revert title="${t('回撤改动', 'Revert changes')}" aria-label="${t('回撤改动', 'Revert changes')}"><i data-lucide="rotate-ccw"></i></button>
-				<button type="button" class="row-action" data-review-below title="${t('保留原文并在下方插入 AI 结果', 'Keep the original and insert the AI result below')}" aria-label="${t('在下面插入', 'Insert below')}"><i data-lucide="plus"></i></button>
+				${iconButtonMarkup({ icon: 'eye-off', label: t('隐藏差异', 'Hide diff'), attributes: { 'data-review-diff': true, 'aria-pressed': true } })}
+				${iconButtonMarkup({ icon: 'rotate-ccw', label: t('回撤改动', 'Revert changes'), attributes: { 'data-review-revert': true } })}
+				${iconButtonMarkup({ icon: 'plus', label: t('在下面插入', 'Insert below'), attributes: { 'data-review-below': true } })}
 				<span class="toolbar-spacer"></span>
 				<button type="button" class="button primary" data-review-accept>${t('完成', 'Done')}</button>`;
 			composer.prepend(bar);

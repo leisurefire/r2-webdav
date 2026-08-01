@@ -36,6 +36,7 @@
 	--control-height: 36px;
 	--compact-control-height: 30px;
 	--icon-control-size: 32px;
+	--compact-icon-control-size: 28px;
 	--menu-row-height: 34px;
 	--toolbar-height: 44px;
 	--workspace-top-row-height: 56px;
@@ -50,6 +51,10 @@
 	--focus-ring: 0 0 0 2px rgb(35 131 226 / 0.42);
 	--motion-fast: 120ms ease;
 	--motion-base: 180ms cubic-bezier(0.22, 1, 0.36, 1);
+	--motion-slow: 240ms cubic-bezier(0.22, 1, 0.36, 1);
+	--motion-emphasis: 320ms cubic-bezier(0.22, 1, 0.36, 1);
+	--motion-spinner: 760ms linear;
+	--motion-pulse: 1200ms ease-in-out;
 }
 
 html {
@@ -143,7 +148,7 @@ body {
 }
 
 /* Commands */
-:where(.button, .row-action, .sidebar-toggle, .header-action, .language-button) {
+:where(.button, .row-action, .sidebar-toggle, .language-button) {
 	border-radius: var(--control-radius);
 	transition:
 		background-color var(--motion-fast),
@@ -156,6 +161,10 @@ body {
 .button {
 	height: var(--control-height);
 	min-height: var(--control-height);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 7px;
 	padding-inline: 12px;
 	border: 1px solid var(--control-border);
 	background: var(--elevated-bg);
@@ -163,6 +172,7 @@ body {
 	box-shadow: var(--control-shadow);
 	font-size: 13px;
 	font-weight: 550;
+	white-space: nowrap;
 }
 
 .button:hover:not(:disabled) {
@@ -206,6 +216,8 @@ body {
 
 .row-action,
 .sidebar-toggle {
+	display: grid;
+	place-items: center;
 	border: 0;
 	background: transparent;
 	color: var(--muted);
@@ -230,7 +242,7 @@ body {
 }
 
 :where(.button, .row-action).is-syncing svg {
-	animation: control-spin 760ms linear infinite;
+	animation: control-spin var(--motion-spinner) infinite;
 }
 
 @keyframes control-spin {
@@ -240,7 +252,12 @@ body {
 }
 
 /* Fields and enhanced selects */
-:where(.input, .custom-select-trigger, .ai-model, .ai-panel-model, .note-ai-mode, .note-ai-model) {
+.input {
+	width: 100%;
+	padding: 9px 11px;
+}
+
+:where(.input, .custom-select-trigger, .note-ai-mode, .note-ai-model) {
 	min-height: var(--control-height);
 	border: 1px solid var(--control-border);
 	border-radius: var(--control-radius);
@@ -253,12 +270,12 @@ body {
 		box-shadow var(--motion-fast);
 }
 
-:where(.input, .custom-select-trigger, .ai-model, .note-ai-mode, .note-ai-model):hover {
+:where(.input, .custom-select-trigger, .note-ai-mode, .note-ai-model):hover {
 	border-color: var(--line-strong);
 	background: var(--hover-bg);
 }
 
-:where(.input, .custom-select-trigger, .ai-model, .note-ai-mode, .note-ai-model):focus,
+:where(.input, .custom-select-trigger, .note-ai-mode, .note-ai-model):focus,
 .custom-select.open .custom-select-trigger {
 	border-color: var(--accent);
 	outline: 0;
@@ -271,20 +288,20 @@ textarea::placeholder {
 }
 
 /* Toolbars and navigation rows */
-:where(.toolbar, .calendar-toolbar, .notes-toolbar, .notes-inner-toolbar, .note-ai-chat-head, .file-preview-head) {
+:where(.toolbar, .calendar-toolbar, .notes-inner-toolbar, .note-ai-chat-head, .file-preview-head) {
 	min-height: var(--toolbar-height);
 	gap: var(--toolbar-gap);
 }
 
-:where(.nav-button, .collection-tree-row, .context-tree-row, .settings-tabs button) {
+:where(.nav-button, .collection-tree-row, .settings-tabs button) {
 	border-radius: var(--control-radius);
 	transition:
 		background-color var(--motion-fast),
 		color var(--motion-fast);
 }
 
-:where(.nav-button, .collection-tree-row, .context-tree-row, .settings-tabs button):hover,
-:where(.nav-button, .collection-tree-row, .context-tree-row, .settings-tabs button).active {
+:where(.nav-button, .collection-tree-row, .settings-tabs button):hover,
+:where(.nav-button, .collection-tree-row, .settings-tabs button).active {
 	background: var(--hover-bg);
 	color: var(--ink);
 }
@@ -331,6 +348,11 @@ textarea::placeholder {
 
 .custom-select-menu.is-open,
 .custom-select-menu:popover-open {
+	animation: ui-menu-in var(--motion-base) both;
+}
+
+.action-menu.open .action-menu-popover,
+.account-popover:not([hidden]) {
 	animation: ui-menu-in var(--motion-base) both;
 }
 
@@ -435,7 +457,6 @@ textarea::placeholder {
 	transition: transform var(--motion-fast);
 }
 
-.action-menu-separator,
 .ai-menu-divider {
 	background: var(--line);
 }
@@ -464,6 +485,12 @@ dialog::backdrop {
 
 .ui-modal--small {
 	width: min(340px, calc(100vw - 28px));
+}
+
+.ui-modal--medium {
+	width: min(620px, calc(100vw - 24px));
+	max-height: calc(100dvh - 24px);
+	overflow-y: auto;
 }
 
 .ui-modal--large {
@@ -527,7 +554,49 @@ dialog::backdrop {
 }
 
 /* Status and feedback */
+.empty-state {
+	min-height: 180px;
+	display: grid;
+	place-items: center;
+	align-content: center;
+	gap: 10px;
+	padding: 24px;
+	color: var(--quiet);
+	font-size: 13px;
+	line-height: 1.45;
+	text-align: center;
+}
+
+.empty-state--fill {
+	width: 100%;
+	height: 100%;
+	min-height: 0;
+}
+
+.empty-state--compact {
+	min-height: 0;
+	gap: 6px;
+	padding: 12px 8px;
+	font-size: 12px;
+}
+
+.empty-state svg {
+	width: 25px;
+	height: 25px;
+	stroke-width: 1.6;
+}
+
+.empty-state small {
+	max-width: 48ch;
+	color: var(--muted);
+	font-size: 12px;
+}
+
 .status-dot {
+	width: 7px;
+	height: 7px;
+	flex: none;
+	border-radius: var(--pill-radius);
 	background: var(--quiet);
 }
 
@@ -537,17 +606,35 @@ dialog::backdrop {
 	background: var(--accent);
 }
 
-.note-save-status[data-state='failed'],
-.error-banner {
+.note-save-status[data-state='failed'] {
 	color: var(--danger);
 }
 
+.error-banner {
+	padding: 11px 12px;
+	border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--line));
+	border-radius: var(--control-radius);
+	background: var(--danger-soft);
+	color: var(--danger);
+	font-size: 12px;
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+}
+
 .toast {
+	position: fixed;
+	right: 20px;
+	bottom: 20px;
+	z-index: 30;
+	max-width: min(360px, calc(100vw - 40px));
+	padding: 12px 15px;
 	border: 1px solid var(--line-strong);
 	border-radius: var(--overlay-radius);
 	background: #37352f;
 	color: #ffffff;
 	box-shadow: var(--overlay-shadow);
+	font-size: 13px;
+	animation: ui-modal-in var(--motion-base) both;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -605,9 +692,16 @@ dialog::backdrop {
 	:root {
 		--motion-fast: 0.01ms linear;
 		--motion-base: 0.01ms linear;
+		--motion-slow: 0.01ms linear;
+		--motion-emphasis: 0.01ms linear;
+		--motion-spinner: 0.01ms linear;
+		--motion-pulse: 0.01ms linear;
 	}
 
-	.ui-modal[open] {
+	.ui-modal[open],
+	.action-menu.open .action-menu-popover,
+	.account-popover:not([hidden]),
+	.toast {
 		animation: none;
 	}
 }

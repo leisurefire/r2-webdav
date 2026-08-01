@@ -1,7 +1,13 @@
 import type { Note, NotePage } from '@r2-webdav/shared-types';
 import { html, refreshIcons, toast, errorMessage } from '../shell';
 import { locale, t, type MessageKey } from '../i18n';
-import { openFolderDialog, showTreePathHighlight } from '../ui/helpers';
+import {
+	actionMenuMarkup,
+	iconButtonMarkup,
+	menuItemMarkup,
+	openFolderDialog,
+	showTreePathHighlight,
+} from '../ui/helpers';
 import { onDisconnect } from '../ui/lifecycle';
 import { flushNoteCommit, noteCommitStates } from './commits';
 import { ensureFolderNotesLoaded, optimisticallyUpdateNote } from './scope';
@@ -127,37 +133,74 @@ export function noteActionControlsMarkup(selected: Note, includeRefresh = false,
 	const fullWidthLabel = locale === 'zh' ? '全宽' : 'Full width';
 	const pinLabel = selected.pinned ? t('unpin') : t('pin');
 	const lastModifiedMarkup = `<time class="note-last-modified" data-note-last-modified datetime="${html(selected.updatedAt)}">${new Date(selected.updatedAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en')}</time>`;
+	const menuItems = `${mobile ? `<div class="mobile-note-meta">${lastModifiedMarkup}</div>` : ''}
+		<div class="note-font-card" role="group" aria-label="${fontLabel}">
+			<button type="button" class="note-font-choice" data-note-font="sans" role="menuitemradio" aria-checked="${preferences.font === 'sans'}" title="${sansLabel}" aria-label="${sansLabel}">
+				<span class="note-font-preview note-font-preview-sans">Aa</span>
+				<span class="note-font-choice-label">${sansLabel}</span>
+			</button>
+			<button type="button" class="note-font-choice" data-note-font="serif" role="menuitemradio" aria-checked="${preferences.font === 'serif'}" title="${serifLabel}" aria-label="${serifLabel}">
+				<span class="note-font-preview note-font-preview-serif">Aa</span>
+				<span class="note-font-choice-label">${serifLabel}</span>
+			</button>
+		</div>
+		${menuItemMarkup({ icon: selected.pinned ? 'pin-off' : 'pin', label: pinLabel, attributes: { 'data-note-pin-menu': true } })}
+		${mobile ? menuItemMarkup({ icon: 'file-down', label: exportLabel, className: 'mobile-note-export', attributes: { 'data-note-export': true } }) : ''}
+		${menuItemMarkup({
+			icon: 'maximize-2',
+			label: fullWidthLabel,
+			className: 'desktop-only-action',
+			trailingIcon: 'check',
+			trailingIconClassName: 'note-menu-check',
+			attributes: { 'data-note-full-width': true, role: 'menuitemcheckbox', 'aria-checked': preferences.fullWidth },
+		})}
+		${menuItemMarkup({ icon: 'folder-input', label: moveLabel, attributes: { 'data-note-move': true } })}
+		${menuItemMarkup({
+			icon: 'archive',
+			label: selected.archived ? t('restore') : t('archive'),
+			attributes: { 'data-note-archive': true },
+		})}
+		${menuItemMarkup({
+			icon: 'trash-2',
+			label: t('delete'),
+			className: 'danger',
+			attributes: { 'data-note-delete': true },
+		})}`;
+	const exportButton = mobile
+		? ''
+		: iconButtonMarkup({
+				icon: 'file-down',
+				label: exportLabel,
+				className: 'row-action note-export-direct',
+				attributes: { 'data-note-export': true },
+			});
+	const pinButton = iconButtonMarkup({
+		icon: selected.pinned ? 'pin-off' : 'pin',
+		label: pinLabel,
+		className: `row-action ${selected.pinned ? 'active' : ''}`.trim(),
+		attributes: { 'data-note-pin': true, 'aria-pressed': selected.pinned },
+	});
+	const moreMenu = actionMenuMarkup({
+		label: moreLabel,
+		items: menuItems,
+		className: 'note-action-more',
+		popoverClassName: 'note-more-popover',
+	});
+	const refreshButton = includeRefresh
+		? iconButtonMarkup({
+				icon: 'refresh-cw',
+				label: refreshLabel,
+				className: 'button icon-button note-refresh',
+				attributes: { 'data-notes-refresh': true },
+			})
+		: '';
 	return `<div class="note-actions" data-note-toolbar-id="${html(selected.id)}">
 		<div class="note-actions-meta">
 			<span class="note-save-status" data-note-save-status data-state="${saveState}" role="status" aria-label="${noteSaveCopy(saveState)}" title="${noteSaveCopy(saveState)}"></span>
 			${mobile ? '' : lastModifiedMarkup}
 		</div>
 		<div class="note-actions-tools">
-			${mobile ? '' : `<button type="button" class="row-action note-export-direct" data-note-export title="${exportLabel}" aria-label="${exportLabel}"><i data-lucide="file-down"></i></button>`}
-			<button type="button" class="row-action ${selected.pinned ? 'active' : ''}" data-note-pin title="${pinLabel}" aria-label="${pinLabel}" aria-pressed="${selected.pinned}"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i></button>
-			<div class="action-menu note-action-more" data-action-menu>
-				<button type="button" class="row-action" data-menu-toggle title="${moreLabel}" aria-label="${moreLabel}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
-				<div class="action-menu-popover note-more-popover" data-menu-popover role="menu">
-					${mobile ? `<div class="mobile-note-meta">${lastModifiedMarkup}</div>` : ''}
-					<div class="note-font-card" role="group" aria-label="${fontLabel}">
-						<button type="button" class="note-font-choice" data-note-font="sans" role="menuitemradio" aria-checked="${preferences.font === 'sans'}" title="${sansLabel}" aria-label="${sansLabel}">
-							<span class="note-font-preview note-font-preview-sans">Aa</span>
-							<span class="note-font-choice-label">${sansLabel}</span>
-						</button>
-						<button type="button" class="note-font-choice" data-note-font="serif" role="menuitemradio" aria-checked="${preferences.font === 'serif'}" title="${serifLabel}" aria-label="${serifLabel}">
-							<span class="note-font-preview note-font-preview-serif">Aa</span>
-							<span class="note-font-choice-label">${serifLabel}</span>
-						</button>
-					</div>
-					<button type="button" data-note-pin-menu role="menuitem"><i data-lucide="${selected.pinned ? 'pin-off' : 'pin'}"></i><span>${pinLabel}</span></button>
-					${mobile ? `<button type="button" class="mobile-note-export" data-note-export role="menuitem"><i data-lucide="file-down"></i><span>${exportLabel}</span></button>` : ''}
-					<button type="button" class="desktop-only-action" data-note-full-width role="menuitemcheckbox" aria-checked="${preferences.fullWidth}"><i data-lucide="maximize-2"></i><span>${fullWidthLabel}</span><i class="note-menu-check" data-lucide="check" aria-hidden="true"></i></button>
-					<button type="button" data-note-move role="menuitem"><i data-lucide="folder-input"></i><span>${moveLabel}</span></button>
-					<button type="button" data-note-archive role="menuitem"><i data-lucide="archive"></i><span>${selected.archived ? t('restore') : t('archive')}</span></button>
-					<button type="button" class="danger" data-note-delete role="menuitem"><i data-lucide="trash-2"></i><span>${t('delete')}</span></button>
-				</div>
-			</div>
-			${includeRefresh ? `<button type="button" class="button icon-button note-refresh" data-notes-refresh title="${refreshLabel}" aria-label="${refreshLabel}"><i data-lucide="refresh-cw"></i></button>` : ''}
+			${exportButton}${pinButton}${moreMenu}${refreshButton}
 		</div>
 	</div>`;
 }
@@ -171,14 +214,14 @@ export function noteEditorMarkup(selected: Note, mobile = false): string {
 	return `<section class="note-editor ${mobile ? 'note-editor-mobile' : 'note-editor-desktop'} ${preferences.fullWidth ? 'note-width-full' : ''} ${preferences.font === 'serif' ? 'note-font-serif' : ''}" data-note-editor-id="${html(selected.id)}">
 		${!mobile ? noteToolbarMarkup(selected) : ''}
 		<form data-note-form>
-			${mobile ? `<div class="note-editor-head"><button type="button" class="row-action note-mobile-back" data-note-close title="${locale === 'zh' ? '返回' : 'Back'}" aria-label="${locale === 'zh' ? '返回' : 'Back'}"><i data-lucide="chevron-left"></i></button>${notePathMarkup(selected)}${noteActionControlsMarkup(selected, false, true)}</div>` : ''}
+			${mobile ? `<div class="note-editor-head">${iconButtonMarkup({ icon: 'chevron-left', label: locale === 'zh' ? '返回' : 'Back', className: 'row-action note-mobile-back', attributes: { 'data-note-close': true } })}${notePathMarkup(selected)}${noteActionControlsMarkup(selected, false, true)}</div>` : ''}
 			<div class="note-compose" data-note-compose><div class="note-document"><div class="note-source note-source-pending" data-note-source aria-label="${t('markdown')}" aria-busy="true"><div class="note-heading"><button type="button" class="note-title-display" data-note-title-display title="${html(selected.title)}">${html(selected.title)}</button><textarea data-note-title rows="1" maxlength="200" placeholder="${locale === 'zh' ? '无标题便签' : 'Untitled note'}" aria-label="${locale === 'zh' ? '便签标题' : 'Note title'}">${html(selected.title)}</textarea></div></div></div><aside class="note-outline" data-note-outline aria-label="${locale === 'zh' ? '章节位置' : 'Section positions'}"></aside></div>
 			${
 				mobile
 					? `<div class="note-mobile-edit-tools" data-mobile-editor-tools aria-label="${locale === 'zh' ? '编辑工具' : 'Editing tools'}">
-				<button type="button" data-mobile-format="bold" data-marker="**" title="${locale === 'zh' ? '粗体' : 'Bold'}"><i data-lucide="bold"></i></button>
-				<button type="button" data-mobile-format="italic" data-marker="*" title="${locale === 'zh' ? '斜体' : 'Italic'}"><i data-lucide="italic"></i></button>
-				<button type="button" data-mobile-format="code" data-marker="\u0060" title="${locale === 'zh' ? '行内代码' : 'Inline code'}"><i data-lucide="code"></i></button>
+				<button type="button" data-mobile-format="bold" data-marker="**" title="${locale === 'zh' ? '粗体' : 'Bold'}" aria-label="${locale === 'zh' ? '粗体' : 'Bold'}"><i data-lucide="bold"></i></button>
+				<button type="button" data-mobile-format="italic" data-marker="*" title="${locale === 'zh' ? '斜体' : 'Italic'}" aria-label="${locale === 'zh' ? '斜体' : 'Italic'}"><i data-lucide="italic"></i></button>
+				<button type="button" data-mobile-format="code" data-marker="\u0060" title="${locale === 'zh' ? '行内代码' : 'Inline code'}" aria-label="${locale === 'zh' ? '行内代码' : 'Inline code'}"><i data-lucide="code"></i></button>
 				<span class="note-mobile-tool-divider"></span>
 				<button type="button" data-mobile-ai-action="summarize"><i data-lucide="sparkles"></i><span>${locale === 'zh' ? '总结' : 'Summarize'}</span></button>
 				<button type="button" data-mobile-ai-action="polish"><i data-lucide="sparkles"></i><span>${locale === 'zh' ? '润色' : 'Polish'}</span></button>

@@ -13,7 +13,7 @@
 
 .note-save-status[data-state='syncing'] {
 	background: var(--accent);
-	animation: pulse 1s ease-in-out infinite;
+	animation: pulse var(--motion-pulse) infinite;
 }
 
 .note-save-status[data-state='failed'] {
@@ -126,8 +126,8 @@
 	border-radius: 6px;
 	background: transparent;
 	transition:
-		background 140ms ease,
-		color 140ms ease;
+		background var(--motion-fast),
+		color var(--motion-fast);
 }
 
 .collection-tree-row {
@@ -232,8 +232,8 @@
 }
 
 .note-folder-actions .row-action {
-	width: 27px;
-	height: 27px;
+	width: var(--compact-icon-control-size);
+	height: var(--compact-icon-control-size);
 	border-radius: 4px;
 }
 
@@ -251,13 +251,13 @@
 
 .notes-tree-children.is-expanding,
 .bookmark-tree-children.is-expanding {
-	animation: tree-branch-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+	animation: tree-branch-in var(--motion-base) both;
 }
 
 .notes-tree-children.is-collapsing,
 .bookmark-tree-children.is-collapsing {
 	overflow: hidden;
-	animation: tree-branch-out 170ms cubic-bezier(0.4, 0, 0.2, 1) both;
+	animation: tree-branch-out var(--motion-base) both;
 	pointer-events: none;
 }
 
@@ -350,7 +350,7 @@
 	border-radius: 6px;
 	background: transparent;
 	box-shadow: none;
-	transition: background 140ms ease;
+	transition: background var(--motion-fast);
 }
 
 .notes-tree-children .note-card:hover,
@@ -433,8 +433,8 @@
 }
 
 .notes-tree-children .note-card-actions .row-action {
-	width: 27px;
-	height: 27px;
+	width: var(--compact-icon-control-size);
+	height: var(--compact-icon-control-size);
 	background: transparent;
 }
 
@@ -572,7 +572,7 @@
 	border-radius: 999px;
 	background: color-mix(in srgb, var(--muted) 50%, transparent);
 	cursor: pointer;
-	transition: background 140ms ease;
+	transition: background var(--motion-fast);
 }
 
 .note-outline-mark:hover {
@@ -626,9 +626,9 @@
 	background: var(--elevated-bg);
 	box-shadow: var(--overlay-shadow);
 	transition:
-		opacity 120ms ease,
+		opacity var(--motion-fast),
 		transform 160ms ease,
-		visibility 120ms ease;
+		visibility var(--motion-fast);
 }
 
 .note-outline.open .note-outline-panel,
@@ -709,17 +709,8 @@
 	background: transparent;
 }
 
-.note-mode.active {
-	background: var(--surface-strong);
-	color: var(--ink);
-}
-
 .note-compose:not(.previewing) .note-source {
 	display: block;
-}
-
-.note-compose:not(.previewing) .note-render {
-	display: none;
 }
 
 .note-compose:not(.has-outline) .note-outline,
@@ -898,7 +889,6 @@
 
 .cm-live-inline-highlight mark,
 .cm-live-inline-rendered mark,
-.note-render mark,
 .file-markdown-preview mark {
 	padding: 0 2px;
 	background: color-mix(in srgb, #facc15 38%, transparent);
@@ -1052,8 +1042,7 @@
 }
 
 .cm-live-quote blockquote,
-.file-markdown-preview blockquote,
-.note-render blockquote {
+.file-markdown-preview blockquote {
 	margin: 0.45em 0;
 	padding-left: 12px;
 	border-left: 2px solid var(--line-strong, var(--line));
@@ -1062,7 +1051,6 @@
 
 /* Shared prose rhythm for rendered notes, file preview, live widgets, and callouts.
    Browser defaults (1em p/list margins, 40px list indent) make blank gaps look huge. */
-.note-render,
 .file-markdown-preview,
 .cm-live-quote,
 .markdown-callout {
@@ -1071,14 +1059,12 @@
 	--md-list-indent: 1.35em;
 }
 
-.note-render p,
 .file-markdown-preview p,
 .cm-live-quote p,
 .markdown-callout p {
 	margin: 0 0 var(--md-block-gap);
 }
 
-.note-render :is(ul, ol),
 .file-markdown-preview :is(ul, ol),
 .cm-live-quote :is(ul, ol),
 .markdown-callout :is(ul, ol) {
@@ -1086,7 +1072,6 @@
 	padding-left: var(--md-list-indent);
 }
 
-.note-render li,
 .file-markdown-preview li,
 .cm-live-quote li,
 .markdown-callout li {
@@ -1095,7 +1080,6 @@
 	line-height: 1.45;
 }
 
-.note-render li:last-child,
 .file-markdown-preview li:last-child,
 .cm-live-quote li:last-child,
 .markdown-callout li:last-child {
@@ -1103,21 +1087,18 @@
 }
 
 /* Loose lists (li > p) from blank quote lines must not stack p + li margins. */
-.note-render li > p,
 .file-markdown-preview li > p,
 .cm-live-quote li > p,
 .markdown-callout li > p {
 	margin: 0;
 }
 
-.note-render li > p + p,
 .file-markdown-preview li > p + p,
 .cm-live-quote li > p + p,
 .markdown-callout li > p + p {
 	margin-top: 0.2em;
 }
 
-.note-render p:last-child,
 .file-markdown-preview p:last-child,
 .cm-live-quote p:last-child,
 .markdown-callout p:last-child {
@@ -1125,14 +1106,12 @@
 }
 
 /* Empty markdown paragraphs from sparse blank lines should not reserve a full block gap. */
-.note-render p:empty,
 .file-markdown-preview p:empty,
 .cm-live-quote p:empty,
 .markdown-callout p:empty {
 	display: none;
 }
 
-.note-render p:has(> br:only-child),
 .file-markdown-preview p:has(> br:only-child),
 .cm-live-quote p:has(> br:only-child),
 .markdown-callout p:has(> br:only-child) {
@@ -1619,7 +1598,6 @@ details.markdown-callout > .markdown-callout-title::marker {
 	}
 }
 
-.note-render pre,
 .file-markdown-preview pre {
 	max-width: 100%;
 	padding: 14px 16px;
@@ -1629,7 +1607,6 @@ details.markdown-callout > .markdown-callout-title::marker {
 	overflow: auto;
 }
 
-.note-render pre code,
 .file-markdown-preview pre code {
 	padding: 0;
 	background: transparent;
@@ -1638,15 +1615,12 @@ details.markdown-callout > .markdown-callout-title::marker {
 	line-height: 1.6;
 }
 
-.note-render table,
 .file-markdown-preview table {
 	width: 100%;
 	border-collapse: collapse;
 	margin: 16px 0;
 }
 
-.note-render th,
-.note-render td,
 .file-markdown-preview th,
 .file-markdown-preview td {
 	padding: 8px 10px;
@@ -1654,14 +1628,12 @@ details.markdown-callout > .markdown-callout-title::marker {
 	text-align: left;
 }
 
-.note-render img,
 .file-markdown-preview img {
 	max-width: 100%;
 	height: auto;
 	border-radius: 6px;
 }
 
-.note-render .katex-display,
 .file-markdown-preview .katex-display {
 	max-width: 100%;
 	overflow-x: auto;
@@ -1858,7 +1830,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 	z-index: 3;
 	opacity: 0;
 	pointer-events: none;
-	transition: opacity 120ms ease;
+	transition: opacity var(--motion-fast);
 	background: transparent;
 }
 
@@ -1898,8 +1870,8 @@ details.markdown-callout > .markdown-callout-title::marker {
 .notes-tree-children .note-card-actions .row-action,
 .note-folder-actions .row-action,
 .notes-folder-tools > .row-action {
-	width: 28px;
-	height: 28px;
+	width: var(--compact-icon-control-size);
+	height: var(--compact-icon-control-size);
 	background: var(--panel-bg);
 }
 
@@ -2238,13 +2210,7 @@ details.markdown-callout > .markdown-callout-title::marker {
 }
 
 .note-tree-leading .note-tree-loader {
-	animation: note-tree-spin 800ms linear infinite;
-}
-
-@keyframes note-tree-spin {
-	to {
-		transform: rotate(360deg);
-	}
+	animation: control-spin var(--motion-spinner) infinite;
 }
 
 /* Folder rows always show the caret; swapping icons on state change flickered. */
@@ -2258,7 +2224,6 @@ details.markdown-callout > .markdown-callout-title::marker {
 
 /* Rendered Markdown nested lists use the same vertical hierarchy cue as the sidebar tree. */
 .file-markdown-preview :is(ul, ol) :is(ul, ol),
-.note-render :is(ul, ol) :is(ul, ol),
 .cm-live-quote :is(ul, ol) :is(ul, ol),
 .markdown-callout :is(ul, ol) :is(ul, ol) {
 	margin: 0.15em 0 0.2em 2px;
@@ -2366,9 +2331,9 @@ details.markdown-callout > .markdown-callout-title::marker {
 	border-radius: 50%;
 	background: transparent;
 	transition:
-		background-color 120ms ease,
-		opacity 120ms ease,
-		transform 120ms ease;
+		background-color var(--motion-fast),
+		opacity var(--motion-fast),
+		transform var(--motion-fast);
 }
 
 .notes-folder-tools > .row-action:hover,

@@ -12,6 +12,8 @@ import {
 	toast,
 } from '../shell';
 import { locale, t } from '../i18n';
+import { withControlsBusy } from '../ui/controls';
+import { emptyStateMarkup, errorBannerMarkup } from '../ui/markup';
 import { cacheNotes, cachedNotes, invalidateNoteCaches, noteCacheKey } from './cache';
 import {
 	discardNoteCommit,
@@ -152,21 +154,10 @@ async function refreshNotesView(selectedId: string | undefined, roots: ParentNod
 	const buttons = roots.flatMap((root) => [
 		...root.querySelectorAll<HTMLButtonElement>('[data-notes-refresh], #notes-refresh'),
 	]);
-	buttons.forEach((button) => {
-		button.disabled = true;
-		button.classList.add('is-syncing');
-		button.setAttribute('aria-busy', 'true');
-	});
-	try {
+	await withControlsBusy(buttons, async () => {
 		await flushAllNoteCommits();
 		await renderNotes(selectedId, true);
-	} finally {
-		buttons.forEach((button) => {
-			button.disabled = false;
-			button.classList.remove('is-syncing');
-			button.removeAttribute('aria-busy');
-		});
-	}
+	});
 }
 
 export function paintNotes(data: NotePage, selectedId?: string, openMobile = false): void {
@@ -197,9 +188,9 @@ export function paintNotes(data: NotePage, selectedId?: string, openMobile = fal
 	if (context) context.innerHTML = folderSidebar;
 	content.innerHTML = `<div class="notes-layout">
 		<div class="notes-mobile-sidebar">${folderSidebar}</div>
-		${selected ? noteEditorMarkup(selected) : `<section class="note-editor note-editor-desktop"><div class="notes-empty large"><i data-lucide="sticky-note"></i><span>${t('noNotes')}</span></div></section>`}
+		${selected ? noteEditorMarkup(selected) : `<section class="note-editor note-editor-desktop">${emptyStateMarkup(t('noNotes'), { icon: 'sticky-note', className: 'empty-state--fill' })}</section>`}
 	</div>
-		${showMobileEditor ? `<dialog class="note-dialog" id="note-dialog">${noteEditorMarkup(selected!, true)}</dialog>` : ''}`;
+		${showMobileEditor ? `<dialog class="ui-modal ui-modal--large note-dialog" id="note-dialog">${noteEditorMarkup(selected!, true)}</dialog>` : ''}`;
 	refreshIcons();
 	if (context) {
 		bindNotesNavigation(context);
@@ -267,7 +258,7 @@ export async function loadMoreNotes(selectedId?: string, scrollTop = 0): Promise
 
 export async function renderNotes(selectedId?: string, forceSync = false, openMobile = false): Promise<void> {
 	selectedId ??= noteIdFromPath();
-	if (!document.querySelector('.notes-layout')) shell('notes', t('notes'));
+	if (!document.querySelector('.notes-layout')) shell('notes');
 	await loadNoteFolders(forceSync);
 	if (selectedId) {
 		try {
@@ -351,8 +342,7 @@ export async function renderNotes(selectedId?: string, forceSync = false, openMo
 	} catch (error) {
 		validatedNotePages.delete(cacheKey);
 		if (!cached && !notesData?.items.length)
-			document.querySelector('#page-content')!.innerHTML =
-				`<div class="error-banner">${html(errorMessage(error))}</div>`;
+			document.querySelector('#page-content')!.innerHTML = errorBannerMarkup(errorMessage(error));
 		else toast(errorMessage(error));
 	}
 }

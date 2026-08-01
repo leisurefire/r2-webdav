@@ -110,10 +110,6 @@
 		padding-right: 48px;
 	}
 
-	.floating-primary-action {
-		bottom: calc(80px + env(safe-area-inset-bottom, 0px));
-	}
-
 	.file-card-copy small {
 		max-width: 100%;
 	}

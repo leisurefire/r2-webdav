@@ -14,14 +14,21 @@ import {
 } from '../shell';
 import { locale, t } from '../i18n';
 import {
+	actionMenuMarkup,
 	collapseTreeBranch,
+	emptyStateMarkup,
+	errorBannerMarkup,
 	expandTreeBranch,
+	iconButtonMarkup,
 	iconToolbarMarkup,
+	menuItemMarkup,
 	openTextDialog,
 	showTreePathHighlight,
 	treeLeadingMarkup,
 	workspaceSidebarMarkup,
 } from '../ui/helpers';
+import { withControlsBusy } from '../ui/controls';
+import { createModalDialog, showModalDialog } from '../ui/dialogs';
 import { renderMarkdown } from '../editor/markdownRenderer';
 
 export let currentPath = '';
@@ -231,20 +238,21 @@ export async function openFilePreview(entry: FileEntry): Promise<void> {
 		await api.download(entry.path);
 		return;
 	}
-	const dialog = document.createElement('dialog');
-	dialog.className = 'file-preview-dialog';
-	dialog.innerHTML = `<div class="file-preview-shell"><header class="file-preview-head"><strong>${html(entry.name)}</strong><span class="muted">${formatBytes(entry.size)}</span><span class="toolbar-spacer"></span><button class="row-action" data-preview-close title="${locale === 'zh' ? '关闭' : 'Close'}" aria-label="${locale === 'zh' ? '关闭' : 'Close'}"><i data-lucide="x"></i></button></header><div class="file-preview-body"><div class="loading-state">${loadingMarkup()}</div></div></div>`;
-	document.body.append(dialog);
-	refreshIcons();
+	const dialog = createModalDialog('large', 'file-preview-dialog');
+	const closeLabel = locale === 'zh' ? '关闭' : 'Close';
+	dialog.setAttribute('aria-label', entry.name);
+	dialog.innerHTML = `<div class="file-preview-shell"><header class="file-preview-head"><strong>${html(entry.name)}</strong><span class="muted">${formatBytes(entry.size)}</span><span class="toolbar-spacer"></span>${iconButtonMarkup({ icon: 'x', label: closeLabel, attributes: { 'data-preview-close': true } })}</header><div class="file-preview-body"><div class="loading-state">${loadingMarkup()}</div></div></div>`;
 	const body = dialog.querySelector<HTMLElement>('.file-preview-body')!;
 	let objectUrl: string | null = null;
 	const close = () => dialog.close();
 	dialog.querySelector('[data-preview-close]')?.addEventListener('click', close);
-	dialog.addEventListener('close', () => {
-		if (objectUrl) URL.revokeObjectURL(objectUrl);
-		dialog.remove();
+	showModalDialog(dialog, {
+		dismissOnBackdrop: true,
+		onClose: () => {
+			if (objectUrl) URL.revokeObjectURL(objectUrl);
+		},
 	});
-	dialog.showModal();
+	refreshIcons();
 	try {
 		const blob = await api.previewFile(entry.path, entry.etag);
 		const type = previewContentType(entry);
@@ -317,11 +325,16 @@ export async function openFilePreview(entry: FileEntry): Promise<void> {
 			objectUrl = URL.createObjectURL(blob);
 			body.innerHTML = `<iframe class="file-pdf-preview" src="${objectUrl}" title="${html(entry.name)}"></iframe>`;
 		} else {
-			body.innerHTML = `<div class="empty-state"><div>${locale === 'zh' ? '此文件类型暂不支持内嵌预览，请下载查看。' : 'This file type cannot be previewed inline. Download it to view.'}</div></div>`;
+			body.innerHTML = emptyStateMarkup(
+				locale === 'zh'
+					? '此文件类型暂不支持内嵌预览，请下载查看。'
+					: 'This file type cannot be previewed inline. Download it to view.',
+				{ icon: 'file', className: 'empty-state--fill' },
+			);
 		}
 		refreshIcons();
 	} catch (error) {
-		body.innerHTML = `<div class="error-banner">${html(errorMessage(error))}</div>`;
+		body.innerHTML = errorBannerMarkup(errorMessage(error));
 	}
 }
 
@@ -329,26 +342,43 @@ export function paintFiles(listing: FileListing): void {
 	const content = document.querySelector<HTMLDivElement>('#page-content');
 	if (!content || pageFromPath() !== 'files' || listing.path !== currentPath) return;
 	const rows = listing.entries
-		.map(
-			(entry) => `<article class="file-card">
+		.map((entry) => {
+			const items = [
+				entry.type === 'file'
+					? menuItemMarkup({
+							icon: 'download',
+							label: locale === 'zh' ? '下载' : 'Download',
+							attributes: { 'data-download': entry.path },
+						})
+					: '',
+				menuItemMarkup({
+					icon: 'pencil',
+					label: locale === 'zh' ? '重命名' : 'Rename',
+					attributes: { 'data-rename': entry.path },
+				}),
+				menuItemMarkup({
+					icon: 'trash-2',
+					label: t('delete'),
+					className: 'danger',
+					attributes: { 'data-delete': entry.path },
+				}),
+			].join('');
+			return `<article class="file-card">
 				<button class="file-card-open" data-open="${html(entry.path)}" data-type="${entry.type}"><span class="file-card-icon"><i data-lucide="${fileIcon(entry)}"></i></span><span class="file-card-copy"><strong>${html(entry.name)}</strong><small>${entry.type === 'file' ? formatBytes(entry.size) : locale === 'zh' ? '文件夹' : 'Folder'} · ${new Date(entry.modifiedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</small></span></button>
-				<div class="file-card-actions action-menu" data-action-menu>
-					<button class="row-action" data-menu-toggle title="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-label="${locale === 'zh' ? '更多操作' : 'More actions'}" aria-expanded="false"><i data-lucide="more-horizontal"></i></button>
-					<div class="action-menu-popover" data-menu-popover role="menu">
-						${entry.type === 'file' ? `<button data-download="${html(entry.path)}" role="menuitem"><i data-lucide="download"></i><span>${locale === 'zh' ? '下载' : 'Download'}</span></button>` : ''}
-						<button data-rename="${html(entry.path)}" role="menuitem"><i data-lucide="pencil"></i><span>${locale === 'zh' ? '重命名' : 'Rename'}</span></button>
-						<button class="danger" data-delete="${html(entry.path)}" role="menuitem"><i data-lucide="trash-2"></i><span>${t('delete')}</span></button>
-					</div>
-				</div>
-			</article>`,
-		)
+				${actionMenuMarkup({
+					label: locale === 'zh' ? '更多操作' : 'More actions',
+					items,
+					className: 'file-card-actions',
+				})}
+			</article>`;
+		})
 		.join('');
 	const mobileTools = fileToolsMarkup('page-context-tools mobile-only-tools');
 	content.innerHTML = `<div class="file-layout"><div class="toolbar workspace-top-row"><div class="breadcrumbs">${breadcrumbMarkup(listing.path)}</div>
 			${mobileTools}
 			<input type="file" id="file-input" hidden multiple>
 		</div><div id="upload-status"></div>
-		<div class="file-browser-body">${rows ? `<div class="file-grid">${rows}</div>` : `<div class="notes-empty large file-empty"><i data-lucide="folder-open"></i><span>${locale === 'zh' ? '此文件夹为空' : 'This folder is empty'}</span></div>`}</div></div>`;
+		<div class="file-browser-body">${rows ? `<div class="file-grid">${rows}</div>` : emptyStateMarkup(locale === 'zh' ? '此文件夹为空' : 'This folder is empty', { icon: 'folder-open', className: 'empty-state--fill file-empty' })}</div></div>`;
 	const context = sidebarContext();
 	if (context) context.innerHTML = fileSidebarMarkup(listing);
 	refreshIcons();
@@ -372,15 +402,13 @@ export function paintFiles(listing: FileListing): void {
 			requestAnimationFrame(() => showTreePathHighlight(target));
 		}
 	}
-	content
-		.querySelectorAll<HTMLElement>('[data-path]')
-		.forEach((item) =>
-			item.addEventListener('click', () => {
-				const path = item.dataset.path ?? '';
-				fileTreeHighlightPending = path;
-				openFileDirectory(path);
-			}),
-		);
+	content.querySelectorAll<HTMLElement>('[data-path]').forEach((item) =>
+		item.addEventListener('click', () => {
+			const path = item.dataset.path ?? '';
+			fileTreeHighlightPending = path;
+			openFileDirectory(path);
+		}),
+	);
 	context?.querySelectorAll<HTMLElement>('[data-file-tree-path]').forEach((item) =>
 		item.addEventListener('click', () => {
 			const path = item.dataset.fileTreePath ?? '';
@@ -499,27 +527,16 @@ export function paintFiles(listing: FileListing): void {
 	});
 	bindAll('[data-files-refresh]', () => {
 		const buttons = roots.flatMap((root) => [...root.querySelectorAll<HTMLButtonElement>('[data-files-refresh]')]);
-		buttons.forEach((button) => {
-			button.disabled = true;
-			button.classList.add('is-syncing');
-			button.setAttribute('aria-busy', 'true');
-		});
-		void renderFiles(true).finally(() =>
-			buttons.forEach((button) => {
-				button.disabled = false;
-				button.classList.remove('is-syncing');
-				button.removeAttribute('aria-busy');
-			}),
-		);
+		void withControlsBusy(buttons, () => renderFiles(true));
 	});
 }
 
 export async function renderFiles(forceSync = false): Promise<void> {
 	const filesNavigationActive = Boolean(document.querySelector('.nav-button.active[data-route="/files"]'));
-	if (!filesNavigationActive || !document.querySelector('#page-content')) shell('files', t('files'));
+	if (!filesNavigationActive || !document.querySelector('#page-content')) shell('files');
 	const content = document.querySelector<HTMLDivElement>('#page-content')!;
 	const cached = cachedFiles(currentPath);
-	if (cached) paintFiles(cached);
+	if (cached && (!forceSync || !content.querySelector('.file-layout'))) paintFiles(cached);
 	const stopDirectoryLoading = directoryLoadCleanup;
 	const finishDirectoryLoading = () => {
 		if (directoryLoadCleanup !== stopDirectoryLoading) return;
@@ -540,7 +557,7 @@ export async function renderFiles(forceSync = false): Promise<void> {
 	} catch (error) {
 		validatedFilePaths.delete(requestedPath);
 		finishDirectoryLoading();
-		if (!cached) content.innerHTML = `<div class="error-banner">${html(errorMessage(error))}</div>`;
+		if (!cached) content.innerHTML = errorBannerMarkup(errorMessage(error));
 		else {
 			paintFiles(cached);
 			toast(errorMessage(error));

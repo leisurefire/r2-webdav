@@ -2,7 +2,13 @@ import type { CalendarEvent, CalendarSummary } from '@r2-webdav/shared-types';
 import { api } from '../api/client';
 import { errorMessage, html, pageFromPath, refreshIcons, shell, sidebarContext, toast } from '../shell';
 import { locale, t } from '../i18n';
-import { workspaceSidebarMarkup } from '../ui/helpers';
+import {
+	emptyStateMarkup,
+	errorBannerMarkup,
+	iconButtonMarkup,
+	iconToolbarMarkup,
+	workspaceSidebarMarkup,
+} from '../ui/helpers';
 import { lunarDate } from './calendarDates';
 
 export { inputDate } from './calendarDates';
@@ -149,21 +155,33 @@ export function paintCalendarSidebar(calendar: CalendarSummary): void {
 	).slice(0, 8);
 	const newEventLabel = locale === 'zh' ? '新建日程' : 'New event';
 	const syncLabel = locale === 'zh' ? '同步日历' : 'Sync calendar';
-	const tools = `<div class="sidebar-context-tools">
-		<button type="button" class="row-action" data-cal-new title="${newEventLabel}" aria-label="${newEventLabel}"><i data-lucide="plus"></i></button>
-		<button type="button" class="row-action" data-cal-refresh title="${syncLabel}" aria-label="${syncLabel}"><i data-lucide="refresh-cw"></i></button>
-	</div>`;
+	const tools = iconToolbarMarkup([
+		{ icon: 'plus', label: newEventLabel, attributes: { 'data-cal-new': true } },
+		{ icon: 'refresh-cw', label: syncLabel, attributes: { 'data-cal-refresh': true } },
+	]);
 	context.innerHTML = workspaceSidebarMarkup({
 		label: locale === 'zh' ? '最近日程' : 'Recent schedule',
 		tools,
 		body: recent.length
 			? recent
-					.map(
-						(event) =>
-							`<button class="recent-event collection-tree-row" data-recent-event="${html(eventCacheKey(event))}"><i data-lucide="calendar-days" aria-hidden="true"></i><span class="recent-event-copy"><strong>${html(event.title)}</strong><small>${event.allDay ? (locale === 'zh' ? '全天' : 'All day') : new Date(event.start).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en', { hour: '2-digit', minute: '2-digit' })}</small></span><span class="recent-event-date">${new Date(event.start).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en', { month: 'short', day: 'numeric' })}</span></button>`,
-					)
+					.map((event) => {
+						const startsAt = new Date(event.start);
+						const timeLabel = event.allDay
+							? locale === 'zh'
+								? '全天'
+								: 'All day'
+							: startsAt.toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en', {
+									hour: '2-digit',
+									minute: '2-digit',
+								});
+						const dateLabel = startsAt.toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en', {
+							month: 'short',
+							day: 'numeric',
+						});
+						return `<button class="recent-event collection-tree-row" data-recent-event="${html(eventCacheKey(event))}"><span class="recent-event-icon" aria-hidden="true"><i data-lucide="calendar-days"></i></span><span class="recent-event-copy"><strong>${html(event.title)}</strong><small>${html(timeLabel)}</small></span><time class="recent-event-date" datetime="${html(event.start)}">${html(dateLabel)}</time></button>`;
+					})
 					.join('')
-			: `<div class="sidebar-context-empty">${locale === 'zh' ? '暂无日程' : 'No events'}</div>`,
+			: emptyStateMarkup(locale === 'zh' ? '暂无日程' : 'No events', { compact: true }),
 		treeClass: 'recent-events calendar-agenda-tree',
 	});
 	context.querySelectorAll<HTMLElement>('[data-recent-event]').forEach((item) =>
@@ -193,19 +211,32 @@ export function paintCalendarSidebar(calendar: CalendarSummary): void {
 }
 
 export async function renderCalendar(forceSync = false): Promise<void> {
-	if (!document.querySelector('#calendar-view')) shell('calendar', t('calendar'));
+	if (!document.querySelector('#calendar-view')) shell('calendar');
 	const content = document.querySelector<HTMLDivElement>('#page-content')!;
 	try {
 		calendarCache.calendars ??= await api.calendars();
 		if (calendarCache.calendars.length === 0) {
-			content.innerHTML = `<div class="empty-state"><div>${locale === 'zh' ? '没有日历' : 'No calendars'}</div></div>`;
+			content.innerHTML = emptyStateMarkup(locale === 'zh' ? '没有日历' : 'No calendars', {
+				icon: 'calendar-days',
+				className: 'empty-state--fill',
+			});
+			refreshIcons();
 			return;
 		}
 		const calendar = calendarCache.calendars[0];
 		if (!content.querySelector('#calendar-view')) {
 			const newEventLabel = locale === 'zh' ? '新建日程' : 'New event';
 			const syncLabel = locale === 'zh' ? '同步日历' : 'Sync calendar';
-			content.innerHTML = `<div class="calendar-toolbar workspace-top-row"><h2 id="calendar-title"></h2><button class="button icon-button" id="cal-prev"><i data-lucide="chevron-left"></i></button><button class="button" id="cal-today">${locale === 'zh' ? '今天' : 'Today'}</button><button class="button icon-button" id="cal-next"><i data-lucide="chevron-right"></i></button><span class="sync-status" id="calendar-sync"><span class="status-dot"></span>${locale === 'zh' ? '已缓存' : 'Cached'}</span><div class="page-context-tools mobile-only-tools"><button type="button" class="row-action" id="new-event" title="${newEventLabel}" aria-label="${newEventLabel}"><i data-lucide="plus"></i></button><button type="button" class="row-action" id="cal-refresh" title="${syncLabel}" aria-label="${syncLabel}"><i data-lucide="refresh-cw"></i></button></div></div><div class="calendar" id="calendar-view"><div class="weekday-row">${(locale === 'zh' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).map((day) => `<div class="weekday">${day}</div>`).join('')}</div><div class="month-grid" id="month-grid"></div></div>`;
+			const previousMonthLabel = locale === 'zh' ? '上个月' : 'Previous month';
+			const nextMonthLabel = locale === 'zh' ? '下个月' : 'Next month';
+			const mobileTools = iconToolbarMarkup(
+				[
+					{ icon: 'plus', label: newEventLabel, attributes: { id: 'new-event' } },
+					{ icon: 'refresh-cw', label: syncLabel, attributes: { id: 'cal-refresh' } },
+				],
+				'page-context-tools mobile-only-tools',
+			);
+			content.innerHTML = `<div class="calendar-toolbar workspace-top-row"><h2 id="calendar-title"></h2>${iconButtonMarkup({ icon: 'chevron-left', label: previousMonthLabel, className: 'button icon-button', attributes: { id: 'cal-prev' } })}<button class="button" id="cal-today">${locale === 'zh' ? '今天' : 'Today'}</button>${iconButtonMarkup({ icon: 'chevron-right', label: nextMonthLabel, className: 'button icon-button', attributes: { id: 'cal-next' } })}<span class="sync-status" id="calendar-sync"><span class="status-dot"></span>${locale === 'zh' ? '已缓存' : 'Cached'}</span>${mobileTools}</div><div class="calendar" id="calendar-view"><div class="weekday-row">${(locale === 'zh' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']).map((day) => `<div class="weekday">${day}</div>`).join('')}</div><div class="month-grid" id="month-grid"></div></div>`;
 			content.querySelector('#cal-prev')?.addEventListener('click', () => {
 				calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
 				void renderCalendar();
@@ -247,12 +278,12 @@ export async function renderCalendar(forceSync = false): Promise<void> {
 		const ranges = forceSync ? [visibleRange] : missingRanges(calendarValidatedRanges, visibleRange);
 		const syncStatus = document.querySelector<HTMLSpanElement>('#calendar-sync')!;
 		if (ranges.length === 0) {
-			syncStatus.innerHTML = '<span class="status-dot"></span>Cached';
+			syncStatus.innerHTML = `<span class="status-dot"></span>${locale === 'zh' ? '已缓存' : 'Cached'}`;
 			return;
 		}
 		const requestId = ++calendarRequest;
 		syncStatus.classList.add('syncing');
-		syncStatus.innerHTML = '<span class="status-dot"></span>Syncing';
+		syncStatus.innerHTML = `<span class="status-dot"></span>${locale === 'zh' ? '同步中' : 'Syncing'}`;
 		const responses = await Promise.all(
 			ranges.map((range) =>
 				api.events(calendar.id, new Date(range.from).toISOString(), new Date(range.to).toISOString()),
@@ -270,13 +301,13 @@ export async function renderCalendar(forceSync = false): Promise<void> {
 		if (requestId !== calendarRequest || pageFromPath() !== 'calendar') return;
 		paintCalendarGrid(calendar, gridStart);
 		syncStatus.classList.remove('syncing');
-		syncStatus.innerHTML = '<span class="status-dot"></span>Up to date';
+		syncStatus.innerHTML = `<span class="status-dot"></span>${locale === 'zh' ? '已同步' : 'Up to date'}`;
 	} catch (error) {
 		const syncStatus = document.querySelector<HTMLSpanElement>('#calendar-sync');
 		if (syncStatus) {
 			syncStatus.classList.remove('syncing');
-			syncStatus.textContent = 'Sync failed';
+			syncStatus.textContent = locale === 'zh' ? '同步失败' : 'Sync failed';
 			toast(errorMessage(error));
-		} else content.innerHTML = `<div class="error-banner">${html(errorMessage(error))}</div>`;
+		} else content.innerHTML = errorBannerMarkup(errorMessage(error));
 	}
 }

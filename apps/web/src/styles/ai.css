@@ -72,29 +72,7 @@
 	white-space: nowrap;
 }
 
-.ai-model,
-.ai-panel-model {
-	border: 1px solid var(--control-border);
-	border-radius: var(--control-radius);
-	background: var(--ai-panel-bg);
-	color: var(--muted);
-	font-size: 12px;
-	padding: 3px 6px;
-	max-width: 168px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
 /* The compact Space prompt intentionally keeps the model out of the first line. */
-.ai-panel .ai-panel-model {
-	display: none;
-}
-
-.ai-model:focus {
-	outline: 0;
-	box-shadow: var(--focus-ring);
-}
 
 .ai-instruction-row {
 	display: flex;
@@ -177,7 +155,7 @@
 	width: 15px;
 	height: 15px;
 	color: var(--accent);
-	animation: ai-thinking-pulse 1.2s ease-in-out infinite;
+	animation: ai-thinking-pulse var(--motion-pulse) infinite;
 }
 
 .ai-error {
@@ -507,21 +485,8 @@
 	cursor: default;
 }
 
-.note-ai-chat-panel {
-	animation: note-ai-panel-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes note-ai-panel-in {
-	from {
-		width: 0;
-	}
-	to {
-		width: var(--note-ai-panel-width);
-	}
-}
-
 .note-ai-chat-message {
-	animation: note-ai-message-in 150ms ease-out;
+	animation: note-ai-message-in var(--motion-base);
 }
 
 @keyframes note-ai-message-in {
@@ -561,8 +526,8 @@
 	color: var(--muted);
 	font-size: 11px;
 	transition:
-		border-color 140ms ease,
-		background-color 140ms ease;
+		border-color var(--motion-fast),
+		background-color var(--motion-fast);
 }
 
 .note-ai-history-select:hover .custom-select-trigger,
@@ -570,10 +535,6 @@
 	border-color: var(--line);
 	background-color: var(--surface);
 	box-shadow: none;
-}
-
-.note-ai-chat-title {
-	flex: 1;
 }
 
 @media (max-width: 720px) {
@@ -706,7 +667,7 @@
 	background: var(--panel-bg);
 	box-shadow: -12px 0 32px rgb(0 0 0 / 0.24);
 	overflow: hidden;
-	transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
+	transition: width var(--motion-slow);
 }
 
 .note-ai-chat-panel.is-closing {
@@ -1208,7 +1169,7 @@
 .note-ai-chat-panel.workspace-rail {
 	background: var(--workspace-rail-bg);
 	box-shadow: none;
-	animation: note-ai-rail-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+	animation: note-ai-rail-in var(--motion-slow) both;
 	will-change: opacity, transform;
 }
 
@@ -1267,30 +1228,6 @@
 	border-color: transparent;
 	background: var(--hover-bg);
 	box-shadow: none;
-}
-
-.note-ai-history-select-menu .custom-select-row {
-	width: 100%;
-	min-width: 0;
-	gap: 2px;
-}
-
-.note-ai-history-select-menu .custom-select-option {
-	min-width: 0;
-	overflow: hidden;
-}
-
-.note-ai-history-select-menu .custom-select-option > span:not(.custom-select-check) {
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.note-ai-history-select-menu .custom-select-action {
-	flex: none;
-	width: 28px;
-	min-width: 28px;
 }
 
 .note-ai-chat-messages {
@@ -1437,10 +1374,10 @@
 }
 
 .note-ai-chat-footer .row-action {
-	width: 28px;
-	height: 28px;
-	min-width: 28px;
-	min-height: 28px;
+	width: var(--compact-icon-control-size);
+	height: var(--compact-icon-control-size);
+	min-width: var(--compact-icon-control-size);
+	min-height: var(--compact-icon-control-size);
 }
 
 .note-ai-model-select {

@@ -1,25 +1,16 @@
 import { Transaction } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import {
-	aiModelForAction,
-	api,
-	type AiAction,
-	type NoteChatChange,
-	type NoteChatSession,
-} from '../api/client';
+import { aiModelForAction, api, type AiAction, type NoteChatChange, type NoteChatSession } from '../api/client';
 import { clearAiReview, showAiReview } from './markdownAiReview';
 import { toggleMarkdownWrap } from './markdownEditing';
 import { clearSelectionHold, holdSelectionHighlight, markNewContent } from './editorHighlights';
 import { buildAiReviewPreview } from './textDiff';
 import { renderMarkdown } from './markdownRenderer';
 import { markdownMarkerCoverage } from './markdownFormatting';
-import {
-	normalizeAiMarkdown,
-	splitAiTitle,
-	splitRewriteSummary,
-} from './aiParsing';
+import { normalizeAiMarkdown, splitAiTitle, splitRewriteSummary } from './aiParsing';
 import { paintAiIcons as paintIcons } from './aiUi';
 import { onDisconnect } from '../ui/lifecycle';
+import { iconButtonMarkup } from '../ui/markup';
 
 export {
 	applyChatEditPatches,
@@ -169,7 +160,7 @@ export function bindMarkdownAiAssistant(
 				<span class="ai-mark"><i data-lucide="sparkles"></i></span>
 				<span class="ai-panel-title">${actionLabel}</span>
 				<span class="toolbar-spacer"></span>
-				<button class="row-action" type="button" data-ai-close aria-label="${t('关闭', 'Close')}"><i data-lucide="x"></i></button>
+				${iconButtonMarkup({ icon: 'x', label: t('关闭', 'Close'), attributes: { 'data-ai-close': true } })}
 			</header>
 			<div class="ai-instruction-row" data-ai-form>
 				<textarea class="ai-instruction" data-ai-instruction rows="1" aria-label="${t('告诉 AI 你想写什么', 'Tell AI what you want')}" placeholder="${t('告诉 AI 你想做什么…', 'Tell AI what to do…')}"></textarea>
@@ -177,10 +168,10 @@ export function bindMarkdownAiAssistant(
 			</div>
 			<div class="ai-result" data-ai-result hidden></div>
 			<footer class="ai-panel-actions" data-ai-actions hidden>
-				<button class="row-action" type="button" data-ai-edit title="${t('重新编辑要求', 'Edit request')}" aria-label="${t('重新编辑要求', 'Edit request')}"><i data-lucide="rotate-ccw"></i></button>
-				<button class="row-action" type="button" data-ai-revert title="${t('回撤更改', 'Revert change')}" aria-label="${t('回撤更改', 'Revert change')}" hidden><i data-lucide="rotate-ccw"></i></button>
+				${iconButtonMarkup({ icon: 'rotate-ccw', label: t('重新编辑要求', 'Edit request'), attributes: { 'data-ai-edit': true } })}
+				${iconButtonMarkup({ icon: 'rotate-ccw', label: t('回撤更改', 'Revert change'), attributes: { 'data-ai-revert': true, hidden: true } })}
 				<button class="button" type="button" data-ai-insert-below hidden title="${t('保留原文并在下方插入 AI 结果', 'Keep the selection and insert the AI result below')}">${t('在下面插入', 'Insert below')}</button>
-				<button class="row-action" type="button" data-ai-open-chat title="${t('在侧栏中打开对话', 'Open conversation in sidebar')}" aria-label="${t('在侧栏中打开对话', 'Open conversation in sidebar')}" hidden><i data-lucide="message-circle"></i></button>
+				${iconButtonMarkup({ icon: 'message-circle', label: t('在侧栏中打开对话', 'Open conversation in sidebar'), attributes: { 'data-ai-open-chat': true, hidden: true } })}
 				<span class="toolbar-spacer"></span>
 				<button class="button primary" type="button" data-ai-main></button>
 			</footer>
