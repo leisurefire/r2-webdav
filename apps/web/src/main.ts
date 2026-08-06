@@ -54,13 +54,27 @@ async function render(): Promise<void> {
 registerRender(render);
 document.addEventListener('truespace:open-settings', () => void openSettings());
 
+const mobileNoteViewport = matchMedia('(max-width: 760px)');
+let mobileNoteViewportExitPending = false;
+
+// A modal dialog stays in the browser's top layer even after desktop CSS hides it.
+// Leave the mobile history entry when the viewport grows so popstate can close it
+// and restore the interactive desktop editor.
+mobileNoteViewport.addEventListener('change', (event) => {
+	if (event.matches || !mobileNoteDialogOpen || mobileNoteViewportExitPending) return;
+	mobileNoteViewportExitPending = true;
+	history.back();
+});
+
 window.addEventListener('popstate', () => {
 	const bottomSheet = document.querySelector<HTMLElement>('.bottom-sheet');
 	if (bottomSheet) {
 		bottomSheet.dispatchEvent(new CustomEvent('r2:close-bottom-sheet'));
+		if (!mobileNoteViewport.matches && mobileNoteDialogOpen) history.back();
 		return;
 	}
 	if (mobileNoteDialogOpen) {
+		mobileNoteViewportExitPending = false;
 		setMobileNoteDialogOpen(false);
 		const dialog = document.querySelector<HTMLDialogElement>('#note-dialog[open]');
 		const flush = flushMobileNote;
